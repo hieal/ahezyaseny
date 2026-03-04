@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Assistant", ui-sans-serif, system-ui, sans-serif;
+  --color-luxury-blue: #2563EB;
+  --color-soft-purple: #7C3AED;
+  --color-bg-gray: #F9FAFB;
+  --color-text-main: #111827;
+  --color-text-secondary: #6B7280;
+  --color-whatsapp: #25D366;
+}
+
+body {
+  direction: rtl;
+  @apply bg-bg-gray text-text-main;
+}
+
+.glass {
+  @apply bg-white border border-slate-100 shadow-sm;
+}
+
+.btn-primary {
+  @apply px-4 py-2 bg-luxury-blue text-white rounded-lg hover:bg-blue-700 transition-all font-medium shadow-sm active:scale-95;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-white text-text-secondary border border-slate-200 rounded-lg hover:bg-slate-50 transition-all font-medium active:scale-95;
+}
+
+.btn-whatsapp {
+  @apply px-4 py-2 bg-whatsapp text-white rounded-lg hover:bg-green-600 transition-all font-medium flex items-center justify-center gap-2 shadow-sm active:scale-95;
+}
+
+.btn-danger {
+  @apply px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all font-medium active:scale-95;
+}
+
+.input-field {
+  @apply w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-luxury-blue/10 focus:border-luxury-blue transition-all;
+}
+
+.card {
+  @apply bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden;
+}
+
+.sidebar-item {
+  @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-text-secondary hover:bg-slate-100 hover:text-luxury-blue;
+}
+
+.sidebar-item-active {
+  @apply bg-luxury-blue/5 text-luxury-blue font-semibold;
+}
