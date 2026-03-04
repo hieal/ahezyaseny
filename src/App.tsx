@@ -6,10 +6,11 @@ import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import MatchForm from './pages/MatchForm';
 import AdminManagement from './pages/AdminManagement';
+import RoleManagement from './pages/RoleManagement';
 import SettingsPage from './pages/SettingsPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
@@ -119,7 +120,8 @@ function Sidebar() {
 
   if (user?.role === 'super_admin' || user?.role === 'team_leader') {
     navItems.push(
-      { path: '/admins', label: 'ניהול מנהלים', icon: <UserCog size={20} /> }
+      { path: '/admins', label: 'ניהול מנהלים', icon: <UserCog size={20} /> },
+      { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
     );
   }
 
@@ -265,15 +267,15 @@ function Sidebar() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 p-4 rounded-2xl text-center">
-                  <p className="text-xs text-blue-600 font-bold mb-1">בנים מחוברים</p>
-                  <p className="text-2xl font-black text-blue-900">
+                <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
+                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-wider mb-1">בנים מחוברים</p>
+                  <p className="text-3xl font-black text-blue-900">
                     {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'male').length}
                   </p>
                 </div>
-                <div className="bg-pink-50 p-4 rounded-2xl text-center">
-                  <p className="text-xs text-pink-600 font-bold mb-1">בנות מחוברות</p>
-                  <p className="text-2xl font-black text-pink-900">
+                <div className="bg-pink-50 p-4 rounded-2xl text-center border border-pink-100">
+                  <p className="text-[10px] text-pink-600 font-black uppercase tracking-wider mb-1">בנות מחוברות</p>
+                  <p className="text-3xl font-black text-pink-900">
                     {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length}
                   </p>
                 </div>
@@ -281,44 +283,60 @@ function Sidebar() {
 
               <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
                 {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).map(admin => (
-                  <div key={admin.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        {admin.avatar_url ? (
-                          <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                            <User size={20} />
+                  <div key={admin.id} className="flex flex-col p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          {admin.avatar_url ? (
+                            <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                              <User size={20} />
+                            </div>
+                          )}
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{admin.name}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-medium">{admin.category || 'כללי'}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${admin.gender === 'male' ? 'bg-blue-400' : 'bg-pink-400'}`}></span>
+                            <span className="text-[9px] text-slate-400 uppercase font-bold">
+                              {admin.role === 'super_admin' ? 'מנהל ראשי' : 
+                               admin.role === 'team_leader' ? 'ראש צוות' :
+                               admin.role === 'viewer' ? 'צופה' : 'מנהל'}
+                            </span>
                           </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {admin.phone && (
+                          <a 
+                            href={`https://wa.me/${admin.phone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all"
+                          >
+                            <MessageSquare size={16} />
+                          </a>
                         )}
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{admin.name}</p>
-                        <p className="text-[10px] text-slate-500 font-medium">{admin.category || 'כללי'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {admin.phone && (
-                        <a 
-                          href={`https://wa.me/${admin.phone.replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all"
+                        <button 
+                          onClick={() => {
+                            setShowChat({ id: admin.id, name: admin.name });
+                            setShowConnectedAdmins(false);
+                          }}
+                          className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all"
                         >
-                          <MessageSquare size={16} />
-                        </a>
-                      )}
-                      <button 
-                        onClick={() => {
-                          setShowChat({ id: admin.id, name: admin.name });
-                          setShowConnectedAdmins(false);
-                        }}
-                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all"
-                      >
-                        <Send size={16} />
-                      </button>
+                          <Send size={16} />
+                        </button>
+                      </div>
                     </div>
+                    {admin.category && (
+                      <div className="text-[9px] text-slate-400 font-medium px-1">
+                        מנהל את: <span className="text-luxury-blue">{admin.category}</span>
+                        {admin.secondary_category && <span>, {admin.secondary_category}</span>}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).length === 0 && (
@@ -506,6 +524,7 @@ export default function App() {
             <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
             <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
+            <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

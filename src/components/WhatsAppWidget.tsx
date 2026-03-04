@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2 } from 'lucide-react';
+import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2, Smile } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { io } from 'socket.io-client';
@@ -208,16 +208,18 @@ export function WhatsAppWidget({
     }
   };
 
-  const publishMatch = () => {
-    if (!currentMatch) return;
+  const publishMatch = async () => {
+    if (!currentMatch) {
+      toast.error('לא נבחר משודך לפרסום');
+      return;
+    }
     
     // Duplicate confirmation inside widget
     if (currentMatch.last_published_at) {
       const lastDate = new Date(currentMatch.last_published_at).toLocaleDateString('he-IL');
       const lastTime = new Date(currentMatch.last_published_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
       
-      const typeStr = includeImage && includeText ? 'כרטיס מעוצב וטקסט' : includeImage ? 'כרטיס מעוצב' : 'כרטיס טקסט';
-      const confirm = window.confirm(`כרטיסיות אלו פורסמו בתאריך ${lastDate} בשעה ${lastTime}. האם לפרסם שוב?`);
+      const confirm = window.confirm(`משודך זה פורסם בתאריך ${lastDate} בשעה ${lastTime}. האם לפרסם שוב?`);
       if (!confirm) return;
     }
 
@@ -233,11 +235,23 @@ export function WhatsAppWidget({
     }
 
     setActiveTab('chat');
-    handleSend(text, currentMatch.id);
-    if (onClose) {
-      setTimeout(onClose, 1500);
-    }
+    await handleSend(text, currentMatch.id);
+    
+    // Refresh parent status
+    onRefreshStatus?.();
+    
+    // Don't close automatically, stay in chat as requested
+    toast.success('הפרסום נשלח לצ\'אט החי');
   };
+
+  const emojis = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '✨', '🙏', '🌹', '💍', '🏠', '📍', '😍', '😎', '🤔', '😢', '🎉', '🎁', '🎈', '⭐', '✅', '❌', '📞', '💌'];
+
+  const addEmoji = (emoji: string) => {
+    setInputText(prev => prev + emoji);
+    setShowEmojis(false);
+  };
+
+  const [showEmojis, setShowEmojis] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-[#E5DDD5] rounded-2xl overflow-hidden shadow-2xl border border-slate-200 relative">
@@ -444,7 +458,7 @@ export function WhatsAppWidget({
                       <span className="text-[10px] font-bold text-slate-600">כלול</span>
                     </label>
                   </div>
-                  <div className="rounded-2xl overflow-hidden border-4 border-white shadow-lg relative group max-w-sm mx-auto">
+                  <div className="rounded-2xl overflow-hidden border-4 border-white shadow-lg relative group max-w-2xl mx-auto">
                     <img src={matchImage} alt="Designed Card" className="w-full h-auto" />
                     {currentMatch && (
                       <button 
@@ -519,7 +533,34 @@ export function WhatsAppWidget({
                 ))}
                 <div ref={chatEndRef} />
               </div>
-              <div className="p-3 bg-[#F0F2F5] flex gap-2">
+              <div className="p-3 bg-[#F0F2F5] flex gap-2 relative">
+                <AnimatePresence>
+                  {showEmojis && (
+                    <motion.div 
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 20, opacity: 0 }}
+                      className="absolute bottom-full right-4 mb-2 bg-white border border-slate-100 shadow-2xl rounded-2xl p-3 grid grid-cols-6 gap-2 z-20"
+                    >
+                      {emojis.map(e => (
+                        <button 
+                          key={e} 
+                          onClick={() => addEmoji(e)}
+                          className="text-xl hover:scale-125 transition-transform p-1"
+                        >
+                          {e}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <button 
+                  type="button"
+                  onClick={() => setShowEmojis(!showEmojis)}
+                  className={`p-2 rounded-full transition-all ${showEmojis ? 'bg-[#00A884] text-white' : 'text-slate-500 hover:bg-white'}`}
+                >
+                  <Smile size={20} />
+                </button>
                 <input 
                   type="text" 
                   className="flex-1 bg-white rounded-full px-4 py-2 text-sm border-none focus:ring-0" 

@@ -1,23 +1,32 @@
 import React from 'react';
 import { Match } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare } from 'lucide-react';
-import { motion } from 'motion/react';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface MatchCardProps {
-  match: Match;
-  onPublish?: (match: Match) => void;
-  onView?: (match: Match) => void;
-  onEdit?: (id: number) => void;
-  onDelete?: (id: number) => void;
-  onHistory?: (match: Match) => void;
-  onImageClick?: (match: Match) => void;
-  showCreator?: boolean;
-  minimal?: boolean;
-  selected?: boolean;
-  onSelect?: (id: number, selected: boolean) => void;
-}
+   match: Match;
+   onPublish?: (match: Match) => void;
+   onView?: (match: Match) => void;
+   onEdit?: (id: number) => void;
+   onDelete?: (id: number) => void;
+   onHistory?: (match: Match) => void;
+   onImageClick?: (match: Match) => void;
+   onQuickUpdate?: (id: number, updates: Partial<Match>) => void;
+   onSuggest?: (match: Match) => void;
+   showCreator?: boolean;
+   minimal?: boolean;
+   selected?: boolean;
+   onSelect?: (id: number, selected: boolean) => void;
+ }
 
-export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, showCreator, minimal, selected, onSelect }: MatchCardProps) {
+export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, showCreator, minimal, selected, onSelect }: MatchCardProps) {
+  const { user } = useAuth();
+  const isViewer = user?.role === 'viewer';
+  const [isEditingGender, setIsEditingGender] = React.useState(false);
+  const [isEditingPhone, setIsEditingPhone] = React.useState(false);
+  const [tempPhone, setTempPhone] = React.useState(match.phone || '');
+
   const getMissingFields = (m: Match) => {
     const missing = [];
     if (!m.about || m.about.length < 5) missing.push('על עצמי');
@@ -88,22 +97,85 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
           <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors" />
         </div>
       )}
+      
+      {/* Additional Images */}
+      {!minimal && match.additional_images && (() => {
+        try {
+          const extras = JSON.parse(match.additional_images);
+          if (extras.length > 0) {
+            return (
+              <div className="flex gap-2 px-4 py-2 overflow-x-auto border-b border-slate-50 bg-slate-50/50">
+                {extras.map((img: string, i: number) => (
+                  <a 
+                    key={i} 
+                    href={img} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0 hover:border-luxury-blue transition-colors relative group/thumb"
+                    title="לחץ לפתיחה"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/10 transition-colors" />
+                  </a>
+                ))}
+              </div>
+            );
+          }
+        } catch (e) { return null; }
+      })()}
+
       <div className="p-6 flex flex-col flex-1">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             {showCreator && match.creator_name && (
-              <div className="absolute -top-3 left-4 bg-luxury-blue text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg z-30">
+              <div className="absolute top-2 left-2 bg-luxury-blue/90 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg z-30 border border-white/20">
                 מנהל: {match.creator_name}
               </div>
             )}
             <div>
               <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
             <div className="flex items-center gap-2 text-xs font-semibold mt-1">
-              <span className={`px-2 py-0.5 rounded-full ${
-                match.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
-              }`}>
-                {match.type === 'male' ? 'משודך' : 'משודכת'}
-              </span>
+              <div className="relative">
+                <button 
+                  onClick={() => !isViewer && setIsEditingGender(!isEditingGender)}
+                  disabled={isViewer}
+                  className={`px-2 py-0.5 rounded-full transition-all ${!isViewer ? 'hover:ring-2 hover:ring-luxury-blue/30' : 'cursor-default'} ${
+                    match.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                  }`}
+                >
+                  {match.type === 'male' ? 'משודך' : 'משודכת'}
+                </button>
+                <AnimatePresence>
+                  {isEditingGender && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="absolute top-full right-0 mt-1 bg-white border border-slate-100 shadow-xl rounded-xl p-2 z-50 flex flex-col gap-1 min-w-[100px]"
+                    >
+                      <button 
+                        onClick={() => {
+                          onQuickUpdate?.(match.id, { type: 'male' });
+                          setIsEditingGender(false);
+                        }}
+                        className="text-right px-3 py-1.5 hover:bg-blue-50 text-blue-700 rounded-lg text-xs font-bold"
+                      >
+                        משודך (זכר)
+                      </button>
+                      <button 
+                        onClick={() => {
+                          onQuickUpdate?.(match.id, { type: 'female' });
+                          setIsEditingGender(false);
+                        }}
+                        className="text-right px-3 py-1.5 hover:bg-pink-50 text-pink-700 rounded-lg text-xs font-bold"
+                      >
+                        משודכת (נקבה)
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
               <span className="text-text-secondary">{match.age} שנים</span>
               {match.creation_source && (
                 <span className={`px-2 py-0.5 rounded-full flex items-center gap-1 ${
@@ -128,7 +200,8 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
                   e.stopPropagation();
                   onEdit(match.id);
                 }} 
-                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all"
+                disabled={isViewer}
+                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                 title="ערוך כרטיס"
               >
                 <Edit size={18} />
@@ -140,7 +213,8 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
                   e.stopPropagation();
                   onDelete(match.id);
                 }} 
-                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                disabled={isViewer}
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                 title="מחק כרטיס"
               >
                 <Trash2 size={18} />
@@ -199,14 +273,25 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
           </div>
         )}
         {onPublish && (
-          <div className="flex flex-[2] gap-1">
+          <div className="flex flex-[2] gap-1 items-center">
             <button 
               onClick={() => onPublish(match)}
-              className="btn-whatsapp flex-1 py-2.5 text-sm font-bold"
+              disabled={isViewer}
+              className="btn-whatsapp flex-1 py-2.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send size={16} />
               פרסם
             </button>
+            {onSuggest && (
+              <button 
+                onClick={() => onSuggest(match)}
+                disabled={isViewer}
+                className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all flex items-center justify-center disabled:opacity-50"
+                title="הצע בצ'אט למנהל אחר"
+              >
+                <Paperclip size={18} />
+              </button>
+            )}
             {match.phone && (
               <a 
                 href={`https://wa.me/${match.phone.replace(/\D/g, '')}`}

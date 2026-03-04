@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminManagement() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,8 +15,14 @@ export default function AdminManagement() {
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<number | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
+  const [genderModalUser, setGenderModalUser] = useState<User | null>(null);
+  const [phoneModalUser, setPhoneModalUser] = useState<User | null>(null);
+  const [tempPhone, setTempPhone] = useState('');
   const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string[]>([]);
+  const [showPassword, setShowPassword] = useState<number | null>(null);
+  const [csvFiles, setCsvFiles] = useState<File[]>([]);
+  const [currentCsvIndex, setCurrentCsvIndex] = useState(0);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvCategory, setCsvCategory] = useState('');
   const [importing, setImporting] = useState(false);
@@ -31,11 +39,15 @@ export default function AdminManagement() {
     role: 'admin',
     status: 'active',
     category: '',
+    secondary_category: '',
     gender: '' as 'male' | 'female' | '',
     phone: '',
     google_login_allowed: 'true',
-    avatar_url: ''
+    avatar_url: '',
+    is_shaham_manager: 0
   });
+
+  const [tempGender, setTempGender] = useState<'male' | 'female' | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -71,7 +83,21 @@ export default function AdminManagement() {
         toast.success(editingUser ? 'המנהל עודכן' : 'מנהל חדש נוצר');
         setShowModal(false);
         setEditingUser(null);
-        setFormData({ name: '', username: '', email: '', password: '', role: 'admin', status: 'active', category: '', gender: '', phone: '', google_login_allowed: 'true', avatar_url: '' });
+        setFormData({ 
+          name: '', 
+          username: '', 
+          email: '', 
+          password: '', 
+          role: 'admin', 
+          status: 'active', 
+          category: '', 
+          secondary_category: '',
+          gender: '', 
+          phone: '', 
+          google_login_allowed: 'true', 
+          avatar_url: '',
+          is_shaham_manager: 0
+        });
         fetchUsers();
       } else {
         const data = await res.json();
@@ -130,18 +156,29 @@ export default function AdminManagement() {
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
             if (header === 'טלפון' || header === 'phone') admin.phone = val;
+            if (header === 'סיסמה' || header === 'password' || header.includes('סיסמה')) admin.password = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
             if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
-              const match = val.match(/\((https?:\/\/[^\)]+)\)/);
-              if (match) {
-                admin.avatar_url = match[1];
-              } else if (val.trim().startsWith('http')) {
-                admin.avatar_url = val.trim();
+              // Handle Google Drive links
+              if (val.includes('drive.google.com')) {
+                const idMatch = val.match(/[-\w]{25,}/);
+                if (idMatch) {
+                  admin.avatar_url = `https://lh3.googleusercontent.com/d/${idMatch[0]}`;
+                }
+              } else {
+                const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+                if (match) {
+                  admin.avatar_url = match[1];
+                } else if (val.trim().startsWith('http')) {
+                  admin.avatar_url = val.trim();
+                }
               }
             }
           });
-          if (!admin.username && admin.phone) admin.username = admin.phone;
+          if (!admin.username) admin.username = admin.phone || `user_${Date.now()}_${i}`;
+          if (!admin.name) admin.name = admin.username || 'מנהל ללא שם';
+          if (!admin.email) admin.email = `${admin.username}@shidduchim.com`;
           admins.push(admin);
 
           // Simulate scan progress
@@ -215,12 +252,58 @@ export default function AdminManagement() {
       role: user.role,
       status: user.status,
       category: user.category || '',
+      secondary_category: user.secondary_category || '',
       gender: user.gender || '',
       phone: user.phone || '',
       google_login_allowed: user.google_login_allowed || 'true',
-      avatar_url: user.avatar_url || ''
+      avatar_url: user.avatar_url || '',
+      is_shaham_manager: user.is_shaham_manager || 0
     });
     setShowModal(true);
+  };
+
+  const handleApprove = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/users/approve/${userId}`, { method: 'POST' });
+      if (res.ok) {
+        toast.success('המנהל אושר בהצלחה');
+        fetchUsers();
+      }
+    } catch (err) {
+      toast.error('שגיאה באישור המנהל');
+    }
+  };
+
+  const getCategoryColor = (cat: string | null) => {
+    if (!cat) return 'bg-slate-100 text-slate-600';
+    const colors: Record<string, string> = {
+      '18-22': 'bg-green-100 text-green-700 border-green-200',
+      '23-27': 'bg-blue-100 text-blue-700 border-blue-200',
+      '28-32': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+      '33-40': 'bg-purple-100 text-purple-700 border-purple-200',
+      '41-65': 'bg-pink-100 text-pink-700 border-pink-200',
+      'פרויקט שח"ם': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      'פרויקט קומי אורי': 'bg-amber-100 text-amber-700 border-amber-200',
+      'פרויקט אור': 'bg-orange-100 text-orange-700 border-orange-200'
+    };
+    return colors[cat] || 'bg-slate-100 text-slate-700 border-slate-200';
+  };
+
+  const getRowColor = (user: User) => {
+    if (user.role === 'super_admin') return 'bg-yellow-50/50 border-r-4 border-r-yellow-400 shadow-[inset_0_0_10px_rgba(250,204,21,0.1)]';
+    if (user.is_shaham_manager) return 'bg-purple-50/30 border-r-4 border-r-purple-400';
+    if (!user.category) return '';
+    const colors: Record<string, string> = {
+      '18-22': 'bg-green-50/30 border-r-4 border-r-green-400',
+      '23-27': 'bg-blue-50/30 border-r-4 border-r-blue-400',
+      '28-32': 'bg-indigo-50/30 border-r-4 border-r-indigo-400',
+      '33-40': 'bg-purple-50/30 border-r-4 border-r-purple-400',
+      '41-65': 'bg-pink-50/30 border-r-4 border-r-pink-400',
+      'פרויקט שח"ם': 'bg-emerald-50/30 border-r-4 border-r-emerald-400',
+      'פרויקט קומי אורי': 'bg-amber-50/30 border-r-4 border-r-amber-400',
+      'פרויקט אור': 'bg-orange-50/30 border-r-4 border-r-orange-400'
+    };
+    return colors[user.category] || '';
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -230,18 +313,84 @@ export default function AdminManagement() {
     
     const reader = new FileReader();
     reader.onloadend = () => {
-      setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
+      try {
+        setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
+      } catch (err) {
+        console.error('Error processing avatar:', err);
+        toast.error('שגיאה בעיבוד התמונה');
+      }
     };
     reader.readAsDataURL(file);
   };
 
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
 
+  const handleUpdateGender = async () => {
+    if (!genderModalUser || !tempGender) return;
+    try {
+      // Create a clean object without password fields to prevent re-hashing/corruption
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password, password_plain, ...userToUpdate } = genderModalUser;
+      
+      const res = await fetch(`/api/users/${genderModalUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...userToUpdate, gender: tempGender })
+      });
+      if (res.ok) {
+        toast.success('מין עודכן בהצלחה');
+        setGenderModalUser(null);
+        setTempGender(null);
+        fetchUsers();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בעדכון המין');
+      }
+    } catch (e) {
+      toast.error('שגיאה בעדכון המין');
+    }
+  };
+
+  const handleUpdatePhone = async () => {
+    if (!phoneModalUser) return;
+    try {
+      // Create a clean object without password fields
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password, password_plain, ...userToUpdate } = phoneModalUser;
+
+      const res = await fetch(`/api/users/${phoneModalUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ...userToUpdate, 
+          phone: tempPhone,
+          username: tempPhone // Update username to match phone as requested
+        })
+      });
+      if (res.ok) {
+        toast.success('מספר טלפון ושם משתמש עודכנו');
+        setPhoneModalUser(null);
+        fetchUsers();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בעדכון מספר טלפון');
+      }
+    } catch (e) {
+      toast.error('שגיאה בעדכון');
+    }
+  };
+
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
                           u.username.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = !filterCategory || u.category === filterCategory;
+    const matchesCategory = filterCategory.length === 0 || 
+                            (u.category && filterCategory.includes(u.category)) ||
+                            (u.secondary_category && filterCategory.includes(u.secondary_category));
     return matchesSearch && matchesCategory;
+  }).sort((a, b) => {
+    if (a.role === 'super_admin') return -1;
+    if (b.role === 'super_admin') return 1;
+    return 0;
   });
 
   return (
@@ -262,7 +411,21 @@ export default function AdminManagement() {
           <button 
             onClick={() => {
               setEditingUser(null);
-              setFormData({ name: '', username: '', email: '', password: '', role: 'admin', status: 'active', category: '', gender: '', phone: '', google_login_allowed: 'true', avatar_url: '' });
+              setFormData({ 
+                name: '', 
+                username: '', 
+                email: '', 
+                password: '', 
+                role: 'admin', 
+                status: 'active', 
+                category: '', 
+                secondary_category: '',
+                gender: '', 
+                phone: '', 
+                google_login_allowed: 'true', 
+                avatar_url: '',
+                is_shaham_manager: 0
+              });
               setShowModal(true);
             }}
             className="btn-primary flex items-center gap-2 px-6 py-3 shadow-lg"
@@ -286,17 +449,154 @@ export default function AdminManagement() {
         </div>
         <div className="relative">
           <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
-          <select 
-            className="input-field pr-10 font-bold"
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-          >
-            <option value="">כל הקבוצות</option>
+          <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
             {CATEGORIES.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
+              <button
+                key={cat}
+                onClick={() => {
+                  setFilterCategory(prev => 
+                    prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                  );
+                }}
+                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${
+                  filterCategory.includes(cat)
+                    ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue'
+                    : `${getCategoryColor(cat)} opacity-70 hover:opacity-100`
+                }`}
+              >
+                {cat}
+              </button>
             ))}
-          </select>
+            {filterCategory.length > 0 && (
+              <button 
+                onClick={() => setFilterCategory([])}
+                className="text-[10px] font-bold text-red-500 hover:underline"
+              >
+                נקה הכל
+              </button>
+            )}
+          </div>
         </div>
+      </div>
+
+      {/* Gender Selection Modal */}
+      <AnimatePresence>
+        {genderModalUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">שינוי מין מנהל</h3>
+                <p className="text-slate-500 font-medium">בחר את המין עבור {genderModalUser.name}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => setTempGender('male')}
+                  className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
+                    tempGender === 'male' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-100 hover:border-blue-200'
+                  }`}
+                >
+                  <UserIcon size={32} />
+                  <span className="font-bold">משודך (זכר)</span>
+                </button>
+                <button 
+                  onClick={() => setTempGender('female')}
+                  className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
+                    tempGender === 'female' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-100 hover:border-pink-200'
+                  }`}
+                >
+                  <Heart size={32} />
+                  <span className="font-bold">משודכת (נקבה)</span>
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    setGenderModalUser(null);
+                    setTempGender(null);
+                  }}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={handleUpdateGender}
+                  disabled={!tempGender}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  אישור ועדכון
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Phone Edit Modal */}
+      <AnimatePresence>
+        {phoneModalUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">עדכון מספר טלפון</h3>
+                <p className="text-slate-500 font-medium">עדכון מספר הטלפון יעדכן גם את שם המשתמש של {phoneModalUser.name}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase">מספר טלפון חדש</label>
+                  <input 
+                    type="text"
+                    value={tempPhone}
+                    onChange={(e) => setTempPhone(e.target.value)}
+                    className="input-field text-lg font-mono tracking-wider text-center"
+                    placeholder="הכנס מספר טלפון..."
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setPhoneModalUser(null)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={handleUpdatePhone}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all"
+                >
+                  אישור ועדכון
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap gap-4 items-center">
+        <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] animate-pulse"></div>
+          <span className="text-[10px] font-bold text-slate-600">מנהל ראשי</span>
+        </div>
+        {CATEGORIES.map(cat => (
+          <div key={cat} className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full border ${getCategoryColor(cat).split(' ')[0]}`}></div>
+            <span className="text-[10px] font-bold text-slate-600">{cat}</span>
+          </div>
+        ))}
       </div>
 
       <div className="card overflow-hidden border-none shadow-lg">
@@ -305,14 +605,14 @@ export default function AdminManagement() {
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מנהל</th>
+                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">סיסמא</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">נוצר ע"י</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מקור</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מין</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">טלפון</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">שם משתמש</th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">אימייל</th>
+                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">כניסה מייל כניסה גוגל</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">קבוצה</th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">גוגל</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">תפקיד</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">סטטוס</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs text-left">פעולות</th>
@@ -320,25 +620,67 @@ export default function AdminManagement() {
             </thead>
             <tbody className="divide-y divide-slate-50 bg-white">
               {filteredUsers.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${getRowColor(u)}`}>
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
-                      {u.avatar_url ? (
-                        <img 
-                          src={u.avatar_url} 
-                          alt={u.name} 
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 ${u.avatar_url ? 'hidden' : ''}`}>
-                        <UserCheck size={20} />
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="relative">
+                          {u.avatar_url ? (
+                            <img 
+                              src={u.avatar_url} 
+                              alt={u.name} 
+                              referrerPolicy="no-referrer"
+                              className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <div className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url ? 'hidden' : ''}`}>
+                            <UserCheck size={24} />
+                          </div>
+                          {u.role === 'super_admin' && (
+                            <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center text-white border-2 border-white shadow-sm">
+                              <ShieldAlert size={10} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                            {u.category || 'ללא קטגוריה'}
+                          </span>
+                          <span className="text-[8px] font-medium text-slate-400 uppercase">
+                            {u.role === 'super_admin' ? 'מנהל ראשי' : 
+                             u.role === 'team_leader' ? 'ראש צוות' :
+                             u.role === 'viewer' ? 'צופה' : 'מנהל'}
+                          </span>
+                        </div>
                       </div>
-                      <span className="font-bold text-text-main">{u.name}</span>
+                      <div className="flex flex-col">
+                        <span className={`font-bold ${u.role === 'super_admin' ? 'text-yellow-700' : 'text-text-main'}`}>{u.name}</span>
+                        <span className="text-[10px] text-slate-400">{u.email}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono text-slate-600">
+                          {showPassword === u.id ? (u.password_plain || '******') : '******'}
+                        </span>
+                        {currentUser?.role === 'super_admin' && (
+                          <button 
+                            onClick={() => setShowPassword(showPassword === u.id ? null : u.id)}
+                            className="p-1 text-slate-400 hover:text-luxury-blue transition-all"
+                          >
+                            {showPassword === u.id ? <X size={14} /> : <Search size={14} />}
+                          </button>
+                        )}
+                      </div>
+                      {u.password_updated_at && (
+                        <span className="text-[9px] text-slate-400">הסיסמא שונתה לאחרונה ב-{new Date(u.password_updated_at).toLocaleDateString('he-IL')}</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -352,11 +694,27 @@ export default function AdminManagement() {
                     )}
                   </td>
                   <td className="px-6 py-5 text-text-secondary font-medium">
-                    {u.gender === 'male' ? 'בן' : u.gender === 'female' ? 'בת' : '---'}
+                    <button 
+                      onClick={() => {
+                        setGenderModalUser(u);
+                        setTempGender(u.gender);
+                      }}
+                      className="hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
+                    >
+                      {u.gender === 'male' ? 'בן' : u.gender === 'female' ? 'בת' : '---'}
+                    </button>
                   </td>
                   <td className="px-6 py-5 text-text-secondary font-medium">
                     <div className="flex items-center gap-2">
-                      {u.phone || '---'}
+                      <button 
+                        onClick={() => {
+                          setPhoneModalUser(u);
+                          setTempPhone(u.phone || '');
+                        }}
+                        className="hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
+                      >
+                        {u.phone || '---'}
+                      </button>
                       {u.phone && (
                         <a 
                           href={`https://wa.me/${u.phone.replace(/\D/g, '')}`} 
@@ -371,73 +729,96 @@ export default function AdminManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-5 text-text-main font-medium">{u.username}</td>
-                  <td className="px-6 py-5 text-text-secondary font-medium">{u.email}</td>
                   <td className="px-6 py-5">
-                    <div className="relative">
-                      <button 
-                        onClick={() => setExpandedGroupsUserId(expandedGroupsUserId === u.id ? null : u.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
-                          expandedGroupsUserId === u.id 
-                            ? 'bg-luxury-blue text-white border-luxury-blue shadow-md' 
-                            : 'bg-white text-text-main border-slate-200 hover:border-luxury-blue'
-                        }`}
-                      >
-                        <span className="text-xs font-bold">{u.category || 'ללא קטגוריה'}</span>
-                        <ChevronDown size={14} className={`transition-transform ${expandedGroupsUserId === u.id ? 'rotate-180' : ''}`} />
-                      </button>
-
-                      <AnimatePresence>
-                        {expandedGroupsUserId === u.id && u.category && (
-                          <motion.div 
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            className="absolute z-50 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 p-4 space-y-3 right-0"
-                          >
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 pb-2">קבוצות משוייכות:</p>
-                            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
-                              {whatsappGroups
-                                .filter(g => g.category === u.category)
-                                .map(group => (
-                                  <div key={group.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-luxury-blue transition-colors">
-                                    <span className="text-xs font-bold text-text-main">{group.name}</span>
-                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${group.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                                      {group.type === 'male' ? 'בנים' : 'בנות'}
-                                    </span>
-                                  </div>
-                                ))
-                              }
-                              {whatsappGroups.filter(g => g.category === u.category).length === 0 && (
-                                <p className="text-xs text-slate-400 italic py-2">לא נמצאו קבוצות בקטגוריה זו</p>
-                              )}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-text-main">{u.email}</span>
+                      <span className="text-[10px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                      u.google_login_allowed === 'true' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-700'
-                    }`}>
-                      {u.google_login_allowed === 'true' ? 'מאופשר' : 'חסום'}
-                    </span>
+                    <div className="relative group/nav">
+                      <div className="flex flex-col gap-1 w-full">
+                        {u.is_shaham_manager === 1 ? (
+                          <div className="text-[10px] font-bold px-2 py-0.5 rounded-full text-center border bg-blue-50 text-blue-700 border-blue-200">
+                            פרויקט שח"ם
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.category)}`}>
+                              {u.category || 'ללא שיוך'}
+                            </div>
+                            {u.secondary_category && (
+                              <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
+                                {u.secondary_category}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* Group Navigation Menu */}
+                      <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
+                        <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider">קבוצות מנוהלות</p>
+                        <div className="space-y-1">
+                          {whatsappGroups.filter(g => g.category === u.category || g.category === u.secondary_category).map(g => (
+                            <a 
+                              key={g.id}
+                              href={g.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-all"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${g.type === 'male' ? 'bg-blue-400' : 'bg-pink-400'}`}></div>
+                                {g.name}
+                              </div>
+                              <ExternalLink size={12} className="text-slate-300" />
+                            </a>
+                          ))}
+                          {whatsappGroups.filter(g => g.category === u.category || g.category === u.secondary_category).length === 0 && (
+                            <p className="text-[10px] text-slate-400 p-2 italic">אין קבוצות משויכות</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                      u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />}
-                      {u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                        u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 
+                        u.role === 'team_leader' ? 'bg-indigo-100 text-indigo-700' :
+                        u.role === 'viewer' ? 'bg-slate-100 text-slate-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />}
+                        {u.role === 'super_admin' ? 'מנהל ראשי' : 
+                         u.role === 'team_leader' ? 'ראש צוות' :
+                         u.role === 'viewer' ? 'צופה' : 'מנהל'}
+                      </span>
+                      {u.is_shaham_manager === 1 && (
+                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 text-center shadow-sm">
+                          קבוצת שחם בלבד
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                      u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {u.status === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                      {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                        u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {u.status === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                        {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
+                      </span>
+                      {u.is_approved === 0 && (
+                        <button 
+                          onClick={() => handleApprove(u.id)}
+                          className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 hover:bg-amber-100 transition-all"
+                        >
+                          אשר מנהל
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-5 text-left">
                     <div className="flex items-center justify-end gap-2">
@@ -466,53 +847,72 @@ export default function AdminManagement() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="card w-full max-w-md p-8 space-y-6 shadow-2xl border-none"
+              className="card w-full max-w-2xl p-8 space-y-6 shadow-2xl border-none max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-extrabold text-text-main">ייבוא מנהלים מקובץ</h2>
-                <button onClick={() => setShowCsvModal(false)} className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
+                <h2 className="text-2xl font-extrabold text-text-main">ייבוא מנהלים מקבצים</h2>
+                <button onClick={() => {
+                  setShowCsvModal(false);
+                  setCsvFiles([]);
+                  setScannedAdmins([]);
+                }} className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleCsvUpload} className="space-y-6">
+              <div className="space-y-6">
                 <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center gap-4">
                   <FileUp size={40} className="text-slate-300" />
                   <div className="text-center">
-                    <p className="text-sm font-bold text-text-main">בחר קובץ CSV</p>
+                    <p className="text-sm font-bold text-text-main">בחר קבצי CSV (ניתן לבחור כמה)</p>
                     <p className="text-xs text-text-secondary mt-1">עמודות נדרשות: שם, שם משתמש, אימייל, טלפון, מין</p>
                   </div>
                   <input 
                     type="file" 
                     accept=".csv" 
+                    multiple
                     onChange={(e) => {
-                      setCsvFile(e.target.files?.[0] || null);
+                      const files = Array.from(e.target.files || []);
+                      setCsvFiles(files);
                       setScannedAdmins([]);
                     }}
                     className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-luxury-blue file:text-white hover:file:bg-blue-700"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצה</label>
-                  <select 
-                    required
-                    className="input-field font-bold" 
-                    value={csvCategory} 
-                    onChange={(e) => setCsvCategory(e.target.value)}
-                  >
-                    <option value="">בחר קבוצה...</option>
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
+                {csvFiles.length > 0 && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-bold text-text-main border-b border-slate-100 pb-2">שיוך קבצים לקבוצות:</p>
+                    {csvFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
+                          <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                        <select 
+                          className="text-xs font-bold p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-luxury-blue"
+                          onChange={(e) => {
+                            const newFiles = [...csvFiles];
+                            // We need a way to store the category per file. 
+                            // I'll use a temporary state or just handle it in the scan.
+                            (file as any).targetCategory = e.target.value;
+                          }}
+                        >
+                          <option value="">בחר קבוצה...</option>
+                          {CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
                     ))}
-                  </select>
-                </div>
+                  </div>
+                )}
 
                 {(isScanning || scannedAdmins.length > 0) && (
                   <div className="space-y-3">
                     <div className="flex justify-between text-xs font-bold text-text-secondary uppercase tracking-wider">
-                      <span>{isScanning ? 'סורק קובץ...' : 'סריקה הושלמה'}</span>
-                      <span>{isScanning ? `${scanProgress}%` : `${scannedAdmins.length} מנהלים נמצאו`}</span>
+                      <span>{isScanning ? 'סורק קבצים...' : 'סריקה הושלמה'}</span>
+                      <span>{isScanning ? `${scanProgress}%` : `${scannedAdmins.length} מנהלים נמצאו סה"כ`}</span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                       <motion.div 
@@ -531,7 +931,11 @@ export default function AdminManagement() {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4">
-                  <button type="button" onClick={() => setShowCsvModal(false)} className="btn-secondary px-6 py-3 font-bold">ביטול</button>
+                  <button type="button" onClick={() => {
+                    setShowCsvModal(false);
+                    setCsvFiles([]);
+                    setScannedAdmins([]);
+                  }} className="btn-secondary px-6 py-3 font-bold">ביטול</button>
                   {scannedAdmins.length > 0 ? (
                     <button 
                       type="button"
@@ -543,15 +947,72 @@ export default function AdminManagement() {
                     </button>
                   ) : (
                     <button 
-                      type="submit" 
-                      disabled={isScanning || !csvFile}
+                      type="button" 
+                      onClick={async () => {
+                        if (csvFiles.length === 0) return toast.error('אנא בחר קבצים');
+                        const unassigned = csvFiles.find(f => !(f as any).targetCategory);
+                        if (unassigned) return toast.error(`אנא בחר קבוצה עבור הקובץ: ${unassigned.name}`);
+
+                        setIsScanning(true);
+                        setScanProgress(0);
+                        const allAdmins: any[] = [];
+
+                        for (let fIdx = 0; fIdx < csvFiles.length; fIdx++) {
+                          const file = csvFiles[fIdx];
+                          const text = await file.text();
+                          const lines = text.split('\n').filter(line => line.trim());
+                          const headers = lines[0].split(',').map(h => h.trim());
+                          
+                          for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',').map(v => v.trim());
+                            const admin: any = {
+                              category: (file as any).targetCategory,
+                              password: '12345678',
+                              is_from_file: 1,
+                              role: 'admin',
+                              status: 'active',
+                              google_login_allowed: 'true'
+                            };
+                            headers.forEach((header, j) => {
+                              const val = values[j];
+                              if (!val) return;
+                              if (header === 'שם' || header === 'name' || header.includes('שם וטלפון')) {
+                                if (val.includes(' - ')) {
+                                  const parts = val.split(' - ');
+                                  admin.phone = parts[0].trim();
+                                  admin.name = parts[1].trim();
+                                  admin.username = parts[0].trim();
+                                } else {
+                                  admin.name = val;
+                                }
+                              }
+                              if (header === 'שם משתמש' || header === 'username') admin.username = val;
+                              if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
+                              if (header === 'טלפון' || header === 'phone') admin.phone = val;
+                              if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
+                              if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
+                                const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+                                if (match) admin.avatar_url = match[1];
+                                else if (val.trim().startsWith('http')) admin.avatar_url = val.trim();
+                              }
+                            });
+                            if (!admin.username && admin.phone) admin.username = admin.phone;
+                            allAdmins.push(admin);
+                          }
+                          setScanProgress(Math.round(((fIdx + 1) / csvFiles.length) * 100));
+                        }
+                        setScannedAdmins(allAdmins);
+                        setIsScanning(false);
+                        toast.success(`סריקה הושלמה! נמצאו ${allAdmins.length} מנהלים.`);
+                      }}
+                      disabled={isScanning || csvFiles.length === 0}
                       className="btn-primary px-8 py-3 font-bold shadow-md flex items-center justify-center gap-2"
                     >
-                      {isScanning ? 'סורק...' : 'סרוק קובץ'}
+                      {isScanning ? 'סורק...' : 'סרוק קבצים'}
                     </button>
                   )}
                 </div>
-              </form>
+              </div>
             </motion.div>
           </div>
         )}
@@ -609,14 +1070,25 @@ export default function AdminManagement() {
                     </label>
                     <input type="password" required={!editingUser} className="input-field" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצת גיל / פרויקט</label>
-                    <select className="input-field font-bold" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
-                      <option value="">ללא שיוך</option>
-                      {CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצה 1</label>
+                      <select className="input-field font-bold" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                        <option value="">ללא שיוך</option>
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצה 2 (שח"ם)</label>
+                      <select className="input-field font-bold" value={formData.secondary_category} onChange={(e) => setFormData({...formData, secondary_category: e.target.value})}>
+                        <option value="">ללא שיוך נוסף</option>
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">מין המנהל/ת</label>
@@ -638,6 +1110,21 @@ export default function AdminManagement() {
                   </div>
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div>
+                      <p className="text-sm font-bold text-text-main">מנהל קבוצת שח"ם</p>
+                      <p className="text-[10px] text-text-secondary">ניהול שתי הקבוצות במקביל</p>
+                    </div>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={formData.is_shaham_manager === 1}
+                        onChange={(e) => setFormData({...formData, is_shaham_manager: e.target.checked ? 1 : 0})}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-luxury-blue"></div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div>
                       <p className="text-sm font-bold text-text-main">התחברות עם גוגל</p>
                       <p className="text-[10px] text-text-secondary font-medium">אפשר למנהל זה להתחבר באמצעות חשבון גוגל</p>
                     </div>
@@ -654,6 +1141,8 @@ export default function AdminManagement() {
                       <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">תפקיד</label>
                       <select className="input-field font-bold" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
                         <option value="admin">מנהל רגיל</option>
+                        <option value="team_leader">ראש צוות</option>
+                        <option value="viewer">צופה</option>
                         <option value="super_admin">מנהל ראשי</option>
                       </select>
                     </div>

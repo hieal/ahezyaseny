@@ -71,6 +71,8 @@ try {
       assigned_group_id TEXT,
       is_from_file INTEGER DEFAULT 0,
       is_approved INTEGER DEFAULT 1,
+      is_shaham_manager INTEGER DEFAULT 0,
+      password_updated_at DATETIME,
       created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(created_by) REFERENCES users(id)
@@ -176,7 +178,7 @@ try {
 const migrate = () => {
   console.log("Running migrations...");
   const tables = {
-    users: ['gender', 'phone', 'category', 'secondary_category', 'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 'daily_message_template_male', 'daily_message_template_female', 'assigned_group_id', 'is_from_file', 'is_approved', 'created_by', 'password_plain'],
+    users: ['gender', 'phone', 'category', 'secondary_category', 'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 'daily_message_template_male', 'daily_message_template_female', 'assigned_group_id', 'is_from_file', 'is_approved', 'created_by', 'password_plain', 'is_shaham_manager', 'password_updated_at'],
     whatsapp_groups: ['whapi_id', 'last_initial_sent', 'last_initial_sent_method'],
     matches: ['deleted_at', 'last_published_at', 'publish_count', 'phone', 'is_published_confirmed', 'crop_config', 'creation_source']
   };
@@ -190,7 +192,7 @@ const migrate = () => {
         if (!existingColumns.includes(column)) {
           try {
             let type = 'TEXT';
-            if (column === 'publish_count' || column === 'created_by' || column === 'is_from_file' || column === 'is_approved') type = 'INTEGER';
+            if (column === 'publish_count' || column === 'created_by' || column === 'is_from_file' || column === 'is_approved' || column === 'is_shaham_manager') type = 'INTEGER';
             if (column.includes('at')) type = 'DATETIME';
             
             db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
@@ -215,7 +217,8 @@ const CATEGORIES = [
   '28-32',
   '33-40',
   '41-65',
-  'פרויקט שח"ם',
+  'פרויקט שח"ם 20-35',
+  'פרויקט שח"ם 36-50',
   'פרויקט קומי אורי',
   'פרויקט אור'
 ];
@@ -233,14 +236,29 @@ if (groupCount.count === 0) {
     insertGroup.run(cat, 'male', `קבוצת בנים ${cat}`, "");
     insertGroup.run(cat, 'female', `קבוצת בנות ${cat}`, "");
   });
+} else {
+  // Add missing groups for new categories
+  const existingGroups = db.prepare("SELECT category FROM whatsapp_groups GROUP BY category").all() as any[];
+  const existingCategories = existingGroups.map(g => g.category);
+  const insertGroup = db.prepare("INSERT INTO whatsapp_groups (category, type, name, link) VALUES (?, ?, ?, ?)");
+  
+  CATEGORIES.forEach(cat => {
+    if (!existingCategories.includes(cat)) {
+      insertGroup.run(cat, 'male', `קבוצת בנים ${cat}`, "");
+      insertGroup.run(cat, 'female', `קבוצת בנות ${cat}`, "");
+    }
+  });
 }
 
 // Seed Super Admin if not exists
 const superAdmin = db.prepare("SELECT * FROM users WHERE role = 'super_admin'").get();
 if (!superAdmin) {
   const hashedPassword = bcrypt.hashSync("good", 10);
-  db.prepare("INSERT INTO users (name, username, email, password, role, status) VALUES (?, ?, ?, ?, ?, ?)")
-    .run("מנהל ראשי", "good", "admin@shidduchim.com", hashedPassword, "super_admin", "active");
+  db.prepare("INSERT INTO users (name, username, email, password, password_plain, role, status, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run("מנהל ראשי", "good", "admin@shidduchim.com", hashedPassword, "good", "super_admin", "active", 1);
+} else {
+  // Ensure existing super admin is approved
+  db.prepare("UPDATE users SET is_approved = 1 WHERE role = 'super_admin'").run();
 }
 // Removed the automatic update that was resetting credentials on every boot
 
@@ -461,39 +479,54 @@ const isSuperAdmin = (req: any, res: any, next: any) => {
 };
 
 // Internal Messages
-app.get("/api/internal-messages/:otherUserId", authenticateToken, (req, res) => {
+app.get("/api/internal-messages/:otherUserId", authenticate, (req, res) => {
   const userId = (req as any).user.id;
   const { otherUserId } = req.params;
   const messages = db.prepare(`
-    SELECT m.*, u.name as sender_name 
-    FROM internal_messages m 
-    JOIN users u ON m.sender_id = u.id 
-    WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-    ORDER BY created_at ASC
+    SELECT im.*, u.name as sender_name,
+           m.name as match_name, m.type as match_type, m.age as match_age, m.city as match_city
+    FROM internal_messages im
+    JOIN users u ON im.sender_id = u.id 
+    LEFT JOIN matches m ON im.match_id = m.id
+    WHERE (im.sender_id = ? AND im.receiver_id = ?) OR (im.sender_id = ? AND im.receiver_id = ?)
+    ORDER BY im.created_at ASC
   `).all(userId, otherUserId, otherUserId, userId);
   res.json(messages);
 });
 
+app.delete("/api/internal-messages/:id", authenticate, (req: any, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  
+  // Only allow deleting own messages
+  const message: any = db.prepare("SELECT * FROM internal_messages WHERE id = ?").get(id);
+  if (!message) return res.status(404).json({ error: "Message not found" });
+  if (message.sender_id !== userId) return res.status(403).json({ error: "Forbidden" });
+
+  db.prepare("DELETE FROM internal_messages WHERE id = ?").run(id);
+  res.json({ success: true });
+});
+
 // Notifications
-app.get("/api/notifications", authenticateToken, (req, res) => {
+app.get("/api/notifications", authenticate, (req, res) => {
   const userId = (req as any).user.id;
   const notifications = db.prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50").all(userId);
   res.json(notifications);
 });
 
-app.put("/api/notifications/read", authenticateToken, (req, res) => {
+app.put("/api/notifications/read", authenticate, (req, res) => {
   const userId = (req as any).user.id;
   db.prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?").run(userId);
   res.json({ success: true });
 });
 
 // Online Users
-app.get("/api/online-users", authenticateToken, (req, res) => {
+app.get("/api/online-users", authenticate, (req, res) => {
   res.json(Array.from(onlineUsers.keys()));
 });
 
 // Change Password
-app.post("/api/users/change-password", authenticateToken, (req, res) => {
+app.post("/api/users/change-password", authenticate, (req, res) => {
   const userId = (req as any).user.id;
   const { oldPassword, newPassword } = req.body;
 
@@ -510,7 +543,7 @@ app.post("/api/users/change-password", authenticateToken, (req, res) => {
 });
 
 // Approve User
-app.post("/api/users/approve/:id", authenticateToken, (req, res) => {
+app.post("/api/users/approve/:id", authenticate, (req, res) => {
   const userRole = (req as any).user.role;
   if (userRole !== 'super_admin') return res.status(403).json({ error: "Unauthorized" });
 
@@ -520,7 +553,7 @@ app.post("/api/users/approve/:id", authenticateToken, (req, res) => {
 });
 
 // Match Suggestions
-app.get("/api/matches/suggestions", authenticateToken, (req, res) => {
+app.get("/api/matches/suggestions", authenticate, (req, res) => {
   const userId = (req as any).user.id;
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
   
@@ -550,17 +583,24 @@ app.post("/api/auth/login", (req, res) => {
   // Normalize input for phone search (remove non-digits)
   const normalizedInput = username.replace(/\D/g, '');
   
-  // Try finding by username OR phone (exact or normalized)
+  // Try finding by username OR phone (exact or normalized) OR name OR email
   const user: any = db.prepare(`
     SELECT * FROM users 
     WHERE username = ? 
+    OR name = ?
+    OR email = ?
     OR phone = ? 
     OR REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '+', '') = ?
-  `).get(username, username, normalizedInput);
+  `).get(username, username, username, username, normalizedInput);
 
   if (!user) return res.status(400).json({ error: "משתמש לא קיים" });
   if (user.status === 'inactive') return res.status(403).json({ error: "משתמש זה אינו פעיל" });
+  if (user.is_approved === 0) return res.status(403).json({ error: "משתמש זה ממתין לאישור מנהל" });
   
+  if (!user.password) {
+    return res.status(400).json({ error: "למשתמש זה אין סיסמה מוגדרת. נסה להתחבר עם גוגל." });
+  }
+
   const validPassword = bcrypt.compareSync(password, user.password);
   if (!validPassword) return res.status(400).json({ error: "סיסמה שגויה" });
 
@@ -656,7 +696,7 @@ app.post("/api/users", authenticate, async (req: any, res) => {
     return res.status(403).json({ error: "Unauthorized" });
   }
 
-  const { name, username, email, password, role, status, category, secondary_category, gender, phone, google_login_allowed, avatar_url, is_from_file, assigned_group_id } = req.body;
+  const { name, username, email, password, role, status, category, secondary_category, gender, phone, google_login_allowed, avatar_url, is_from_file, assigned_group_id, is_shaham_manager } = req.body;
   const normalizedEmail = email?.toLowerCase();
   
   let finalAvatarUrl = avatar_url;
@@ -667,25 +707,31 @@ app.post("/api/users", authenticate, async (req: any, res) => {
 
   const hashedPassword = bcrypt.hashSync(password || "123456", 10);
   const isApproved = req.user.role === 'super_admin' ? 1 : 0;
+  const now = new Date().toISOString();
 
   try {
     const result = db.prepare(`
       INSERT INTO users (
         name, username, email, password, password_plain, role, status, 
         category, secondary_category, gender, phone, google_login_allowed, 
-        avatar_url, is_from_file, is_approved, assigned_group_id, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        avatar_url, is_from_file, is_approved, assigned_group_id, is_shaham_manager, password_updated_at, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      name, username, normalizedEmail, hashedPassword, password || "123456", 
+      name, username, normalizedEmail, hashedPassword, password || "12345678", 
       role || 'admin', status || 'active', category || null, secondary_category || null, 
       gender || null, phone || null, google_login_allowed || 'true', 
-      finalAvatarUrl || null, is_from_file || 0, isApproved, assigned_group_id || null, req.user.id
+      finalAvatarUrl || null, is_from_file || 0, isApproved, assigned_group_id || null, is_shaham_manager || 0, now, req.user.id
     );
     
     logActivity(req.user.id, "יצירת מנהל", `נוצר מנהל חדש: ${name} (${username})`, "user", result.lastInsertRowid as number);
     res.json({ id: result.lastInsertRowid });
   } catch (err: any) {
-    res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים" });
+    console.error("Error creating user:", err);
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים" });
+    } else {
+      res.status(500).json({ error: "שגיאה ביצירת המשתמש: " + err.message });
+    }
   }
 });
 
@@ -694,7 +740,7 @@ app.put("/api/users/:id", authenticate, (req: any, res) => {
     return res.status(403).json({ error: "Unauthorized" });
   }
 
-  const { name, username, email, password, role, status, category, secondary_category, gender, phone, google_login_allowed, avatar_url, assigned_group_id } = req.body;
+  const { name, username, email, password, role, status, category, secondary_category, gender, phone, google_login_allowed, avatar_url, assigned_group_id, is_shaham_manager } = req.body;
   const normalizedEmail = email?.toLowerCase();
   
   // Get existing user to preserve avatar if not provided
@@ -704,27 +750,37 @@ app.put("/api/users/:id", authenticate, (req: any, res) => {
   const updateFields = [
     "name = ?", "username = ?", "email = ?", "role = ?", "status = ?", 
     "category = ?", "secondary_category = ?", "gender = ?", "phone = ?", 
-    "google_login_allowed = ?", "avatar_url = ?", "assigned_group_id = ?"
+    "google_login_allowed = ?", "avatar_url = ?", "assigned_group_id = ?", "is_shaham_manager = ?"
   ];
   const params = [
     name, username, normalizedEmail, role, status, 
     category, secondary_category, gender, phone, 
-    google_login_allowed, finalAvatar, assigned_group_id || null
+    google_login_allowed, finalAvatar, assigned_group_id || null, is_shaham_manager || 0
   ];
 
   if (password) {
     const hashedPassword = bcrypt.hashSync(password, 10);
-    updateFields.push("password = ?", "password_plain = ?");
-    params.push(hashedPassword, password);
+    const now = new Date().toISOString();
+    updateFields.push("password = ?", "password_plain = ?", "password_updated_at = ?");
+    params.push(hashedPassword, password, now);
   }
 
   params.push(req.params.id);
 
-  db.prepare(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`)
-    .run(...params);
+  try {
+    db.prepare(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`)
+      .run(...params);
 
-  logActivity(req.user.id, "עדכון מנהל", `עודכנו פרטי מנהל: ${name}`, "user", parseInt(req.params.id));
-  res.json({ message: "User updated" });
+    logActivity(req.user.id, "עדכון מנהל", `עודכנו פרטי מנהל: ${name}`, "user", parseInt(req.params.id));
+    res.json({ message: "User updated" });
+  } catch (err: any) {
+    console.error("Error updating user:", err);
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים במערכת" });
+    } else {
+      res.status(500).json({ error: "שגיאה בעדכון המשתמש: " + err.message });
+    }
+  }
 });
 
 app.delete("/api/users/:id", authenticate, isSuperAdmin, (req: any, res) => {
@@ -993,6 +1049,38 @@ app.post("/api/whatsapp/initial-sent", authenticate, (req: any, res) => {
 });
 
 // Stats
+app.get("/api/daily-suggestions", authenticate, (req: any, res) => {
+  try {
+    // Get 3 random matches of the current user
+    const myMatches = db.prepare(`
+      SELECT * FROM matches 
+      WHERE created_by = ? AND deleted_at IS NULL 
+      ORDER BY RANDOM() LIMIT 3
+    `).all(req.user.id) as any[];
+
+    const suggestions = myMatches.map(match => {
+      // Find potential matches of opposite gender from other managers
+      const oppositeGender = match.type === 'male' ? 'female' : 'male';
+      const potentialMatches = db.prepare(`
+        SELECT m.*, u.name as creator_name 
+        FROM matches m
+        JOIN users u ON m.created_by = u.id
+        WHERE m.type = ? AND m.deleted_at IS NULL AND m.created_by != ?
+        ORDER BY RANDOM() LIMIT 2
+      `).all(oppositeGender, req.user.id);
+      
+      return {
+        match,
+        potentialMatches
+      };
+    });
+
+    res.json(suggestions);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch daily suggestions" });
+  }
+});
+
 app.get("/api/stats", authenticate, (req: any, res) => {
   const userId = req.user.role === 'super_admin' ? null : req.user.id;
   
@@ -1349,7 +1437,14 @@ io.on("connection", (socket) => {
         .run(senderId, receiverId, text, matchId || null);
       
       const messageId = result.lastInsertRowid;
-      const message = db.prepare("SELECT m.*, u.name as sender_name FROM internal_messages m JOIN users u ON m.sender_id = u.id WHERE m.id = ?").get(messageId) as any;
+      const message = db.prepare(`
+        SELECT im.*, u.name as sender_name,
+               m.name as match_name, m.type as match_type, m.age as match_age, m.city as match_city
+        FROM internal_messages im 
+        JOIN users u ON im.sender_id = u.id 
+        LEFT JOIN matches m ON im.match_id = m.id
+        WHERE im.id = ?
+      `).get(messageId) as any;
 
       // Send to receiver if online
       const receiverSocketId = onlineUsers.get(receiverId);

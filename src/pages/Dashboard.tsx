@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -57,54 +57,85 @@ export default function Dashboard() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [showWhatsAppFloating, setShowWhatsAppFloating] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showConnectedAdminsModal, setShowConnectedAdminsModal] = useState(false);
+  const [showChat, setShowChat] = useState<any>(null);
+  const [dailySuggestions, setDailySuggestions] = useState<any[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
+
+  const handleSuggest = (match: Match) => {
+    setShowConnectedAdminsModal(true);
+    toast(`בחר מנהל להציע לו את ${match.name}`, { icon: '💬' });
+  };
+
+  const fetchDailySuggestions = async () => {
+    setLoadingSuggestions(true);
+    try {
+      const res = await fetch('/api/daily-suggestions');
+      if (res.ok) {
+        setDailySuggestions(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch daily suggestions:', err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
 
   const generateDesignedImage = async (match: Match) => {
     setIsGenerating(true);
     const canvas = document.createElement('canvas');
-    canvas.width = 1400;
-    canvas.height = 2800; // Increased height significantly
+    canvas.width = 2000; // Increased width
+    canvas.height = 3500; // Increased height
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
       return;
     }
 
-    const margin = 80;
+    const margin = 120;
     const accentColor = match.type === 'male' ? '#2563eb' : '#db2777';
     const lightAccent = match.type === 'male' ? '#eff6ff' : '#fdf2f8';
     const greenColor = '#16a34a'; 
-    const loveBg = '#fff5f5';
+    const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 2800);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 3500);
     gradient.addColorStop(0, loveBg);
-    gradient.addColorStop(1, lightAccent);
+    gradient.addColorStop(0.5, lightAccent);
+    gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1400, 2800);
+    ctx.fillRect(0, 0, 2000, 3500);
 
-    // Decorative Frame with Glow
+    // Decorative Frame with Glow - Enhanced
     ctx.save();
-    ctx.shadowBlur = 40;
+    ctx.shadowBlur = 100; // Increased glow
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
-    ctx.lineWidth = 20;
-    ctx.strokeRect(margin, margin, 1400 - margin*2, 2800 - margin*2);
+    ctx.lineWidth = 40; // Thicker border
+    ctx.strokeRect(margin, margin, 2000 - margin*2, 3500 - margin*2);
+    
+    // Inner glow line
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(margin + 25, margin + 25, 2000 - margin*2 - 50, 3500 - margin*2 - 50);
     ctx.restore();
     
     // Header Section
     ctx.fillStyle = '#ffffff';
-    ctx.roundRect(margin + 20, margin + 20, 1400 - margin*2 - 40, 260, 30);
+    ctx.roundRect(margin + 40, margin + 40, 2000 - margin*2 - 80, 320, 50);
     ctx.fill();
     
     // Logo and Title Side-by-Side
-    const headerCenterY = margin + 150;
+    const headerCenterY = margin + 200;
     
     // Logo
     ctx.save();
-    ctx.translate(120, margin + 50);
-    const logoSize = 180;
+    ctx.translate(200, margin + 90);
+    const logoSize = 220;
     ctx.strokeStyle = greenColor;
-    ctx.lineWidth = 14;
+    ctx.lineWidth = 18;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     
@@ -130,17 +161,17 @@ export default function Dashboard() {
     // Title
     ctx.textAlign = 'right';
     ctx.fillStyle = greenColor;
-    ctx.font = 'bold 75px sans-serif';
-    ctx.fillText('כרטיס היכרויות של החצי השני', 1300, headerCenterY - 20);
+    ctx.font = 'bold 95px sans-serif';
+    ctx.fillText('כרטיס היכרויות של החצי השני', 1800, headerCenterY - 25);
     
-    ctx.font = 'bold 40px sans-serif';
-    ctx.fillText('אנשים פוגשים אנשים', 1300, headerCenterY + 45);
+    ctx.font = 'bold 55px sans-serif';
+    ctx.fillText('אנשים פוגשים אנשים', 1800, headerCenterY + 55);
 
-    // Image Section
-    const imgX = 200;
-    const imgY = 380; // Moved down to avoid header
-    const imgW = 1000;
-    const imgH = 1000; // Larger image
+    // Image Section - Adjusted for less cropping
+    const imgX = 200; // Wider image area
+    const imgY = 500;
+    const imgW = 1600; // Wider image area
+    const imgH_actual = 1600; 
 
     if (match.image_url) {
       try {
@@ -158,30 +189,35 @@ export default function Dashboard() {
         
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(imgX, imgY, imgW, imgH, 60);
+        ctx.roundRect(imgX, imgY, imgW, imgH_actual, 100);
         ctx.clip();
         
         if (match.crop_config) {
           const config = JSON.parse(match.crop_config);
-          const { croppedAreaPixels, crop, zoom } = config;
-          if (croppedAreaPixels) {
-            ctx.drawImage(
-              img, 
-              croppedAreaPixels.x, croppedAreaPixels.y, 
-              croppedAreaPixels.width, croppedAreaPixels.height, 
-              imgX, imgY, imgW, imgH
-            );
-          } else if (crop && zoom) {
-            const scale = Math.max(imgW / img.width, imgH / img.height) * zoom;
+          const { crop, zoom, rotation } = config;
+          
+          if (crop && zoom) {
+            // Calculate center of image
+            const centerX = imgX + imgW / 2;
+            const centerY = imgY + imgH_actual / 2;
+
+            ctx.translate(centerX, centerY);
+            if (rotation) ctx.rotate((rotation * Math.PI) / 180);
+            ctx.translate(-centerX, -centerY);
+
+            const scale = Math.max(imgW / img.width, imgH_actual / img.height) * zoom;
             const x = imgX + (imgW - img.width * scale) / 2 + (crop.x * scale);
-            const y = imgY + (imgH - img.height * scale) / 2 + (crop.y * scale);
+            const y = imgY + (imgH_actual - img.height * scale) / 2 + (crop.y * scale);
+            
             ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
           } else {
-            ctx.drawImage(img, imgX, imgY, imgW, imgH);
+             // Fallback for old crop config format or missing data
+             ctx.drawImage(img, imgX, imgY, imgW, imgH_actual);
           }
         } else {
+          // Default center crop
           const imgRatio = img.width / img.height;
-          const targetRatio = imgW / imgH;
+          const targetRatio = imgW / imgH_actual;
           let sw, sh, sx, sy;
           if (imgRatio > targetRatio) {
             sh = img.height;
@@ -194,33 +230,34 @@ export default function Dashboard() {
             sx = 0;
             sy = (img.height - sh) / 2;
           }
-          ctx.drawImage(img, sx, sy, sw, sh, imgX, imgY, imgW, imgH);
+          ctx.drawImage(img, sx, sy, sw, sh, imgX, imgY, imgW, imgH_actual);
         }
         ctx.restore();
 
         // Elegant border for image
         ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 15;
+        ctx.lineWidth = 25;
         ctx.beginPath();
-        ctx.roundRect(imgX - 8, imgY - 8, imgW + 16, imgH + 16, 68);
+        ctx.roundRect(imgX - 15, imgY - 15, imgW + 30, imgH_actual + 30, 110);
         ctx.stroke();
       } catch (e) {
         console.error("Failed to load image for canvas", e);
         ctx.fillStyle = '#f1f5f9';
-        ctx.roundRect(imgX, imgY, imgW, imgH, 60);
+        ctx.roundRect(imgX, imgY, imgW, imgH_actual, 100);
         ctx.fill();
       }
     }
 
     // "הכירו את" + Name
+    const nameY = imgY + imgH_actual + 150;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 80px sans-serif';
-    ctx.fillText('הכירו את', 700, 1450);
+    ctx.font = 'bold 100px sans-serif';
+    ctx.fillText('הכירו את', 1000, nameY);
     
     ctx.fillStyle = accentColor;
-    ctx.font = 'bold 150px sans-serif';
-    ctx.fillText(match.name, 700, 1600);
+    ctx.font = 'bold 180px sans-serif';
+    ctx.fillText(match.name, 1000, nameY + 180);
 
     // Details Grid
     const details = [
@@ -238,56 +275,40 @@ export default function Dashboard() {
     ];
 
     ctx.textAlign = 'right';
+    const gridStartY = nameY + 300;
     details.forEach((item, i) => {
       const col = i % 2;
       const row = Math.floor(i / 2);
-      const x = 1250 - (col * 600);
-      const y = 1750 + (row * 85);
+      const x = 1800 - (col * 850); // Adjusted for wider canvas
+      const y = gridStartY + (row * 110);
       
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 42px sans-serif';
-      // Fix colon position for Hebrew - logical order
+      ctx.font = 'bold 55px sans-serif';
       ctx.fillText(':' + item.label, x, y);
       
       ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 44px sans-serif';
+      ctx.font = 'bold 55px sans-serif';
       
-      // Handle wrapping for occupation if too long
-      if (item.label === 'עיסוק' && ctx.measureText(item.value).width > 300) {
-        const words = item.value.split(' ');
-        let line1 = '';
-        let line2 = '';
-        for (let n = 0; n < words.length; n++) {
-          if (ctx.measureText(line1 + words[n]).width < 300) {
-            line1 += words[n] + ' ';
-          } else {
-            line2 += words[n] + ' ';
-          }
+      // Handle wrapping/truncation for values
+      let value = item.value;
+      const maxValWidth = 500;
+      if (ctx.measureText(value).width > maxValWidth) {
+        while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
+          value = value.slice(0, -1);
         }
-        ctx.fillText(line1, x - 300, y);
-        ctx.fillText(line2, x - 300, y + 45);
-      } else {
-        // Truncate value if too long to prevent overflow
-        let value = item.value;
-        const maxValWidth = 300;
-        if (ctx.measureText(value).width > maxValWidth) {
-          while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
-            value = value.slice(0, -1);
-          }
-          value += '...';
-        }
-        ctx.fillText(value, x - 300, y);
+        value += '...';
       }
+      ctx.fillText(value, x - 350, y);
     });
 
     // About & Looking For sections
-    let currentY = 1750 + (Math.ceil(details.length / 2) * 85) + 120;
+    let currentY = gridStartY + (Math.ceil(details.length / 2) * 110) + 150;
     
     const drawWrappedText = (title: string, text: string, y: number, maxLines: number) => {
-      const lineHeight = 65;
-      const maxWidth = 1400 - margin*2 - 120;
+      const lineHeight = 85;
+      const maxWidth = 2000 - margin*2 - 200;
       
-      ctx.font = '42px sans-serif';
+      ctx.font = '50px sans-serif';
       const words = text.split(' ');
       let lines: string[] = [];
       let currentLine = '';
@@ -306,43 +327,65 @@ export default function Dashboard() {
       lines.push(currentLine);
       lines = lines.slice(0, maxLines);
 
-      const boxHeight = (lines.length * lineHeight) + 160;
+      const boxHeight = (lines.length * lineHeight) + 200;
       
       // Box
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(0,0,0,0.08)';
-      ctx.shadowBlur = 20;
+      ctx.shadowColor = 'rgba(0,0,0,0.1)';
+      ctx.shadowBlur = 30;
       ctx.beginPath();
-      ctx.roundRect(margin + 30, y - 60, 1400 - margin*2 - 60, boxHeight, 40);
+      ctx.roundRect(margin + 50, y - 80, 2000 - margin*2 - 100, boxHeight, 60);
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Title
       ctx.textAlign = 'right';
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 48px sans-serif';
-      ctx.fillText(':' + title.replace(':', ''), 1250, y);
+      ctx.font = 'bold 60px sans-serif';
+      ctx.fillText(':' + title.replace(':', ''), 1800, y);
       
       // Text
       ctx.fillStyle = '#1e293b';
-      ctx.font = '42px sans-serif';
+      ctx.font = '50px sans-serif';
       lines.forEach((line, i) => {
-        ctx.fillText(line, 1250, y + 80 + (i * lineHeight));
+        ctx.fillText(line, 1800, y + 100 + (i * lineHeight));
       });
 
       return boxHeight;
     };
 
     if (match.about) {
-      const height = drawWrappedText('קצת עליי', match.about, currentY, 10);
-      currentY += height + 80;
+      const height = drawWrappedText('קצת עליי', match.about, currentY, 8);
+      currentY += height + 120;
     }
 
     if (match.looking_for) {
-      drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY, 10);
+      const height = drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY, 8);
+      currentY += height + 120;
     }
 
-    // Corner Hearts & Side Hearts (Drawn last to be on top)
+    // Footer / Creator Info - MOVED TO BOTTOM
+    const footerY = 3380;
+    
+    if (match.creator_name) {
+      const isFemale = match.creator_gender === 'female';
+      const senderTitle = isFemale ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
+      const senderText = `${senderTitle} ${match.creator_name}`;
+      
+      ctx.textAlign = 'center';
+      ctx.fillStyle = accentColor;
+      ctx.font = 'bold 70px sans-serif';
+      ctx.fillText(senderText, 1000, footerY);
+    } else if (user?.name) {
+       // Fallback to current user if creator name is missing (e.g. self-created)
+      const senderText = `נשלח על ידי המנהל/ת ${user.name}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = accentColor;
+      ctx.font = 'bold 70px sans-serif';
+      ctx.fillText(senderText, 1000, footerY);
+    }
+
+    // Corner Hearts
     const drawHeart = (x: number, y: number, size: number, color: string, alpha: number = 1) => {
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -356,39 +399,10 @@ export default function Dashboard() {
       ctx.restore();
     };
 
-    // Corners
-    drawHeart(margin + 30, margin + 30, 50, accentColor);
-    drawHeart(1400 - margin - 30, margin + 30, 50, accentColor);
-    drawHeart(margin + 30, 2800 - margin - 30, 50, accentColor);
-    drawHeart(1400 - margin - 30, 2800 - margin - 30, 50, accentColor);
-
-    // Side Hearts
-    for (let i = 1; i <= 6; i++) {
-      drawHeart(margin - 10, 400 + i * 400, 30, accentColor, 0.4);
-      drawHeart(1400 - margin + 10, 400 + i * 400, 30, accentColor, 0.4);
-    }
-
-    // Footer / Creator Info
-    const footerY = 2650;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = 'rgba(0,0,0,0.1)';
-    ctx.beginPath();
-    ctx.roundRect(250, footerY, 900, 100, 30);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    
-    ctx.fillStyle = accentColor;
-    ctx.font = 'bold 42px sans-serif';
-    ctx.textAlign = 'center';
-    const creatorText = `נשלח על ידי ${match.creator_gender === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
-    ctx.fillText(creatorText, 700, footerY + 45);
-    
-    if (match.creator_phone || user?.phone) {
-      ctx.font = 'bold 32px sans-serif';
-      ctx.fillStyle = '#64748b';
-      ctx.fillText(match.creator_phone || user?.phone || '', 700, footerY + 85);
-    }
+    drawHeart(margin + 60, margin + 60, 80, accentColor);
+    drawHeart(2000 - margin - 60, margin + 60, 80, accentColor);
+    drawHeart(margin + 60, 3500 - margin - 60, 80, accentColor);
+    drawHeart(2000 - margin - 60, 3500 - margin - 60, 80, accentColor);
 
     setGeneratedImageUrl(canvas.toDataURL('image/png'));
     setIsGenerating(false);
@@ -521,7 +535,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    if (user) {
+      fetchDailySuggestions();
+    }
+  }, [user]);
 
   const handleDelete = async (id: number) => {
     setDeleteConfirmId(id);
@@ -768,6 +785,30 @@ export default function Dashboard() {
     }
   };
 
+  const handleQuickUpdate = async (id: number, updates: Partial<Match>) => {
+    try {
+      const match = matches.find(m => m.id === id);
+      if (!match) return;
+
+      const updatedMatch = { ...match, ...updates };
+      const res = await fetch(`/api/matches/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedMatch)
+      });
+
+      if (res.ok) {
+        toast.success('הכרטיס עודכן בהצלחה');
+        fetchData();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בעדכון');
+      }
+    } catch (err) {
+      toast.error('שגיאה בתקשורת עם השרת');
+    }
+  };
+
   const filteredMatches = matches.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
                          m.city?.toLowerCase().includes(search.toLowerCase());
@@ -808,8 +849,95 @@ export default function Dashboard() {
 
   const pageTitle = type === 'males' ? 'משודכים (בנים)' : type === 'females' ? 'משודכות (בנות)' : 'Dashboard';
 
+  const isViewer = user?.role === 'viewer';
+
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Daily Suggestions Section */}
+      {!isViewer && dailySuggestions.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-black text-text-main flex items-center gap-2">
+              <Sparkles className="text-yellow-500" size={24} />
+              הצעות יומיות חכמות בשבילך
+            </h2>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={fetchDailySuggestions}
+                className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
+              >
+                <RefreshCw size={12} className={loadingSuggestions ? 'animate-spin' : ''} />
+                רענן הצעות
+              </button>
+              <button 
+                onClick={() => setSuggestionsExpanded(!suggestionsExpanded)}
+                className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                title={suggestionsExpanded ? 'כווץ' : 'הרחב'}
+              >
+                {suggestionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
+          </div>
+          
+          <AnimatePresence>
+            {suggestionsExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-2">
+                  {dailySuggestions.map((item, idx) => (
+                    <motion.div 
+                      key={idx}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4"
+                    >
+                      <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
+                          {item.match.type === 'male' ? <User size={20} /> : <Heart size={20} />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{item.match.name}</p>
+                          <p className="text-[10px] text-slate-500">{item.match.age} שנים • {item.match.city}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">התאמות פוטנציאליות:</p>
+                        {item.potentialMatches.map((pot: any) => (
+                          <div key={pot.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all group">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${pot.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                                {pot.name[0]}
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-800">{pot.name}</p>
+                                <p className="text-[9px] text-slate-500">מנהל: {pot.creator_name}</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                toast(`פנה למנהל ${pot.creator_name} לגבי הצעה זו`, { icon: '💬' });
+                              }}
+                              className="p-1.5 text-luxury-blue opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <MessageSquare size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+      )}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           {user?.avatar_url ? (
@@ -883,7 +1011,11 @@ export default function Dashboard() {
             <ShieldAlert size={20} />
             התראות
           </button>
-          <button onClick={() => navigate('/matches/new')} className="btn-primary flex items-center gap-2 px-6 py-3 text-sm md:text-lg">
+          <button 
+            onClick={() => navigate('/matches/new')} 
+            disabled={isViewer}
+            className="btn-primary flex items-center gap-2 px-6 py-3 text-sm md:text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Plus size={20} />
             צור כרטיס חדש
           </button>
@@ -1336,6 +1468,10 @@ export default function Dashboard() {
             onView={(m) => setViewingMatch(m)}
             onEdit={(id) => navigate(`/matches/edit/${id}`)}
             onDelete={handleDelete}
+            onHistory={fetchPublishHistory}
+            onImageClick={(match) => navigate(`/matches/edit/${match.id}`)}
+            onQuickUpdate={handleQuickUpdate}
+            onSuggest={handleSuggest}
             showCreator={user?.role === 'super_admin'}
             selected={selectedMatchIds.includes(match.id)}
             onSelect={handleSelectMatch}
@@ -1851,7 +1987,7 @@ export default function Dashboard() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="w-full max-w-2xl h-[80vh] relative"
+              className="w-full max-w-5xl h-[90vh] relative"
             >
               <WhatsAppWidget 
                 groupId={whatsappGroups.find(g => g.id === selectedGroupId)?.whapi_id || whatsappGroups.find(g => g.id === selectedGroupId)?.name || ""}

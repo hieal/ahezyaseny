@@ -3,9 +3,10 @@ export interface User {
   name: string;
   username: string;
   email: string;
-  role: 'super_admin' | 'admin';
+  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer';
   status: 'active' | 'inactive';
   category: string | null;
+  secondary_category: string | null;
   gender: 'male' | 'female' | null;
   phone: string | null;
   google_login_allowed: 'true' | 'false';
@@ -15,6 +16,10 @@ export interface User {
   daily_message_template_male: string | null;
   daily_message_template_female: string | null;
   is_from_file: number;
+  is_approved: number;
+  is_shaham_manager?: number;
+  password_updated_at?: string;
+  password_plain?: string;
   assigned_group_id?: string;
   created_by?: number;
   creator_name?: string;

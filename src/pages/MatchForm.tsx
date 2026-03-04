@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
-import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, GraduationCap, Info, Image as ImageIcon, Plus, Trash2, Camera, Crop, X, Check, FileUp, Database, Loader2, Search } from 'lucide-react';
+import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, GraduationCap, Info, Image as ImageIcon, Plus, Trash2, Camera, Crop, X, Check, FileUp, Database, Loader2, Search, RotateCw, Link } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
@@ -57,6 +57,14 @@ export default function MatchForm() {
   const [scannedMatches, setScannedMatches] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
 
+  const [images, setImages] = useState<(string | null)[]>([null, null, null]);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [rotation, setRotation] = useState(0);
+
+  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
   useEffect(() => {
     if (isEdit) {
       fetch(`/api/matches`)
@@ -66,9 +74,19 @@ export default function MatchForm() {
           if (match) {
             setFormData(match);
             try {
-              setAdditionalImages(JSON.parse(match.additional_images || '[]'));
+              const extras = JSON.parse(match.additional_images || '[]');
+              const allImages = [match.image_url, ...extras].filter(Boolean);
+              // Pad to 3
+              const paddedImages = [...allImages, null, null, null].slice(0, 3);
+              setImages(paddedImages);
+              if (match.crop_config) {
+                const config = JSON.parse(match.crop_config);
+                setCrop(config.crop || { x: 0, y: 0 });
+                setZoom(config.zoom || 1);
+                setRotation(config.rotation || 0);
+              }
             } catch (e) {
-              setAdditionalImages([]);
+              setImages([match.image_url || null, null, null]);
             }
           }
         });
@@ -170,12 +188,18 @@ export default function MatchForm() {
     try {
       const url = isEdit ? `/api/matches/${id}` : '/api/matches';
       const method = isEdit ? 'PUT' : 'POST';
+      
+      const mainImage = images[selectedImageIndex];
+      const otherImages = images.filter((_, i) => i !== selectedImageIndex && !!images[i]);
+      
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          additional_images: JSON.stringify(additionalImages)
+          image_url: mainImage,
+          additional_images: JSON.stringify(otherImages),
+          crop_config: mainImage ? JSON.stringify({ crop, zoom, rotation, croppedAreaPixels }) : null
         }),
       });
       if (res.ok) {
@@ -192,7 +216,11 @@ export default function MatchForm() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isMain: boolean) => {
+  const [showUrlModal, setShowUrlModal] = useState(false);
+  const [urlInputIndex, setUrlInputIndex] = useState<number | null>(null);
+  const [tempUrl, setTempUrl] = useState('');
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -202,71 +230,58 @@ export default function MatchForm() {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64 = reader.result as string;
-      if (isMain) {
-        setTempImageUrl(base64);
-        setShowCropper(true);
-      } else {
-        setAdditionalImages(prev => [...prev, base64]);
+      try {
+        const base64 = reader.result as string;
+        const newImages = [...images];
+        newImages[index] = base64;
+        setImages(newImages);
+        if (index === selectedImageIndex) {
+          setTempImageUrl(base64);
+          setCrop({ x: 0, y: 0 });
+          setZoom(1);
+          setRotation(0);
+          setShowCropper(true);
+        }
+      } catch (err) {
+        console.error('Error processing image:', err);
+        toast.error('שגיאה בעיבוד התמונה');
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
-
-  const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> => {
-    const image = new Image();
-    image.src = imageSrc;
-    await new Promise((resolve) => { image.onload = resolve; });
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      throw new Error('No 2d context');
-    }
-
-    canvas.width = pixelCrop.width;
-    canvas.height = pixelCrop.height;
-
-    ctx.drawImage(
-      image,
-      pixelCrop.x,
-      pixelCrop.y,
-      pixelCrop.width,
-      pixelCrop.height,
-      0,
-      0,
-      pixelCrop.width,
-      pixelCrop.height
-    );
-
-    return canvas.toDataURL('image/jpeg');
+  const handleUrlAddClick = (index: number) => {
+    setUrlInputIndex(index);
+    setTempUrl('');
+    setShowUrlModal(true);
   };
 
-  const handleSaveCrop = async () => {
-    if (tempImageUrl && croppedAreaPixels) {
-      try {
-        const croppedImage = await getCroppedImg(tempImageUrl, croppedAreaPixels);
-        setFormData(prev => ({ 
-          ...prev, 
-          image_url: croppedImage,
-          crop_config: null // No longer need crop config since we save the cropped image
-        }));
-        setShowCropper(false);
-        setTempImageUrl(null);
-      } catch (e) {
-        console.error(e);
-        toast.error('שגיאה בחיתוך התמונה');
-      }
+  const handleUrlSubmit = () => {
+    if (urlInputIndex !== null && tempUrl) {
+      const newImages = [...images];
+      newImages[urlInputIndex] = tempUrl;
+      setImages(newImages);
+      setShowUrlModal(false);
+      setUrlInputIndex(null);
+      setTempUrl('');
     }
   };
 
-  const removeAdditionalImage = (index: number) => {
-    setAdditionalImages(prev => prev.filter((_, i) => i !== index));
+  const handleRemoveImage = (index: number) => {
+    const newImages = [...images];
+    newImages[index] = null;
+    setImages(newImages);
+    if (index === selectedImageIndex) {
+      // If removed selected, try to select another one
+      const firstAvailable = newImages.findIndex(img => img !== null);
+      if (firstAvailable !== -1) setSelectedImageIndex(firstAvailable);
+    }
+  };
+
+  const handleSaveCrop = () => {
+    // Just close the cropper, we save the state on submit
+    setShowCropper(false);
+    setTempImageUrl(null);
   };
 
   const handleCsvScan = async () => {
@@ -713,71 +728,68 @@ export default function MatchForm() {
           <div>
             <h3 className="text-xl font-extrabold text-text-main mb-6 flex items-center gap-2">
               <Camera size={20} className="text-luxury-blue" />
-              תמונות
+              תמונות (עד 3 תמונות)
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונה ראשית</label>
-                <div className="relative group aspect-square max-w-[250px] rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-luxury-blue">
-                  {formData.image_url ? (
-                    <>
-                      <img 
-                        src={formData.image_url} 
-                        alt="Main" 
-                        className="w-full h-full object-cover" 
+            <p className="text-sm text-text-secondary mb-4">בחר את התמונה הראשית שתוצג בכרטיס המעוצב. ניתן להעלות קובץ או להזין קישור.</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[0, 1, 2].map((index) => (
+                <div key={index} className={`relative flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${
+                  selectedImageIndex === index ? 'border-luxury-blue bg-blue-50/50 shadow-md' : 'border-slate-200 bg-slate-50'
+                }`}>
+                  <div className="flex justify-between items-center">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="mainImage" 
+                        checked={selectedImageIndex === index} 
+                        onChange={() => setSelectedImageIndex(index)}
+                        className="w-4 h-4 text-luxury-blue"
                       />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button type="button" onClick={() => {
-                          setTempImageUrl(formData.image_url!);
-                          setCrop({ x: 0, y: 0 });
-                          setZoom(1);
-                          setShowCropper(true);
-                        }} className="p-2 bg-luxury-blue text-white rounded-full hover:bg-luxury-blue/90">
-                          <Crop size={20} />
-                        </button>
-                        <button type="button" onClick={() => setFormData({...formData, image_url: null, crop_config: null})} className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600">
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer relative group">
-                      <img 
-                        src={formData.type === 'male' ? 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400&h=400' : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=400'} 
-                        alt="Demo" 
-                        className="w-full h-full object-cover opacity-50 grayscale" 
-                      />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
-                        <Camera size={40} className="text-white mb-2 drop-shadow-md" />
-                        <span className="text-sm font-bold text-white drop-shadow-md bg-black/50 px-3 py-1 rounded-full">לחץ להעלאת תמונה</span>
-                      </div>
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, true)} />
+                      <span className="text-xs font-bold uppercase text-slate-500">
+                        {selectedImageIndex === index ? 'תמונה ראשית' : 'תמונה נוספת'}
+                      </span>
                     </label>
-                  )}
-                </div>
-              </div>
+                    {images[index] && (
+                      <button type="button" onClick={() => handleRemoveImage(index)} className="text-red-400 hover:text-red-600">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
 
-              <div className="space-y-4">
-                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונות נוספות</label>
-                <div className="grid grid-cols-2 gap-4">
-                  {additionalImages.map((img, idx) => (
-                    <div key={idx} className="relative group aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
-                      <img src={img} alt={`Extra ${idx}`} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <button type="button" onClick={() => removeAdditionalImage(idx)} className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600">
-                          <Trash2 size={16} />
-                        </button>
+                  <div className="aspect-[3/4] rounded-xl bg-white border border-slate-200 overflow-hidden relative group">
+                    {images[index] ? (
+                      <>
+                        <img src={images[index]!} alt={`Image ${index + 1}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button type="button" onClick={() => {
+                            setTempImageUrl(images[index]!);
+                            setCrop({ x: 0, y: 0 });
+                            setZoom(1);
+                            setRotation(0);
+                            setShowCropper(true);
+                          }} className="p-2 bg-white text-luxury-blue rounded-full hover:bg-slate-100 shadow-lg" title="ערוך וחתוך">
+                            <Crop size={20} />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                        <ImageIcon size={32} />
+                        <div className="flex gap-2">
+                          <label className="p-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-luxury-blue hover:text-luxury-blue transition-all" title="העלה קובץ">
+                            <FileUp size={20} />
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, index)} />
+                          </label>
+                          <button type="button" onClick={() => handleUrlAddClick(index)} className="p-2 bg-white border border-slate-200 rounded-lg hover:border-luxury-blue hover:text-luxury-blue transition-all" title="הוסף קישור">
+                            <Link size={20} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {additionalImages.length < 4 && (
-                    <label className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center cursor-pointer hover:border-luxury-blue transition-all">
-                      <Plus size={24} className="text-slate-300" />
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, false)} />
-                    </label>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
 
@@ -808,6 +820,55 @@ export default function MatchForm() {
       </form>
       )}
 
+      {/* URL Input Modal */}
+      <AnimatePresence>
+        {showUrlModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">הוספת תמונה מקישור</h3>
+                <p className="text-slate-500 font-medium">הדבק את הקישור לתמונה שברצונך להוסיף</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase">קישור לתמונה</label>
+                  <input 
+                    type="text"
+                    value={tempUrl}
+                    onChange={(e) => setTempUrl(e.target.value)}
+                    className="input-field text-left ltr"
+                    placeholder="https://example.com/image.jpg"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowUrlModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={handleUrlSubmit}
+                  disabled={!tempUrl}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  הוסף תמונה
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Crop Modal */}
       <AnimatePresence>
         {showCropper && tempImageUrl && (
@@ -825,38 +886,59 @@ export default function MatchForm() {
                 </button>
               </div>
               
-              <div className="relative h-[400px] bg-slate-900">
+              <div className="relative h-[500px] bg-slate-900">
                 <Cropper
                   image={tempImageUrl}
                   crop={crop}
                   zoom={zoom}
-                  aspect={1}
+                  rotation={rotation}
+                  aspect={3/4} // Vertical aspect ratio for card
                   onCropChange={setCrop}
                   onCropComplete={onCropComplete}
                   onZoomChange={setZoom}
+                  onRotationChange={setRotation}
                 />
               </div>
               
               <div className="p-6 space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-text-secondary uppercase tracking-wider">זום</label>
-                  <input
-                    type="range"
-                    value={zoom}
-                    min={1}
-                    max={3}
-                    step={0.1}
-                    aria-labelledby="Zoom"
-                    onChange={(e) => setZoom(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
-                  />
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                      <Search size={16} />
+                      זום
+                    </label>
+                    <input
+                      type="range"
+                      value={zoom}
+                      min={1}
+                      max={3}
+                      step={0.1}
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                      <RotateCw size={16} />
+                      סיבוב
+                    </label>
+                    <input
+                      type="range"
+                      value={rotation}
+                      min={0}
+                      max={360}
+                      step={1}
+                      onChange={(e) => setRotation(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
+                    />
+                  </div>
                 </div>
                 
                 <div className="flex justify-end gap-3">
                   <button onClick={() => setShowCropper(false)} className="btn-secondary px-6 py-2.5 font-bold">ביטול</button>
                   <button onClick={handleSaveCrop} className="btn-primary px-8 py-2.5 font-bold flex items-center gap-2">
                     <Check size={20} />
-                    אישור והתאמה
+                    שמור הגדרות תצוגה
                   </button>
                 </div>
               </div>
