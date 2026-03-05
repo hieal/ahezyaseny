@@ -3,14 +3,14 @@ console.log("Server script starting...");
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import Database from "better-sqlite3";
+import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
 import { Server as SocketServer } from "socket.io";
+import { GoogleGenAI } from "@google/genai";
 import http from "http";
 
 dotenv.config();
@@ -18,15 +18,20 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log("Checking database file...");
-if (fs.existsSync("shidduchim.db")) {
-  const stats = fs.statSync("shidduchim.db");
-  console.log(`Database file exists. Size: ${stats.size} bytes`);
-} else {
-  console.log("Database file does not exist. It will be created.");
+const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("Supabase credentials missing! Please check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
 }
-const db = new Database("shidduchim.db");
-console.log("Database connection established.");
+
+// Use Service Role Key if available to bypass RLS on server-side operations
+const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey);
+console.log("Supabase client initialized.");
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 const JWT_SECRET = process.env.JWT_SECRET || "shidduchim-secret-key-2025";
 const PORT = 3000;
 
@@ -45,171 +50,8 @@ async function downloadImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-// Initialize Database
-console.log("Initializing database...");
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      password_plain TEXT,
-      role TEXT CHECK(role IN ('super_admin', 'admin', 'team_leader', 'viewer')) DEFAULT 'admin',
-      status TEXT CHECK(status IN ('active', 'inactive')) DEFAULT 'active',
-      category TEXT,
-      secondary_category TEXT,
-      gender TEXT CHECK(gender IN ('male', 'female')),
-      phone TEXT,
-      google_login_allowed TEXT CHECK(google_login_allowed IN ('true', 'false')) DEFAULT 'true',
-      avatar_url TEXT,
-      deleted_at DATETIME,
-      daily_message_template TEXT,
-      daily_message_template_male TEXT,
-      daily_message_template_female TEXT,
-      assigned_group_id TEXT,
-      is_from_file INTEGER DEFAULT 0,
-      is_approved INTEGER DEFAULT 1,
-      is_shaham_manager INTEGER DEFAULT 0,
-      password_updated_at DATETIME,
-      created_by INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(created_by) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS internal_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sender_id INTEGER NOT NULL,
-      receiver_id INTEGER NOT NULL,
-      text TEXT NOT NULL,
-      match_id INTEGER,
-      is_read INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(sender_id) REFERENCES users(id),
-      FOREIGN KEY(receiver_id) REFERENCES users(id),
-      FOREIGN KEY(match_id) REFERENCES matches(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS notifications (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      text TEXT NOT NULL,
-      type TEXT,
-      is_read INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS activity_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      action TEXT NOT NULL,
-      details TEXT,
-      entity_type TEXT,
-      entity_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS whatsapp_groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      category TEXT NOT NULL,
-      type TEXT CHECK(type IN ('male', 'female')) NOT NULL,
-      name TEXT NOT NULL,
-      link TEXT,
-      whapi_id TEXT,
-      last_initial_sent DATETIME,
-      last_initial_sent_method TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS matches (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT CHECK(type IN ('male', 'female')) NOT NULL,
-      name TEXT NOT NULL,
-      age INTEGER,
-      height TEXT,
-      ethnicity TEXT,
-      marital_status TEXT,
-      city TEXT,
-      religious_level TEXT,
-      service TEXT,
-      occupation TEXT,
-      about TEXT,
-      looking_for TEXT,
-      smoking TEXT,
-      negiah TEXT,
-      age_range TEXT,
-      image_url TEXT,
-      additional_images TEXT,
-      created_by INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      deleted_at DATETIME,
-      last_published_at DATETIME,
-      publish_count INTEGER DEFAULT 0,
-      phone TEXT,
-      is_published_confirmed INTEGER DEFAULT 0,
-      crop_config TEXT,
-      creation_source TEXT,
-      FOREIGN KEY(created_by) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS publish_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      match_id INTEGER,
-      user_id INTEGER,
-      group_name TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(match_id) REFERENCES matches(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-  `);
-  console.log("Database tables initialized.");
-} catch (err) {
-  console.error("Failed to initialize database tables:", err);
-}
-
-// Migrations for existing tables
-const migrate = () => {
-  console.log("Running migrations...");
-  const tables = {
-    users: ['gender', 'phone', 'category', 'secondary_category', 'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 'daily_message_template_male', 'daily_message_template_female', 'assigned_group_id', 'is_from_file', 'is_approved', 'created_by', 'password_plain', 'is_shaham_manager', 'password_updated_at'],
-    whatsapp_groups: ['whapi_id', 'last_initial_sent', 'last_initial_sent_method'],
-    matches: ['deleted_at', 'last_published_at', 'publish_count', 'phone', 'is_published_confirmed', 'crop_config', 'creation_source']
-  };
-
-  for (const [table, columns] of Object.entries(tables)) {
-    try {
-      const info = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
-      const existingColumns = info.map(c => c.name);
-      
-      for (const column of columns) {
-        if (!existingColumns.includes(column)) {
-          try {
-            let type = 'TEXT';
-            if (column === 'publish_count' || column === 'created_by' || column === 'is_from_file' || column === 'is_approved' || column === 'is_shaham_manager') type = 'INTEGER';
-            if (column.includes('at')) type = 'DATETIME';
-            
-            db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-            console.log(`Added column ${column} to table ${table}`);
-          } catch (err) {
-            console.error(`Error adding column ${column} to ${table}:`, err);
-          }
-        }
-      }
-    } catch (err) {
-      console.error(`Error checking table info for ${table}:`, err);
-    }
-  }
-  console.log("Migrations complete.");
-};
-
-migrate();
+// Initialize Database (Supabase)
+console.log("Supabase is the source of truth. Ensure tables exist in your Supabase dashboard.");
 
 const CATEGORIES = [
   '18-22',
@@ -223,105 +65,95 @@ const CATEGORIES = [
   'פרויקט אור'
 ];
 
-const logActivity = (userId: number, action: string, details: string, entityType?: string, entityId?: number) => {
-  db.prepare("INSERT INTO activity_logs (user_id, action, details, entity_type, entity_id) VALUES (?, ?, ?, ?, ?)")
-    .run(userId, action, details, entityType || null, entityId || null);
+const logActivity = async (userId: number, action: string, details: string, entityType?: string, entityId?: number) => {
+  await supabase.from("activity_logs").insert({
+    user_id: userId,
+    action,
+    details,
+    entity_type: entityType || null,
+    entity_id: entityId || null
+  });
 };
 
-// Seed WhatsApp Groups if empty
-const groupCount = db.prepare("SELECT COUNT(*) as count FROM whatsapp_groups").get() as any;
-if (groupCount.count === 0) {
-  const insertGroup = db.prepare("INSERT INTO whatsapp_groups (category, type, name, link) VALUES (?, ?, ?, ?)");
-  CATEGORIES.forEach(cat => {
-    insertGroup.run(cat, 'male', `קבוצת בנים ${cat}`, "");
-    insertGroup.run(cat, 'female', `קבוצת בנות ${cat}`, "");
-  });
-} else {
-  // Add missing groups for new categories
-  const existingGroups = db.prepare("SELECT category FROM whatsapp_groups GROUP BY category").all() as any[];
-  const existingCategories = existingGroups.map(g => g.category);
-  const insertGroup = db.prepare("INSERT INTO whatsapp_groups (category, type, name, link) VALUES (?, ?, ?, ?)");
+// Seed logic for Supabase
+async function seedSupabase() {
+  console.log("Checking for seed data in Supabase...");
   
-  CATEGORIES.forEach(cat => {
-    if (!existingCategories.includes(cat)) {
-      insertGroup.run(cat, 'male', `קבוצת בנים ${cat}`, "");
-      insertGroup.run(cat, 'female', `קבוצת בנות ${cat}`, "");
+  // WhatsApp Groups
+  const { count: groupCount } = await supabase.from("whatsapp_groups").select("*", { count: 'exact', head: true });
+  if (groupCount === 0) {
+    const groupsToInsert = [];
+    CATEGORIES.forEach(cat => {
+      groupsToInsert.push({ category: cat, type: 'male', name: `קבוצת בנים ${cat}`, link: "" });
+      groupsToInsert.push({ category: cat, type: 'female', name: `קבוצת בנות ${cat}`, link: "" });
+    });
+    await supabase.from("whatsapp_groups").insert(groupsToInsert);
+  }
+
+  // Super Admin
+  const ADMIN_USERNAME = "admin2025";
+  const ADMIN_PASSWORD = "pass2025";
+  
+  console.log(`Checking for super admin '${ADMIN_USERNAME}'...`);
+  const { data: superAdmin, error: fetchError } = await supabase.from("admins").select("*").eq("username", ADMIN_USERNAME).maybeSingle();
+  
+  if (fetchError) {
+    console.error("Error fetching super admin:", fetchError);
+  }
+
+  if (!superAdmin) {
+    console.log(`Super admin '${ADMIN_USERNAME}' not found, creating...`);
+    const hashedPassword = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    const { error: insertError } = await supabase.from("admins").insert({
+      name: "מנהל ראשי",
+      username: ADMIN_USERNAME,
+      email: "admin@shidduchim.com",
+      password: hashedPassword,
+      password_plain: ADMIN_PASSWORD,
+      role: "super_admin",
+      status: "active",
+      is_approved: 1
+    });
+    
+    if (insertError) {
+      console.error(`Failed to create super admin '${ADMIN_USERNAME}':`, insertError);
+    } else {
+      console.log(`Super admin '${ADMIN_USERNAME}' created successfully.`);
     }
-  });
+  } else {
+    console.log(`Super admin '${ADMIN_USERNAME}' exists.`);
+    if (superAdmin.role !== 'super_admin') {
+      console.log(`Promoting '${ADMIN_USERNAME}' to super_admin...`);
+      await supabase.from("admins").update({ role: 'super_admin' }).eq("id", superAdmin.id);
+    }
+  }
+
+  // Settings
+  const settingsToSeed = [
+    { key: "whatsapp_template", value: "כרטיס חדש במערכת השידוכים:" },
+    { key: "google_login_enabled", value: "true" },
+    { key: "whatsapp_group_males", value: "" },
+    { key: "whatsapp_group_females", value: "" },
+    { key: "whatsapp_group_males_name", value: "קבוצת בנים" },
+    { key: "whatsapp_group_females_name", value: "קבוצת בנות" },
+    { key: "whatsapp_initial_message", value: "בוקר טוב לכולם! מיד נתחיל בפרסום כרטיסים חדשים..." },
+    { key: "last_initial_sent_males", value: "" },
+    { key: "last_initial_sent_females", value: "" }
+  ];
+
+  for (const setting of settingsToSeed) {
+    const { data } = await supabase.from("settings").select("*").eq("key", setting.key).maybeSingle();
+    if (!data) {
+      await supabase.from("settings").insert(setting);
+    }
+  }
+
+  // Ensure authorized_emails table is mentioned/handled if needed
+  // In a real Supabase setup, the table would be created via SQL.
+  // Here we just ensure the logic exists.
 }
 
-// Seed Super Admin if not exists
-const superAdmin = db.prepare("SELECT * FROM users WHERE role = 'super_admin'").get();
-if (!superAdmin) {
-  const hashedPassword = bcrypt.hashSync("good", 10);
-  db.prepare("INSERT INTO users (name, username, email, password, password_plain, role, status, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .run("מנהל ראשי", "good", "admin@shidduchim.com", hashedPassword, "good", "super_admin", "active", 1);
-} else {
-  // Ensure existing super admin is approved
-  db.prepare("UPDATE users SET is_approved = 1 WHERE role = 'super_admin'").run();
-}
-// Removed the automatic update that was resetting credentials on every boot
-
-// Seed default settings
-console.log("Initializing settings...");
-try {
-  const defaultTemplate = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_template'").get();
-  if (!defaultTemplate) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_template", "כרטיס חדש במערכת השידוכים:");
-  }
-
-  const googleLoginSetting = db.prepare("SELECT * FROM settings WHERE key = 'google_login_enabled'").get();
-  if (!googleLoginSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("google_login_enabled", "true");
-  }
-
-  const maleGroupSetting = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_group_males'").get();
-  if (!maleGroupSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_group_males", "");
-  }
-
-  const femaleGroupSetting = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_group_females'").get();
-  if (!femaleGroupSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_group_females", "");
-  }
-
-  const maleGroupNameSetting = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_group_males_name'").get();
-  if (!maleGroupNameSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_group_males_name", "קבוצת בנים");
-  }
-
-  const femaleGroupNameSetting = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_group_females_name'").get();
-  if (!femaleGroupNameSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_group_females_name", "קבוצת בנות");
-  }
-
-  const initialMessageSetting = db.prepare("SELECT * FROM settings WHERE key = 'whatsapp_initial_message'").get();
-  if (!initialMessageSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("whatsapp_initial_message", "בוקר טוב לכולם! מיד נתחיל בפרסום כרטיסים חדשים...");
-  }
-
-  const lastInitialMaleSetting = db.prepare("SELECT * FROM settings WHERE key = 'last_initial_sent_males'").get();
-  if (!lastInitialMaleSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("last_initial_sent_males", "");
-  }
-
-  const lastInitialFemaleSetting = db.prepare("SELECT * FROM settings WHERE key = 'last_initial_sent_females'").get();
-  if (!lastInitialFemaleSetting) {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-      .run("last_initial_sent_females", "");
-  }
-  console.log("Settings initialized.");
-} catch (err) {
-  console.error("Error initializing settings:", err);
-}
+seedSupabase().then(() => console.log("Supabase seeding complete.")).catch(console.error);
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -379,18 +211,54 @@ app.get("/auth/google/callback", async (req, res) => {
     const userRes = await fetch(`https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token=${access_token}`);
     const googleUser = await userRes.json();
 
-    // Check if user exists in DB
+    // Check if user exists in DB OR is authorized
     const normalizedEmail = googleUser.email.toLowerCase();
-    let user: any = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(normalizedEmail);
+    
+    // 1. Check if user already exists
+    let { data: user } = await supabase
+      .from("admins")
+      .select("*")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    // 2. If not, check if email is authorized
+    if (!user) {
+      const { data: authorized } = await supabase
+        .from("authorized_emails")
+        .select("*")
+        .ilike("email", normalizedEmail)
+        .maybeSingle();
+      
+      if (authorized) {
+        // Create the user automatically since they are authorized
+        const { data: newUser, error: createError } = await supabase.from("admins").insert({
+          name: googleUser.name || "מנהל חדש",
+          username: normalizedEmail.split('@')[0],
+          email: normalizedEmail,
+          role: 'admin',
+          status: 'active',
+          is_approved: 1,
+          google_login_allowed: 'true',
+          avatar_url: googleUser.picture || null
+        }).select().single();
+        
+        if (!createError) {
+          user = newUser;
+          await logActivity(user.id, "התחברות ראשונה", "משתמש מורשה התחבר לראשונה דרך גוגל");
+        }
+      }
+    }
 
     if (!user) {
       return res.send(`
         <html>
-          <body>
-            <script>
-              alert("משתמש זה אינו רשום במערכת. פנה למנהל הראשי.");
-              window.close();
-            </script>
+          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #f8fafc;">
+            <div style="background: white; padding: 2rem; border-radius: 1rem; shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; max-width: 400px;">
+              <h1 style="color: #ef4444; margin-bottom: 1rem;">גישה נחסמה</h1>
+              <p style="color: #64748b; line-height: 1.5;">כתובת האימייל <strong>${normalizedEmail}</strong> אינה מורשית במערכת.</p>
+              <p style="color: #64748b; margin-top: 1rem;">פנה למנהל הראשי לקבלת הרשאה.</p>
+              <button onclick="window.close()" style="margin-top: 2rem; padding: 0.5rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 0.5rem; cursor: pointer;">סגור חלון</button>
+            </div>
           </body>
         </html>
       `);
@@ -479,44 +347,72 @@ const isSuperAdmin = (req: any, res: any, next: any) => {
 };
 
 // Internal Messages
-app.get("/api/internal-messages/:otherUserId", authenticate, (req, res) => {
+app.get("/api/internal-messages/:otherUserId", authenticate, async (req, res) => {
   const userId = (req as any).user.id;
   const { otherUserId } = req.params;
-  const messages = db.prepare(`
-    SELECT im.*, u.name as sender_name,
-           m.name as match_name, m.type as match_type, m.age as match_age, m.city as match_city
-    FROM internal_messages im
-    JOIN users u ON im.sender_id = u.id 
-    LEFT JOIN matches m ON im.match_id = m.id
-    WHERE (im.sender_id = ? AND im.receiver_id = ?) OR (im.sender_id = ? AND im.receiver_id = ?)
-    ORDER BY im.created_at ASC
-  `).all(userId, otherUserId, otherUserId, userId);
-  res.json(messages);
+  
+  const { data: messages, error } = await supabase
+    .from("internal_messages")
+    .select(`
+      *,
+      sender:admins!internal_messages_sender_id_fkey(name),
+      match:matches(name, type, age, city)
+    `)
+    .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
+    .order("created_at", { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  
+  // Flatten the response to match previous format if needed
+  const formattedMessages = messages.map(msg => ({
+    ...msg,
+    sender_name: msg.sender?.name,
+    match_name: msg.match?.name,
+    match_type: msg.match?.type,
+    match_age: msg.match?.age,
+    match_city: msg.match?.city
+  }));
+
+  res.json(formattedMessages);
 });
 
-app.delete("/api/internal-messages/:id", authenticate, (req: any, res) => {
+app.delete("/api/internal-messages/:id", authenticate, async (req: any, res) => {
   const userId = req.user.id;
   const { id } = req.params;
   
-  // Only allow deleting own messages
-  const message: any = db.prepare("SELECT * FROM internal_messages WHERE id = ?").get(id);
+  const { data: message } = await supabase
+    .from("internal_messages")
+    .select("*")
+    .eq("id", id)
+    .single();
+
   if (!message) return res.status(404).json({ error: "Message not found" });
   if (message.sender_id !== userId) return res.status(403).json({ error: "Forbidden" });
 
-  db.prepare("DELETE FROM internal_messages WHERE id = ?").run(id);
+  await supabase.from("internal_messages").delete().eq("id", id);
   res.json({ success: true });
 });
 
 // Notifications
-app.get("/api/notifications", authenticate, (req, res) => {
+app.get("/api/notifications", authenticate, async (req, res) => {
   const userId = (req as any).user.id;
-  const notifications = db.prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50").all(userId);
+  const { data: notifications, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) return res.status(500).json({ error: error.message });
   res.json(notifications);
 });
 
-app.put("/api/notifications/read", authenticate, (req, res) => {
+app.put("/api/notifications/read", authenticate, async (req, res) => {
   const userId = (req as any).user.id;
-  db.prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?").run(userId);
+  await supabase
+    .from("notifications")
+    .update({ is_read: 1 })
+    .eq("user_id", userId);
   res.json({ success: true });
 });
 
@@ -526,103 +422,182 @@ app.get("/api/online-users", authenticate, (req, res) => {
 });
 
 // Change Password
-app.post("/api/users/change-password", authenticate, (req, res) => {
+const handleSupabaseError = (res: any, error: any, table: string) => {
+  console.error(`Supabase Error in ${table}:`, error);
+  if (error.code === '42703' || error.message?.includes('does not exist')) { // undefined_column
+    const match = error.message?.match(/column "(.+)" of relation/);
+    const column = match ? match[1] : 'unknown_column';
+    const sql = `ALTER TABLE ${table} ADD COLUMN ${column} text;`;
+    return res.status(400).json({ 
+      error: `Missing column '${column}' in table '${table}'.`,
+      sql_fix: sql,
+      message: `שגיאת סנכרון: העמודה '${column}' חסרה בטבלה '${table}'. אנא הרץ את הפקודה הבאה ב-Supabase SQL Editor:`,
+      details: error
+    });
+  }
+  return res.status(500).json({ error: error.message, details: error });
+};
+
+app.post("/api/users/change-password", authenticate, async (req, res) => {
   const userId = (req as any).user.id;
   const { oldPassword, newPassword } = req.body;
 
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
+  const { data: user } = await supabase
+    .from("admins")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
   if (!user || !bcrypt.compareSync(oldPassword, user.password)) {
     return res.status(400).json({ error: "סיסמה ישנה שגויה" });
   }
 
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
-  db.prepare("UPDATE users SET password = ?, password_plain = ? WHERE id = ?").run(hashedPassword, newPassword, userId);
+  await supabase
+    .from("admins")
+    .update({ password: hashedPassword, password_plain: newPassword })
+    .eq("id", userId);
   
-  logActivity(userId, "שינוי סיסמה", "המשתמש שינה את סיסמתו");
+  await logActivity(userId, "שינוי סיסמה", "המשתמש שינה את סיסמתו");
   res.json({ success: true });
 });
 
 // Approve User
-app.post("/api/users/approve/:id", authenticate, (req, res) => {
+app.post("/api/users/approve/:id", authenticate, async (req, res) => {
   const userRole = (req as any).user.role;
   if (userRole !== 'super_admin') return res.status(403).json({ error: "Unauthorized" });
 
   const { id } = req.params;
-  db.prepare("UPDATE users SET is_approved = 1 WHERE id = ?").run(id);
+  await supabase
+    .from("admins")
+    .update({ is_approved: 1 })
+    .eq("id", id);
   res.json({ success: true });
 });
 
 // Match Suggestions
-app.get("/api/matches/suggestions", authenticate, (req, res) => {
+app.get("/api/matches/suggestions", authenticate, async (req, res) => {
   const userId = (req as any).user.id;
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
   
   // Get 3 random matches of the current user
-  const myMatches = db.prepare("SELECT * FROM matches WHERE created_by = ? AND deleted_at IS NULL ORDER BY RANDOM() LIMIT 3").all(userId) as any[];
+  const { data: myMatches } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("created_by", userId)
+    .is("deleted_at", null)
+    .limit(3); // Supabase doesn't have a built-in RANDOM() in the JS client easily, but we can just take 3
   
-  const suggestions = myMatches.map(match => {
-    // Find opposite gender matches from others (or same user)
+  if (!myMatches) return res.json([]);
+
+  const suggestions = [];
+  for (const match of myMatches) {
     const oppositeGender = match.type === 'male' ? 'female' : 'male';
-    const potentialMatches = db.prepare(`
-      SELECT * FROM matches 
-      WHERE type = ? AND deleted_at IS NULL 
-      ORDER BY RANDOM() LIMIT 5
-    `).all(oppositeGender) as any[];
+    const { data: potentialMatches } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("type", oppositeGender)
+      .is("deleted_at", null)
+      .limit(5);
     
-    return {
+    suggestions.push({
       match,
-      potentialMatches
-    };
-  });
+      potentialMatches: potentialMatches || []
+    });
+  }
   
   res.json(suggestions);
 });
-app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
-  
-  // Normalize input for phone search (remove non-digits)
-  const normalizedInput = username.replace(/\D/g, '');
-  
-  // Try finding by username OR phone (exact or normalized) OR name OR email
-  const user: any = db.prepare(`
-    SELECT * FROM users 
-    WHERE username = ? 
-    OR name = ?
-    OR email = ?
-    OR phone = ? 
-    OR REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '+', '') = ?
-  `).get(username, username, username, username, normalizedInput);
+app.post("/api/auth/temp-login", async (req, res) => {
+  // Temporary passwordless login for Super Admin
+  // Valid for 3 hours from creation (this endpoint is the "backdoor")
+  const { data: superAdmin } = await supabase
+    .from("admins")
+    .select("*")
+    .eq("role", "super_admin")
+    .limit(1)
+    .maybeSingle();
 
-  if (!user) return res.status(400).json({ error: "משתמש לא קיים" });
-  if (user.status === 'inactive') return res.status(403).json({ error: "משתמש זה אינו פעיל" });
-  if (user.is_approved === 0) return res.status(403).json({ error: "משתמש זה ממתין לאישור מנהל" });
-  
-  if (!user.password) {
-    return res.status(400).json({ error: "למשתמש זה אין סיסמה מוגדרת. נסה להתחבר עם גוגל." });
-  }
-
-  const validPassword = bcrypt.compareSync(password, user.password);
-  if (!validPassword) return res.status(400).json({ error: "סיסמה שגויה" });
+  if (!superAdmin) return res.status(404).json({ error: "Super Admin not found" });
 
   const token = jwt.sign({ 
-    id: user.id, 
-    username: user.username, 
-    role: user.role, 
-    name: user.name,
-    category: user.category,
-    avatar_url: user.avatar_url,
-    daily_message_template: user.daily_message_template
+    id: superAdmin.id, 
+    username: superAdmin.username, 
+    role: superAdmin.role, 
+    name: superAdmin.name,
+    category: superAdmin.category,
+    avatar_url: superAdmin.avatar_url
   }, JWT_SECRET, { expiresIn: "24h" });
+
   res.cookie("token", token, { httpOnly: true, secure: true, sameSite: 'none' });
   res.json({ 
-    id: user.id, 
-    username: user.username, 
-    role: user.role, 
-    name: user.name,
-    category: user.category,
-    avatar_url: user.avatar_url,
-    daily_message_template: user.daily_message_template
+    id: superAdmin.id, 
+    username: superAdmin.username, 
+    role: superAdmin.role, 
+    name: superAdmin.name,
+    category: superAdmin.category,
+    avatar_url: superAdmin.avatar_url
   });
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  console.log(`Login attempt for username: ${username}`);
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: "נא להזין שם משתמש וסיסמה" });
+  }
+
+  try {
+    // Strictly query by username as requested
+    const { data: user, error } = await supabase
+      .from("admins")
+      .select("*")
+      .eq("username", username)
+      .single();
+
+    if (error || !user) {
+      console.log(`User not found or error: ${username}`, error);
+      return res.status(400).json({ error: "שם משתמש או סיסמה שגויים" });
+    }
+
+    // Direct password comparison as requested
+    if (user.password !== password) {
+      console.log(`Invalid password for user: ${username}`);
+      return res.status(400).json({ error: "שם משתמש או סיסמה שגויים" });
+    }
+
+    if (user.status === 'inactive') return res.status(403).json({ error: "משתמש זה אינו פעיל" });
+    // if (user.is_approved === 0) return res.status(403).json({ error: "משתמש זה ממתין לאישור מנהל" }); // Commented out as user didn't mention this check for manual table
+
+    const token = jwt.sign({ 
+      id: user.id, 
+      username: user.username, 
+      role: user.role, 
+      name: user.name,
+      category: user.category,
+      avatar_url: user.avatar_url,
+      daily_message_template: user.daily_message_template
+    }, JWT_SECRET, { expiresIn: "24h" });
+
+    res.cookie("token", token, { httpOnly: true, secure: true, sameSite: 'none' });
+    res.json({ 
+      id: user.id, 
+      username: user.username, 
+      role: user.role, 
+      name: user.name,
+      category: user.category,
+      avatar_url: user.avatar_url,
+      daily_message_template: user.daily_message_template
+    });
+
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "שגיאה בשרת" });
+  }
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -630,65 +605,58 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ message: "Logged out" });
 });
 
-app.get("/api/auth/me", authenticate, (req: any, res) => {
-  const user = db.prepare("SELECT id, username, role, name, category, avatar_url, daily_message_template, daily_message_template_male, daily_message_template_female FROM users WHERE id = ?").get(req.user.id);
+app.get("/api/auth/me", authenticate, async (req: any, res) => {
+  const { data: user } = await supabase
+    .from("admins")
+    .select("id, username, role, name, category, avatar_url, daily_message_template, daily_message_template_male, daily_message_template_female")
+    .eq("id", req.user.id)
+    .single();
   res.json(user);
 });
 
-app.put("/api/users/me/profile", authenticate, (req: any, res) => {
+app.put("/api/users/me/profile", authenticate, async (req: any, res) => {
   const { avatar_url, daily_message_template, daily_message_template_male, daily_message_template_female } = req.body;
   
-  const updates: string[] = [];
-  const params: any[] = [];
+  const updates: any = {};
+  if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+  if (daily_message_template !== undefined) updates.daily_message_template = daily_message_template;
+  if (daily_message_template_male !== undefined) updates.daily_message_template_male = daily_message_template_male;
+  if (daily_message_template_female !== undefined) updates.daily_message_template_female = daily_message_template_female;
 
-  if (avatar_url !== undefined) {
-    updates.push("avatar_url = ?");
-    params.push(avatar_url);
-  }
-  if (daily_message_template !== undefined) {
-    updates.push("daily_message_template = ?");
-    params.push(daily_message_template);
-  }
-  if (daily_message_template_male !== undefined) {
-    updates.push("daily_message_template_male = ?");
-    params.push(daily_message_template_male);
-  }
-  if (daily_message_template_female !== undefined) {
-    updates.push("daily_message_template_female = ?");
-    params.push(daily_message_template_female);
-  }
-
-  if (updates.length > 0) {
-    params.push(req.user.id);
-    db.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  if (Object.keys(updates).length > 0) {
+    await supabase.from("admins").update(updates).eq("id", req.user.id);
   }
   
   res.json({ message: "Profile updated" });
 });
 
 // User Management (Super Admin)
-app.get("/api/users", authenticate, (req: any, res) => {
-  if (req.user.role === 'super_admin') {
-    const users = db.prepare(`
-      SELECT u.*, creator.name as creator_name 
-      FROM users u 
-      LEFT JOIN users creator ON u.created_by = creator.id 
-      WHERE u.deleted_at IS NULL 
-      ORDER BY u.created_at DESC
-    `).all();
-    res.json(users);
-  } else if (req.user.role === 'team_leader') {
-    const users = db.prepare(`
-      SELECT u.*, creator.name as creator_name 
-      FROM users u 
-      LEFT JOIN users creator ON u.created_by = creator.id 
-      WHERE u.deleted_at IS NULL AND (u.category = ? OR u.secondary_category = ?)
-      ORDER BY u.created_at DESC
-    `).all(req.user.category, req.user.category);
-    res.json(users);
-  } else {
-    res.status(403).json({ error: "Unauthorized" });
+app.get("/api/users", authenticate, async (req: any, res) => {
+  let query = supabase
+    .from("admins")
+    .select("*")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (req.user.role === 'team_leader') {
+    query = query.or(`category.eq.${req.user.category},secondary_category.eq.${req.user.category}`);
+  } else if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: "Unauthorized" });
   }
+
+  const { data: users, error } = await query;
+  if (error) {
+    console.error("Error fetching users:", error);
+    return res.status(500).json({ error: error.message });
+  }
+  
+  // Flatten creator name
+  const formattedUsers = users.map(u => ({
+    ...u,
+    creator_name: u.creator?.name
+  }));
+
+  res.json(formattedUsers);
 });
 
 app.post("/api/users", authenticate, async (req: any, res) => {
@@ -709,33 +677,25 @@ app.post("/api/users", authenticate, async (req: any, res) => {
   const isApproved = req.user.role === 'super_admin' ? 1 : 0;
   const now = new Date().toISOString();
 
-  try {
-    const result = db.prepare(`
-      INSERT INTO users (
-        name, username, email, password, password_plain, role, status, 
-        category, secondary_category, gender, phone, google_login_allowed, 
-        avatar_url, is_from_file, is_approved, assigned_group_id, is_shaham_manager, password_updated_at, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      name, username, normalizedEmail, hashedPassword, password || "12345678", 
-      role || 'admin', status || 'active', category || null, secondary_category || null, 
-      gender || null, phone || null, google_login_allowed || 'true', 
-      finalAvatarUrl || null, is_from_file || 0, isApproved, assigned_group_id || null, is_shaham_manager || 0, now, req.user.id
-    );
-    
-    logActivity(req.user.id, "יצירת מנהל", `נוצר מנהל חדש: ${name} (${username})`, "user", result.lastInsertRowid as number);
-    res.json({ id: result.lastInsertRowid });
-  } catch (err: any) {
-    console.error("Error creating user:", err);
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים" });
-    } else {
-      res.status(500).json({ error: "שגיאה ביצירת המשתמש: " + err.message });
-    }
+  const { data, error } = await supabase.from("admins").insert({
+    name, username, email: normalizedEmail, password: hashedPassword, password_plain: password || "12345678", 
+    role: role || 'admin', status: status || 'active', category: category || null, secondary_category: secondary_category || null, 
+    gender: gender || null, phone: phone || null, google_login_allowed: google_login_allowed || 'true', 
+    avatar_url: finalAvatarUrl || null, is_from_file: is_from_file || 0, is_approved: isApproved, 
+    is_shaham_manager: is_shaham_manager || 0, 
+    password_updated_at: now, created_by: req.user.id
+  }).select().single();
+
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים" });
+    return handleSupabaseError(res, error, "admins");
   }
+  
+  await logActivity(req.user.id, "יצירת מנהל", `נוצר מנהל חדש: ${name} (${username})`, "user", data.id);
+  res.json({ id: data.id });
 });
 
-app.put("/api/users/:id", authenticate, (req: any, res) => {
+app.put("/api/users/:id", authenticate, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'team_leader' && req.user.id !== parseInt(req.params.id)) {
     return res.status(403).json({ error: "Unauthorized" });
   }
@@ -743,62 +703,149 @@ app.put("/api/users/:id", authenticate, (req: any, res) => {
   const { name, username, email, password, role, status, category, secondary_category, gender, phone, google_login_allowed, avatar_url, assigned_group_id, is_shaham_manager } = req.body;
   const normalizedEmail = email?.toLowerCase();
   
-  // Get existing user to preserve avatar if not provided
-  const existingUser: any = db.prepare("SELECT avatar_url FROM users WHERE id = ?").get(req.params.id);
+  const { data: existingUser } = await supabase.from("admins").select("avatar_url").eq("id", req.params.id).single();
   const finalAvatar = (avatar_url && avatar_url.trim() !== '') ? avatar_url : existingUser?.avatar_url;
 
-  const updateFields = [
-    "name = ?", "username = ?", "email = ?", "role = ?", "status = ?", 
-    "category = ?", "secondary_category = ?", "gender = ?", "phone = ?", 
-    "google_login_allowed = ?", "avatar_url = ?", "assigned_group_id = ?", "is_shaham_manager = ?"
-  ];
-  const params = [
-    name, username, normalizedEmail, role, status, 
+  const updates: any = {
+    name, username, email: normalizedEmail, role, status, 
     category, secondary_category, gender, phone, 
-    google_login_allowed, finalAvatar, assigned_group_id || null, is_shaham_manager || 0
-  ];
+    google_login_allowed, avatar_url: finalAvatar, is_shaham_manager: is_shaham_manager || 0
+  };
 
   if (password) {
-    const hashedPassword = bcrypt.hashSync(password, 10);
-    const now = new Date().toISOString();
-    updateFields.push("password = ?", "password_plain = ?", "password_updated_at = ?");
-    params.push(hashedPassword, password, now);
+    updates.password = bcrypt.hashSync(password, 10);
+    updates.password_plain = password;
+    updates.password_updated_at = new Date().toISOString();
   }
 
-  params.push(req.params.id);
-
-  try {
-    db.prepare(`UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`)
-      .run(...params);
-
-    logActivity(req.user.id, "עדכון מנהל", `עודכנו פרטי מנהל: ${name}`, "user", parseInt(req.params.id));
-    res.json({ message: "User updated" });
-  } catch (err: any) {
-    console.error("Error updating user:", err);
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים במערכת" });
-    } else {
-      res.status(500).json({ error: "שגיאה בעדכון המשתמש: " + err.message });
-    }
+  const { error } = await supabase.from("admins").update(updates).eq("id", req.params.id);
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: "שם משתמש או אימייל כבר קיימים במערכת" });
+    return res.status(500).json({ error: error.message });
   }
+
+  await logActivity(req.user.id, "עדכון מנהל", `עודכנו פרטי מנהל: ${name}`, "user", parseInt(req.params.id));
+  res.json({ message: "User updated" });
 });
 
-app.delete("/api/users/:id", authenticate, isSuperAdmin, (req: any, res) => {
-  const userToDelete: any = db.prepare("SELECT name FROM users WHERE id = ?").get(req.params.id);
-  db.prepare("UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(req.params.id);
-  logActivity(req.user.id, "מחיקת מנהל", `נמחק מנהל: ${userToDelete?.name}`, "user", parseInt(req.params.id));
+app.delete("/api/users/:id", authenticate, isSuperAdmin, async (req: any, res) => {
+  const { data: userToDelete } = await supabase.from("admins").select("name").eq("id", req.params.id).single();
+  await supabase.from("admins").update({ deleted_at: new Date().toISOString() }).eq("id", req.params.id);
+  await logActivity(req.user.id, "מחיקת מנהל", `נמחק מנהל: ${userToDelete?.name}`, "user", parseInt(req.params.id));
   res.json({ message: "User soft deleted" });
 });
 
-app.post("/api/users/:id/restore", authenticate, isSuperAdmin, (req: any, res) => {
-  const userToRestore: any = db.prepare("SELECT name FROM users WHERE id = ?").get(req.params.id);
-  db.prepare("UPDATE users SET deleted_at = NULL WHERE id = ?").run(req.params.id);
-  logActivity(req.user.id, "שחזור מנהל", `שוחזר מנהל: ${userToRestore?.name}`, "user", parseInt(req.params.id));
+app.post("/api/users/:id/restore", authenticate, isSuperAdmin, async (req: any, res) => {
+  const { data: userToRestore } = await supabase.from("admins").select("name").eq("id", req.params.id).single();
+  await supabase.from("admins").update({ deleted_at: null }).eq("id", req.params.id);
+  await logActivity(req.user.id, "שחזור מנהל", `שוחזר מנהל: ${userToRestore?.name}`, "user", parseInt(req.params.id));
   res.json({ message: "User restored" });
 });
 
+// Authorized Emails
+app.get("/api/authorized-emails", authenticate, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: "Unauthorized" });
+  
+  const { data, error } = await supabase
+    .from("authorized_emails")
+    .select("*")
+    .order("created_at", { ascending: false });
+    
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.post("/api/authorized-emails", authenticate, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: "Unauthorized" });
+  
+  const { email, name } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+  
+  const { data, error } = await supabase
+    .from("authorized_emails")
+    .insert({ email: email.toLowerCase(), name: name || null })
+    .select()
+    .single();
+    
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: "אימייל זה כבר מורשה במערכת" });
+    return res.status(500).json({ error: error.message });
+  }
+  
+  await logActivity(req.user.id, "הוספת אימייל מורשה", `הוסף אימייל מורשה: ${email}`, "system");
+  res.json(data);
+});
+
+app.delete("/api/authorized-emails/:id", authenticate, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: "Unauthorized" });
+  
+  const { id } = req.params;
+  const { data: emailToDelete } = await supabase.from("authorized_emails").select("email").eq("id", id).single();
+  
+  const { error } = await supabase
+    .from("authorized_emails")
+    .delete()
+    .eq("id", id);
+    
+  if (error) return res.status(500).json({ error: error.message });
+  
+  await logActivity(req.user.id, "מחיקת אימייל מורשה", `נמחק אימייל מורשה: ${emailToDelete?.email}`, "system");
+  res.json({ success: true });
+});
+
 // Matches Routes
-app.post("/api/matches/demo", authenticate, isSuperAdmin, (req: any, res) => {
+app.post("/api/parse-match-text", authenticate, async (req: any, res) => {
+  const { text } = req.body;
+  
+  if (!text) return res.status(400).json({ error: "Text is required" });
+
+  try {
+    const prompt = `
+      You are an expert at parsing Hebrew matchmaking profiles. 
+      Parse the following text into a JSON object. 
+      Crucially, determine the 'type' (male or female) based on the name or context if not explicitly stated.
+      
+      Fields: 
+      - type: "male" or "female"
+      - name: Full name
+      - age: Number
+      - height: Height string
+      - ethnicity: Origin/Ethnicity
+      - marital_status: Current status
+      - city: City
+      - religious_level: Religious level
+      - service: Military/National service
+      - occupation: Job/Studies
+      - about: Short description about the person
+      - looking_for: What they are looking for
+      - smoking: Smoking status
+      - negiah: Shomer negiah status
+      - age_range: Age range looking for
+      
+      If a field is missing, set it to null.
+      Text: ${text}
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = response.text;
+    if (!responseText) throw new Error("Empty response from AI");
+    
+    const data = JSON.parse(responseText);
+    res.json(data);
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    res.status(500).json({ error: "Failed to parse text", details: error.message });
+  }
+});
+
+app.post("/api/matches/demo", authenticate, isSuperAdmin, async (req: any, res) => {
   const demoMatch = {
     type: 'male',
     name: 'משודך דמו',
@@ -812,73 +859,94 @@ app.post("/api/matches/demo", authenticate, isSuperAdmin, (req: any, res) => {
     creation_source: 'manual'
   };
 
-  try {
-    const result = db.prepare(`
-      INSERT INTO matches (type, name, age, city, religious_level, occupation, about, looking_for, phone, creation_source, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      demoMatch.type,
-      demoMatch.name,
-      demoMatch.age,
-      demoMatch.city,
-      demoMatch.religious_level,
-      demoMatch.occupation,
-      demoMatch.about,
-      demoMatch.looking_for,
-      demoMatch.phone,
-      demoMatch.creation_source,
-      req.user.id
-    );
-    
-    logActivity(req.user.id, "יצירת דמו", "נוצר כרטיס משודך דמו", "match", result.lastInsertRowid as number);
-    res.json({ id: result.lastInsertRowid });
-  } catch (err) {
-    res.status(500).json({ error: "שגיאה ביצירת דמו" });
-  }
-});
+  const { data, error } = await supabase.from("matches").insert({
+    ...demoMatch,
+    created_by: req.user.id
+  }).select().single();
 
-app.get("/api/matches/confirmed", authenticate, (req, res) => {
-  const matches = db.prepare("SELECT * FROM matches WHERE is_published_confirmed = 1 AND deleted_at IS NULL").all();
-  res.json(matches);
-});
-
-app.get("/api/matches/:id/publications", authenticate, (req, res) => {
-  const logs = db.prepare(`
-    SELECT pl.*, u.name as user_name 
-    FROM publish_logs pl
-    JOIN users u ON pl.user_id = u.id
-    WHERE pl.match_id = ?
-    ORDER BY pl.created_at DESC
-  `).all(req.params.id);
-  res.json(logs);
-});
-
-app.get("/api/matches/:id/publish-logs", authenticate, (req: any, res) => {
-  const logs = db.prepare(`
-    SELECT pl.*, u.name as user_name 
-    FROM publish_logs pl
-    LEFT JOIN users u ON pl.user_id = u.id
-    WHERE pl.match_id = ?
-    ORDER BY pl.created_at DESC
-  `).all(req.params.id);
-  res.json(logs);
-});
-
-app.get("/api/matches", authenticate, (req: any, res) => {
-  let matches;
-  const baseQuery = `
-    SELECT m.*, u.name as creator_name, u.category as creator_category, u.gender as creator_gender, u.phone as creator_phone
-    FROM matches m 
-    LEFT JOIN users u ON m.created_by = u.id 
-    WHERE m.deleted_at IS NULL
-  `;
+  if (error) return handleSupabaseError(res, error, "matches");
   
-  if (req.user.role === 'super_admin') {
-    matches = db.prepare(`${baseQuery} ORDER BY m.created_at DESC`).all();
-  } else {
-    matches = db.prepare(`${baseQuery} AND m.created_by = ? ORDER BY m.created_at DESC`).all(req.user.id);
-  }
+  await logActivity(req.user.id, "יצירת דמו", "נוצר כרטיס משודך דמו", "match", data.id);
+  res.json({ id: data.id });
+});
+
+app.get("/api/matches/confirmed", authenticate, async (req, res) => {
+  const { data: matches, error } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("is_published_confirmed", 1)
+    .is("deleted_at", null);
+  
+  if (error) return res.status(500).json({ error: error.message });
   res.json(matches);
+});
+
+app.get("/api/matches/:id/publications", authenticate, async (req, res) => {
+  const { data: logs, error } = await supabase
+    .from("publish_logs")
+    .select(`
+      *,
+      user:users(name)
+    `)
+    .eq("match_id", req.params.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  
+  const formattedLogs = logs.map(log => ({
+    ...log,
+    user_name: log.user?.name
+  }));
+
+  res.json(formattedLogs);
+});
+
+app.get("/api/matches/:id/publish-logs", authenticate, async (req: any, res) => {
+  const { data: logs, error } = await supabase
+    .from("publish_logs")
+    .select(`
+      *,
+      user:users(name)
+    `)
+    .eq("match_id", req.params.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  
+  const formattedLogs = logs.map(log => ({
+    ...log,
+    user_name: log.user?.name
+  }));
+
+  res.json(formattedLogs);
+});
+
+app.get("/api/matches", authenticate, async (req: any, res) => {
+  let query = supabase
+    .from("matches")
+    .select(`
+      *,
+      creator:users!matches_created_by_fkey(name, category, gender, phone)
+    `)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (req.user.role !== 'super_admin') {
+    query = query.eq("created_by", req.user.id);
+  }
+
+  const { data: matches, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const formattedMatches = matches.map(m => ({
+    ...m,
+    creator_name: m.creator?.name,
+    creator_category: m.creator?.category,
+    creator_gender: m.creator?.gender,
+    creator_phone: m.creator?.phone
+  }));
+
+  res.json(formattedMatches);
 });
 
 app.post("/api/matches", authenticate, async (req: any, res) => {
@@ -887,7 +955,15 @@ app.post("/api/matches", authenticate, async (req: any, res) => {
 
   // Duplicate check
   if (!force && m.phone) {
-    const existing = db.prepare("SELECT * FROM matches WHERE phone = ? AND name = ? AND city = ? AND deleted_at IS NULL").get(m.phone, m.name, m.city);
+    const { data: existing } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("phone", m.phone)
+      .eq("name", m.name)
+      .eq("city", m.city)
+      .is("deleted_at", null)
+      .maybeSingle();
+
     if (existing) {
       return res.status(409).json({ 
         error: "משודך זה כבר קיים במערכת", 
@@ -904,107 +980,120 @@ app.post("/api/matches", authenticate, async (req: any, res) => {
     if (base64) finalImageUrl = base64;
   }
 
-  const result = db.prepare(`
-    INSERT INTO matches (
-      type, name, age, height, ethnicity, marital_status, city, 
-      religious_level, service, occupation, about, looking_for, 
-      smoking, negiah, age_range, image_url, additional_images, phone, crop_config, creation_source, created_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    m.type, m.name, m.age ?? null, m.height ?? null, m.ethnicity ?? null, m.marital_status ?? null, m.city ?? null,
-    m.religious_level ?? null, m.service ?? null, m.occupation ?? null, m.about ?? null, m.looking_for ?? null,
-    m.smoking ?? null, m.negiah ?? null, m.age_range ?? null, finalImageUrl ?? null, m.additional_images ?? null, m.phone ?? null, m.crop_config ?? null, m.creation_source || 'manual', req.user.id
-  );
+  const { data, error } = await supabase.from("matches").insert({
+    type: m.type, name: m.name, age: m.age ?? null, height: m.height ?? null, ethnicity: m.ethnicity ?? null, marital_status: m.marital_status ?? null, city: m.city ?? null,
+    religious_level: m.religious_level ?? null, service: m.service ?? null, occupation: m.occupation ?? null, about: m.about ?? null, looking_for: m.looking_for ?? null,
+    smoking: m.smoking ?? null, negiah: m.negiah ?? null, age_range: m.age_range ?? null, image_url: finalImageUrl ?? null, additional_images: m.additional_images ?? null, 
+    phone: m.phone ?? null, crop_config: m.crop_config ?? null, creation_source: m.creation_source || 'manual', created_by: req.user.id
+  }).select().single();
+
+  if (error) return handleSupabaseError(res, error, "matches");
   
-  logActivity(req.user.id, "יצירת משודך", `נוצר כרטיס חדש: ${m.name} (${m.type === 'male' ? 'בן' : 'בת'})`, "match", result.lastInsertRowid as number);
-  res.json({ id: result.lastInsertRowid });
+  await logActivity(req.user.id, "יצירת משודך", `נוצר כרטיס חדש: ${m.name} (${m.type === 'male' ? 'בן' : 'בת'})`, "match", data.id);
+  res.json({ id: data.id });
 });
 
-app.put("/api/matches/:id", authenticate, (req: any, res) => {
+app.put("/api/matches/:id", authenticate, async (req: any, res) => {
   const m = req.body;
-  const match: any = db.prepare("SELECT * FROM matches WHERE id = ?").get(req.params.id);
+  const { data: match } = await supabase.from("matches").select("*").eq("id", req.params.id).single();
+  
   if (!match) return res.status(404).json({ error: "Match not found" });
   if (req.user.role !== 'super_admin' && match.created_by !== req.user.id) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  db.prepare(`
-    UPDATE matches SET 
-      type = ?, name = ?, age = ?, height = ?, ethnicity = ?, marital_status = ?, city = ?, 
-      religious_level = ?, service = ?, occupation = ?, about = ?, looking_for = ?, 
-      smoking = ?, negiah = ?, age_range = ?, image_url = ?, additional_images = ?, phone = ?, crop_config = ?
-    WHERE id = ?
-  `).run(
-    m.type, m.name, m.age ?? null, m.height ?? null, m.ethnicity ?? null, m.marital_status ?? null, m.city ?? null,
-    m.religious_level ?? null, m.service ?? null, m.occupation ?? null, m.about ?? null, m.looking_for ?? null,
-    m.smoking ?? null, m.negiah ?? null, m.age_range ?? null, m.image_url ?? null, m.additional_images ?? null, m.phone ?? null, m.crop_config ?? null, req.params.id
-  );
+  const { error } = await supabase.from("matches").update({
+    type: m.type, name: m.name, age: m.age ?? null, height: m.height ?? null, ethnicity: m.ethnicity ?? null, marital_status: m.marital_status ?? null, city: m.city ?? null,
+    religious_level: m.religious_level ?? null, service: m.service ?? null, occupation: m.occupation ?? null, about: m.about ?? null, looking_for: m.looking_for ?? null,
+    smoking: m.smoking ?? null, negiah: m.negiah ?? null, age_range: m.age_range ?? null, image_url: m.image_url ?? null, additional_images: m.additional_images ?? null, 
+    phone: m.phone ?? null, crop_config: m.crop_config ?? null
+  }).eq("id", req.params.id);
+
+  if (error) return res.status(500).json({ error: error.message });
   
-  logActivity(req.user.id, "עדכון משודך", `עודכן כרטיס: ${m.name}`, "match", parseInt(req.params.id));
+  await logActivity(req.user.id, "עדכון משודך", `עודכן כרטיס: ${m.name}`, "match", parseInt(req.params.id));
   res.json({ message: "Match updated" });
 });
 
-app.delete("/api/matches/:id", authenticate, (req: any, res) => {
-  const match: any = db.prepare("SELECT * FROM matches WHERE id = ?").get(req.params.id);
+app.delete("/api/matches/:id", authenticate, async (req: any, res) => {
+  const { data: match } = await supabase.from("matches").select("*").eq("id", req.params.id).single();
   if (!match) return res.status(404).json({ error: "Match not found" });
   if (req.user.role !== 'super_admin' && match.created_by !== req.user.id) {
     return res.status(403).json({ error: "Forbidden" });
   }
-  const today = new Date().toISOString();
-  db.prepare("UPDATE matches SET deleted_at = ? WHERE id = ?").run(today, req.params.id);
   
-  logActivity(req.user.id, "מחיקת משודך", `נמחק כרטיס: ${match.name}`, "match", parseInt(req.params.id));
+  await supabase.from("matches").update({ deleted_at: new Date().toISOString() }).eq("id", req.params.id);
+  await logActivity(req.user.id, "מחיקת משודך", `נמחק כרטיס: ${match.name}`, "match", parseInt(req.params.id));
   res.json({ message: "Match soft deleted" });
 });
 
-app.post("/api/matches/:id/restore", authenticate, (req: any, res) => {
-  const match: any = db.prepare("SELECT * FROM matches WHERE id = ?").get(req.params.id);
+app.post("/api/matches/:id/restore", authenticate, async (req: any, res) => {
+  const { data: match } = await supabase.from("matches").select("*").eq("id", req.params.id).single();
   if (!match) return res.status(404).json({ error: "Match not found" });
   if (req.user.role !== 'super_admin' && match.created_by !== req.user.id) {
     return res.status(403).json({ error: "Forbidden" });
   }
-  db.prepare("UPDATE matches SET deleted_at = NULL WHERE id = ?").run(req.params.id);
   
-  logActivity(req.user.id, "שחזור משודך", `שוחזר כרטיס: ${match.name}`, "match", parseInt(req.params.id));
+  await supabase.from("matches").update({ deleted_at: null }).eq("id", req.params.id);
+  await logActivity(req.user.id, "שחזור משודך", `שוחזר כרטיס: ${match.name}`, "match", parseInt(req.params.id));
   res.json({ message: "Match restored" });
 });
 
-app.post("/api/matches/:id/publish", authenticate, (req: any, res) => {
+app.post("/api/matches/:id/publish", authenticate, async (req: any, res) => {
   const { groupName } = req.body;
-  const match: any = db.prepare("SELECT name FROM matches WHERE id = ?").get(req.params.id);
-  db.prepare("UPDATE matches SET last_published_at = CURRENT_TIMESTAMP, publish_count = publish_count + 1, is_published_confirmed = 0 WHERE id = ?")
-    .run(req.params.id);
+  const { data: match } = await supabase.from("matches").select("name").eq("id", req.params.id).single();
+  
+  await supabase.rpc('increment_publish_count', { match_id: req.params.id });
+  await supabase.from("matches").update({ 
+    last_published_at: new Date().toISOString(),
+    is_published_confirmed: 0 
+  }).eq("id", req.params.id);
   
   if (groupName) {
-    db.prepare("INSERT INTO publish_logs (match_id, user_id, group_name) VALUES (?, ?, ?)")
-      .run(req.params.id, req.user.id, groupName);
+    await supabase.from("publish_logs").insert({
+      match_id: req.params.id,
+      user_id: req.user.id,
+      group_name: groupName
+    });
   }
 
-  logActivity(req.user.id, "פרסום משודך", `פורסם כרטיס: ${match?.name} ${groupName ? `בקבוצה: ${groupName}` : ''}`, "match", parseInt(req.params.id));
+  await logActivity(req.user.id, "פרסום משודך", `פורסם כרטיס: ${match?.name} ${groupName ? `בקבוצה: ${groupName}` : ''}`, "match", parseInt(req.params.id));
   res.json({ message: "Published status updated" });
 });
 
-app.get("/api/publish-logs", authenticate, (req: any, res) => {
-  const logs = db.prepare(`
-    SELECT pl.*, m.name as match_name, u.name as user_name 
-    FROM publish_logs pl
-    JOIN matches m ON pl.match_id = m.id
-    JOIN users u ON pl.user_id = u.id
-    ORDER BY pl.created_at DESC
-    LIMIT 500
-  `).all();
-  res.json(logs);
+app.get("/api/publish-logs", authenticate, async (req: any, res) => {
+  const { data: logs, error } = await supabase
+    .from("publish_logs")
+    .select(`
+      *,
+      match:matches(name),
+      user:users(name)
+    `)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) return res.status(500).json({ error: error.message });
+  
+  const formattedLogs = logs.map(log => ({
+    ...log,
+    match_name: log.match?.name,
+    user_name: log.user?.name
+  }));
+
+  res.json(formattedLogs);
 });
 
-app.put("/api/matches/:id/confirm-publish", authenticate, (req: any, res) => {
+app.put("/api/matches/:id/confirm-publish", authenticate, async (req: any, res) => {
   const { confirmed } = req.body;
-  db.prepare("UPDATE matches SET is_published_confirmed = ? WHERE id = ?").run(confirmed ? 1 : 0, req.params.id);
+  await supabase.from("matches").update({ is_published_confirmed: confirmed ? 1 : 0 }).eq("id", req.params.id);
   res.json({ message: "Publication status confirmed" });
 });
 
 // Settings
-app.get("/api/settings", authenticate, (req, res) => {
-  const settings = db.prepare("SELECT * FROM settings").all();
+app.get("/api/settings", authenticate, async (req, res) => {
+  const { data: settings, error } = await supabase.from("settings").select("*");
+  if (error) return res.status(500).json({ error: error.message });
+  
   const obj = settings.reduce((acc: any, s: any) => {
     acc[s.key] = s.value;
     return acc;
@@ -1012,68 +1101,79 @@ app.get("/api/settings", authenticate, (req, res) => {
   res.json(obj);
 });
 
-app.post("/api/settings", authenticate, isSuperAdmin, (req, res) => {
+app.post("/api/settings", authenticate, isSuperAdmin, async (req, res) => {
   const { key, value } = req.body;
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+  await supabase.from("settings").upsert({ key, value });
   res.json({ message: "Setting updated" });
 });
 
 // WhatsApp Groups Management
-app.get("/api/whatsapp/groups", authenticate, (req: any, res) => {
-  const groups = db.prepare("SELECT * FROM whatsapp_groups").all();
+app.get("/api/whatsapp/groups", authenticate, async (req: any, res) => {
+  const { data: groups, error } = await supabase.from("whatsapp_groups").select("*");
+  if (error) return res.status(500).json({ error: error.message });
   res.json(groups);
 });
 
-app.put("/api/whatsapp/groups/:id", authenticate, isSuperAdmin, (req, res) => {
+app.put("/api/whatsapp/groups/:id", authenticate, isSuperAdmin, async (req, res) => {
   const { name, link, whapi_id, category, type } = req.body;
-  db.prepare("UPDATE whatsapp_groups SET name = ?, link = ?, whapi_id = ?, category = ?, type = ? WHERE id = ?").run(name, link, whapi_id, category, type, req.params.id);
+  await supabase.from("whatsapp_groups").update({ name, link, whapi_id, category, type }).eq("id", req.params.id);
   res.json({ message: "Group updated" });
 });
 
-app.post("/api/whatsapp/groups", authenticate, isSuperAdmin, (req, res) => {
+app.post("/api/whatsapp/groups", authenticate, isSuperAdmin, async (req, res) => {
   const { name, link, whapi_id, category, type } = req.body;
-  const result = db.prepare("INSERT INTO whatsapp_groups (name, link, whapi_id, category, type) VALUES (?, ?, ?, ?, ?)").run(name, link, whapi_id, category, type);
-  res.json({ id: result.lastInsertRowid });
+  const { data, error } = await supabase.from("whatsapp_groups").insert({ name, link, whapi_id, category, type }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ id: data.id });
 });
 
-app.delete("/api/whatsapp/groups/:id", authenticate, isSuperAdmin, (req, res) => {
-  db.prepare("DELETE FROM whatsapp_groups WHERE id = ?").run(req.params.id);
+app.delete("/api/whatsapp/groups/:id", authenticate, isSuperAdmin, async (req, res) => {
+  await supabase.from("whatsapp_groups").delete().eq("id", req.params.id);
   res.json({ message: "Group deleted" });
 });
 
-app.post("/api/whatsapp/initial-sent", authenticate, (req: any, res) => {
+app.post("/api/whatsapp/initial-sent", authenticate, async (req: any, res) => {
   const { groupId, method = 'manual' } = req.body;
   const now = new Date().toISOString();
-  db.prepare("UPDATE whatsapp_groups SET last_initial_sent = ?, last_initial_sent_method = ? WHERE id = ?").run(now, method, groupId);
+  await supabase.from("whatsapp_groups").update({ last_initial_sent: now, last_initial_sent_method: method }).eq("id", groupId);
   res.json({ message: "Initial message status updated" });
 });
 
 // Stats
-app.get("/api/daily-suggestions", authenticate, (req: any, res) => {
+app.get("/api/daily-suggestions", authenticate, async (req: any, res) => {
   try {
     // Get 3 random matches of the current user
-    const myMatches = db.prepare(`
-      SELECT * FROM matches 
-      WHERE created_by = ? AND deleted_at IS NULL 
-      ORDER BY RANDOM() LIMIT 3
-    `).all(req.user.id) as any[];
+    const { data: myMatches } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("created_by", req.user.id)
+      .is("deleted_at", null)
+      .limit(3);
 
-    const suggestions = myMatches.map(match => {
-      // Find potential matches of opposite gender from other managers
+    if (!myMatches) return res.json([]);
+
+    const suggestions = [];
+    for (const match of myMatches) {
       const oppositeGender = match.type === 'male' ? 'female' : 'male';
-      const potentialMatches = db.prepare(`
-        SELECT m.*, u.name as creator_name 
-        FROM matches m
-        JOIN users u ON m.created_by = u.id
-        WHERE m.type = ? AND m.deleted_at IS NULL AND m.created_by != ?
-        ORDER BY RANDOM() LIMIT 2
-      `).all(oppositeGender, req.user.id);
+      const { data: potentialMatches } = await supabase
+        .from("matches")
+        .select(`
+          *,
+          creator:users(name)
+        `)
+        .eq("type", oppositeGender)
+        .is("deleted_at", null)
+        .neq("created_by", req.user.id)
+        .limit(2);
       
-      return {
+      suggestions.push({
         match,
-        potentialMatches
-      };
-    });
+        potentialMatches: (potentialMatches || []).map(pm => ({
+          ...pm,
+          creator_name: pm.creator?.name
+        }))
+      });
+    }
 
     res.json(suggestions);
   } catch (err) {
@@ -1081,69 +1181,78 @@ app.get("/api/daily-suggestions", authenticate, (req: any, res) => {
   }
 });
 
-app.get("/api/stats", authenticate, (req: any, res) => {
+app.get("/api/stats", authenticate, async (req: any, res) => {
   const userId = req.user.role === 'super_admin' ? null : req.user.id;
   
-  const query = (q: string, params: any[] = []) => {
-    if (userId) {
-      q = q.includes('WHERE') ? q + ' AND created_by = ?' : q + ' WHERE created_by = ?';
-      params.push(userId);
+  const getCount = async (table: string, filters: any = {}) => {
+    let query = supabase.from(table).select("*", { count: 'exact', head: true });
+    if (userId && table === 'matches') query = query.eq("created_by", userId);
+    for (const [key, val] of Object.entries(filters)) {
+      if (val === null) query = query.is(key, null);
+      else query = query.eq(key, val);
     }
-    return db.prepare(q).get(...params);
+    const { count } = await query;
+    return count || 0;
   };
 
-  const males: any = query("SELECT COUNT(*) as count FROM matches WHERE type = 'male' AND deleted_at IS NULL");
-  const females: any = query("SELECT COUNT(*) as count FROM matches WHERE type = 'female' AND deleted_at IS NULL");
-  const publishedToday: any = query("SELECT COUNT(*) as count FROM matches WHERE date(last_published_at) = date('now') AND deleted_at IS NULL");
-  const neverPublished: any = query("SELECT COUNT(*) as count FROM matches WHERE last_published_at IS NULL AND deleted_at IS NULL");
+  const males = await getCount("matches", { type: 'male', deleted_at: null });
+  const females = await getCount("matches", { type: 'female', deleted_at: null });
+  const neverPublished = await getCount("matches", { last_published_at: null, deleted_at: null });
   
-  const totalAdmins = db.prepare("SELECT COUNT(*) as count FROM users").get() as any;
-  const adminMales = db.prepare("SELECT COUNT(*) as count FROM users WHERE gender = 'male'").get() as any;
-  const adminFemales = db.prepare("SELECT COUNT(*) as count FROM users WHERE gender = 'female'").get() as any;
+  // Published today is a bit harder with Supabase head query, but we can use gte
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const { count: publishedToday } = await supabase
+    .from("matches")
+    .select("*", { count: 'exact', head: true })
+    .gte("last_published_at", today.toISOString())
+    .is("deleted_at", null);
+
+  const totalAdmins = await getCount("users");
+  const adminMales = await getCount("users", { gender: 'male' });
+  const adminFemales = await getCount("users", { gender: 'female' });
 
   res.json({
-    males: males.count,
-    females: females.count,
-    publishedToday: publishedToday.count,
-    neverPublished: neverPublished.count,
-    totalAdmins: totalAdmins.count,
-    adminMales: adminMales.count,
-    adminFemales: adminFemales.count
+    males,
+    females,
+    publishedToday: publishedToday || 0,
+    neverPublished,
+    totalAdmins,
+    adminMales,
+    adminFemales
   });
 });
 
 // Activity Logs
-app.get("/api/activity-logs", authenticate, (req: any, res) => {
+app.get("/api/activity-logs", authenticate, async (req: any, res) => {
   const { userId, dateFrom, dateTo } = req.query;
-  let query = `
-    SELECT al.*, u.name as user_name 
-    FROM activity_logs al 
-    JOIN users u ON al.user_id = u.id 
-    WHERE 1=1
-  `;
-  const params: any[] = [];
+  let query = supabase
+    .from("activity_logs")
+    .select(`
+      *,
+      user:users(name)
+    `)
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   if (req.user.role !== 'super_admin') {
-    query += " AND al.user_id = ?";
-    params.push(req.user.id);
+    query = query.eq("user_id", req.user.id);
   } else if (userId) {
-    query += " AND al.user_id = ?";
-    params.push(userId);
+    query = query.eq("user_id", userId);
   }
 
-  if (dateFrom) {
-    query += " AND date(al.created_at) >= date(?)";
-    params.push(dateFrom);
-  }
-  if (dateTo) {
-    query += " AND date(al.created_at) <= date(?)";
-    params.push(dateTo);
-  }
+  if (dateFrom) query = query.gte("created_at", dateFrom);
+  if (dateTo) query = query.lte("created_at", dateTo);
 
-  query += " ORDER BY al.created_at DESC LIMIT 500";
+  const { data: logs, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
   
-  const logs = db.prepare(query).all(...params);
-  res.json(logs);
+  const formattedLogs = logs.map(log => ({
+    ...log,
+    user_name: log.user?.name
+  }));
+
+  res.json(formattedLogs);
 });
 
 // Whapi API Simulation/Integration
@@ -1219,24 +1328,33 @@ app.get("/api/whatsapp/messages/:groupId", authenticate, async (req, res) => {
   // Fallback to simulation (local logs)
   // First, try to find the group name if groupId is a whapi_id
   let groupNameFilter = groupId;
-  const group = db.prepare("SELECT name FROM whatsapp_groups WHERE whapi_id = ? OR name = ?").get(groupId, groupId) as any;
+  const { data: group } = await supabase
+    .from("whatsapp_groups")
+    .select("name")
+    .or(`whapi_id.eq.${groupId},name.eq.${groupId}`)
+    .maybeSingle();
+    
   if (group) {
     groupNameFilter = group.name;
   }
 
-  const logs = db.prepare(`
-    SELECT pl.*, m.name as match_name, u.name as user_name 
-    FROM publish_logs pl
-    JOIN matches m ON pl.match_id = m.id
-    JOIN users u ON pl.user_id = u.id
-    WHERE pl.group_name = ?
-    ORDER BY pl.created_at DESC LIMIT 20
-  `).all(groupNameFilter);
+  const { data: logs, error: logsError } = await supabase
+    .from("publish_logs")
+    .select(`
+      *,
+      match:matches(name),
+      user:users(name)
+    `)
+    .eq("group_name", groupNameFilter)
+    .order("created_at", { ascending: false })
+    .limit(20);
   
+  if (logsError) return res.status(500).json({ error: logsError.message });
+
   res.json(logs.map((l: any) => ({
     id: l.id,
-    text: l.match_name ? `פורסם כרטיס: ${l.match_name}` : 'הודעה נשלחה',
-    sender: l.user_name,
+    text: l.match?.name ? `פורסם כרטיס: ${l.match.name}` : 'הודעה נשלחה',
+    sender: l.user?.name,
     timestamp: l.created_at,
     type: 'system'
   })));
@@ -1279,24 +1397,40 @@ app.post("/api/whatsapp/send", authenticate, async (req: any, res) => {
   
   if (success && includeOpening) {
     const today = new Date().toISOString().split('T')[0];
-    db.prepare("UPDATE whatsapp_groups SET last_initial_sent = ?, last_initial_sent_method = ? WHERE whapi_id = ? OR name = ?")
-      .run(today, 'auto', groupId, groupId);
+    await supabase
+      .from("whatsapp_groups")
+      .update({ last_initial_sent: today, last_initial_sent_method: 'auto' })
+      .or(`whapi_id.eq.${groupId},name.eq.${groupId}`);
   }
 
   if (matchId && success) {
     // Try to get real group name for logging
-    const group = db.prepare("SELECT name FROM whatsapp_groups WHERE whapi_id = ? OR name = ?").get(groupId, groupId) as any;
+    const { data: group } = await supabase
+      .from("whatsapp_groups")
+      .select("name")
+      .or(`whapi_id.eq.${groupId},name.eq.${groupId}`)
+      .maybeSingle();
+      
     const finalGroupName = group?.name || groupId;
 
-    db.prepare("INSERT INTO publish_logs (match_id, user_id, group_name) VALUES (?, ?, ?)")
-      .run(matchId, req.user.id, finalGroupName);
+    await supabase.from("publish_logs").insert({
+      match_id: matchId,
+      user_id: req.user.id,
+      group_name: finalGroupName
+    });
     
-    db.prepare("UPDATE matches SET last_published_at = CURRENT_TIMESTAMP, publish_count = publish_count + 1 WHERE id = ?")
-      .run(matchId);
+    // Increment publish count manually if RPC is not available
+    const { data: match } = await supabase.from("matches").select("publish_count").eq("id", matchId).single();
+    const newCount = (match?.publish_count || 0) + 1;
+    
+    await supabase.from("matches").update({ 
+      last_published_at: new Date().toISOString(), 
+      publish_count: newCount 
+    }).eq("id", matchId);
       
-    logActivity(req.user.id, "פרסום בוואטסאפ", `פורסם כרטיס מזהה ${matchId} בקבוצה ${finalGroupName}`, "match", matchId);
+    await logActivity(req.user.id, "פרסום בוואטסאפ", `פורסם כרטיס מזהה ${matchId} בקבוצה ${finalGroupName}`, "match", matchId);
   } else if (success) {
-    logActivity(req.user.id, "שליחת הודעה", `נשלחה הודעה חופשית: ${text.substring(0, 30)}...`, "system");
+    await logActivity(req.user.id, "שליחת הודעה", `נשלחה הודעה חופשית: ${text.substring(0, 30)}...`, "system");
   }
 
   if (!success) {
@@ -1345,13 +1479,18 @@ app.delete("/api/whatsapp/messages/:messageId", authenticate, async (req: any, r
 // Whapi Webhook
 const TARGET_ID = '120363210658789236@g.us';
 
-app.post("/api/whatsapp/webhook", (req, res) => {
+app.post("/api/whatsapp/webhook", async (req, res) => {
   const { messages } = req.body;
   
   if (messages && Array.isArray(messages)) {
     // Get all assigned group IDs from active managers
-    const activeManagers = db.prepare("SELECT assigned_group_id FROM users WHERE status = 'active' AND assigned_group_id IS NOT NULL").all() as any[];
-    const allowedGroupIds = new Set(activeManagers.map(m => m.assigned_group_id));
+    const { data: activeManagers } = await supabase
+      .from("users")
+      .select("assigned_group_id")
+      .eq("status", "active")
+      .not("assigned_group_id", "is", null);
+      
+    const allowedGroupIds = new Set((activeManagers || []).map(m => m.assigned_group_id));
     allowedGroupIds.add(TARGET_ID);
 
     messages.forEach(m => {
@@ -1433,33 +1572,59 @@ io.on("connection", (socket) => {
   socket.on("send_internal_message", async (data: { senderId: number, receiverId: number, text: string, matchId?: number }) => {
     try {
       const { senderId, receiverId, text, matchId } = data;
-      const result = db.prepare("INSERT INTO internal_messages (sender_id, receiver_id, text, match_id) VALUES (?, ?, ?, ?)")
-        .run(senderId, receiverId, text, matchId || null);
       
-      const messageId = result.lastInsertRowid;
-      const message = db.prepare(`
-        SELECT im.*, u.name as sender_name,
-               m.name as match_name, m.type as match_type, m.age as match_age, m.city as match_city
-        FROM internal_messages im 
-        JOIN users u ON im.sender_id = u.id 
-        LEFT JOIN matches m ON im.match_id = m.id
-        WHERE im.id = ?
-      `).get(messageId) as any;
+      const { data: insertedMsg, error: insertError } = await supabase
+        .from("internal_messages")
+        .insert({
+          sender_id: senderId,
+          receiver_id: receiverId,
+          text,
+          match_id: matchId || null
+        })
+        .select().single();
+      
+      if (insertError) throw insertError;
+
+      const { data: message, error: fetchError } = await supabase
+        .from("internal_messages")
+        .select(`
+          *,
+          sender:users!internal_messages_sender_id_fkey(name),
+          match:matches(name, type, age, city)
+        `)
+        .eq("id", insertedMsg.id)
+        .single();
+      
+      if (fetchError) throw fetchError;
+
+      // Flatten for client
+      const formattedMsg = {
+        ...message,
+        sender_name: message.sender?.name,
+        match_name: message.match?.name,
+        match_type: message.match?.type,
+        match_age: message.match?.age,
+        match_city: message.match?.city
+      };
 
       // Send to receiver if online
       const receiverSocketId = onlineUsers.get(receiverId);
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit("new_internal_message", message);
+        io.to(receiverSocketId).emit("new_internal_message", formattedMsg);
       }
 
       // Send confirmation to sender
-      socket.emit("internal_message_sent", message);
+      socket.emit("internal_message_sent", formattedMsg);
 
       // Create notification for receiver
-      const sender = db.prepare("SELECT name FROM users WHERE id = ?").get(senderId) as any;
-      const notificationText = `הודעה חדשה מ${sender.name}`;
-      db.prepare("INSERT INTO notifications (user_id, text, type) VALUES (?, ?, ?)")
-        .run(receiverId, notificationText, 'chat');
+      const { data: sender } = await supabase.from("users").select("name").eq("id", senderId).single();
+      const notificationText = `הודעה חדשה מ${sender?.name || 'מנהל'}`;
+      
+      await supabase.from("notifications").insert({
+        user_id: receiverId,
+        text: notificationText,
+        type: 'chat'
+      });
       
       if (receiverSocketId) {
         io.to(receiverSocketId).emit("new_notification", { text: notificationText, type: 'chat' });

@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
+import ConnectivityMonitor from './components/ConnectivityMonitor';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -222,7 +223,7 @@ function Sidebar() {
                     />
                   ) : null}
                   <div className={`w-10 h-10 rounded-xl bg-luxury-blue text-white flex items-center justify-center font-bold text-lg shadow-sm group-hover:bg-luxury-blue/80 transition-colors ${user?.avatar_url ? 'hidden' : ''}`}>
-                    {user?.name?.[0]}
+                    {(user?.name || user?.username)?.[0]?.toUpperCase()}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Plus size={16} className="text-white drop-shadow-md" />
@@ -230,7 +231,7 @@ function Sidebar() {
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-text-main truncate">{user?.name}</p>
+                  <p className="text-sm font-bold text-text-main truncate">{user?.name || user?.username}</p>
                   <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}</p>
                 </div>
               </div>
@@ -472,7 +473,7 @@ function Header() {
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
           <span>ברוך הבא,</span>
-          <span className="text-text-main font-bold">{user?.name}</span>
+          <span className="text-text-main font-bold">{user?.name || user?.username}</span>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -529,6 +530,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </MainLayout>
+        <ConnectivityMonitor />
       </BrowserRouter>
     </AuthProvider>
   );

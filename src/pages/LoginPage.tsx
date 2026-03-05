@@ -240,6 +240,37 @@ export default function LoginPage() {
                     )}
                   </button>
                 </form>
+
+                {loginType === 'super' && (
+                  <div className="mt-6 pt-6 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setLoading(true);
+                        try {
+                          const res = await fetch('/api/auth/temp-login', { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok) {
+                            login(data);
+                            toast.success('התחברות זמנית הצליחה!');
+                            navigate('/');
+                          } else {
+                            toast.error(data.error || 'שגיאה בהתחברות זמנית');
+                          }
+                        } catch (err) {
+                          toast.error('שגיאה בחיבור לשרת');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="w-full py-3 border-2 border-dashed border-luxury-blue/30 text-luxury-blue rounded-xl font-bold hover:bg-blue-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <ShieldCheck size={18} />
+                      התחברות זמנית ללא סיסמה (3 שעות)
+                    </button>
+                    <p className="text-[10px] text-slate-400 text-center mt-2 font-medium">כפתור זה זמני ויוסר בקרוב</p>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

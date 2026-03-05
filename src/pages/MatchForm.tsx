@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
 import { APP_NAME } from '../constants';
-import { GoogleGenAI, Type } from '@google/genai';
 
 export default function MatchForm() {
   const { user } = useAuth();
@@ -107,69 +106,18 @@ export default function MatchForm() {
 
     setParsing(true);
     try {
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        toast.error("מפתח ה-API של Gemini חסר במערכת. אנא פנה למנהל.");
-        return;
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `You are an expert at parsing Hebrew matchmaking profiles. 
-        Parse the following text into a JSON object. 
-        Crucially, determine the 'type' (male or female) based on the name or context if not explicitly stated.
-        
-        Fields: 
-        - type: "male" or "female"
-        - name: Full name
-        - age: Number
-        - height: Height string
-        - ethnicity: Origin/Ethnicity
-        - marital_status: Current status
-        - city: City
-        - religious_level: Religious level
-        - service: Military/National service
-        - occupation: Job/Studies
-        - about: Short description about the person
-        - looking_for: What they are looking for
-        - smoking: Smoking status
-        - negiah: Shomer negiah status
-        - age_range: Age range looking for
-        
-        If a field is missing, set it to null.
-        Text: ${aiText}`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING, description: "male or female" },
-              name: { type: Type.STRING },
-              age: { type: Type.NUMBER },
-              height: { type: Type.STRING },
-              ethnicity: { type: Type.STRING },
-              marital_status: { type: Type.STRING },
-              city: { type: Type.STRING },
-              religious_level: { type: Type.STRING },
-              service: { type: Type.STRING },
-              occupation: { type: Type.STRING },
-              about: { type: Type.STRING },
-              looking_for: { type: Type.STRING },
-              smoking: { type: Type.STRING },
-              negiah: { type: Type.STRING },
-              age_range: { type: Type.STRING },
-            },
-            required: ["type", "name"]
-          }
-        }
+      const res = await fetch('/api/parse-match-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: aiText }),
       });
 
-      if (!response.text) {
-        throw new Error("Empty response from AI");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'API request failed');
       }
 
-      const data = JSON.parse(response.text);
+      const data = await res.json();
       setFormData(prev => ({ ...prev, ...data, creation_source: 'ai' }));
       toast.success('הטקסט נותח בהצלחה! הפרטים הוזנו ללשונית ההזנה הידנית.');
       setActiveTab('manual');

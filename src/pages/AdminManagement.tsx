@@ -9,9 +9,12 @@ import { useAuth } from '../contexts/AuthContext';
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'users' | 'authorized'>('users');
   const [showModal, setShowModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<number | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
@@ -47,17 +50,28 @@ export default function AdminManagement() {
     is_shaham_manager: 0
   });
 
+  const [authEmailData, setAuthEmailData] = useState({
+    email: '',
+    name: ''
+  });
+
   const [tempGender, setTempGender] = useState<'male' | 'female' | null>(null);
 
   const fetchUsers = async () => {
     try {
-      const [usersRes, groupsRes] = await Promise.all([
+      const [usersRes, groupsRes, authRes] = await Promise.all([
         fetch('/api/users'),
-        fetch('/api/whatsapp/groups')
+        fetch('/api/whatsapp/groups'),
+        fetch('/api/authorized-emails')
       ]);
       
-      if (usersRes.ok) setUsers(await usersRes.json());
+      if (usersRes.ok) {
+        const data = await usersRes.json();
+        console.log('Fetched Admins:', data);
+        setUsers(data);
+      }
       if (groupsRes.ok) setWhatsappGroups(await groupsRes.json());
+      if (authRes.ok) setAuthorizedEmails(await authRes.json());
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -108,6 +122,41 @@ export default function AdminManagement() {
     }
   };
 
+  const handleAddAuthEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/authorized-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authEmailData),
+      });
+      if (res.ok) {
+        toast.success('אימייל נוסף לרשימת המורשים');
+        setShowAuthModal(false);
+        setAuthEmailData({ email: '', name: '' });
+        fetchUsers();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בהוספה');
+      }
+    } catch (err) {
+      toast.error('שגיאה בחיבור לשרת');
+    }
+  };
+
+  const handleDeleteAuthEmail = async (id: number) => {
+    if (!confirm('האם אתה בטוח שברצונך להסיר אימייל זה מרשימת המורשים?')) return;
+    try {
+      const res = await fetch(`/api/authorized-emails/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('האימייל הוסר');
+        fetchUsers();
+      }
+    } catch (err) {
+      toast.error('שגיאה במחיקה');
+    }
+  };
+
   const handleCsvUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!csvFile) return toast.error('אנא בחר קובץ CSV');
@@ -155,10 +204,24 @@ export default function AdminManagement() {
             }
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-            if (header === 'טלפון' || header === 'phone') admin.phone = val;
+            if (header === 'טלפון' || header === 'phone' || header === 'נייד') admin.phone = val;
             if (header === 'סיסמה' || header === 'password' || header.includes('סיסמה')) admin.password = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
-            if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
+            if (header === 'מין' || header === 'gender' || header.includes('מין')) {
+              const lowerVal = val.toLowerCase().trim();
+              if (['בת', 'נקבה', 'female', 'f', 'אישה'].includes(lowerVal)) admin.gender = 'female';
+              else if (['בן', 'זכר', 'male', 'm', 'גבר'].includes(lowerVal)) admin.gender = 'male';
+              else admin.gender = null;
+            }
+            if (header === 'תפקיד' || header === 'role') {
+               const lowerVal = val.toLowerCase().trim();
+               if (['מנהל ראשי', 'super_admin'].includes(lowerVal)) admin.role = 'super_admin';
+               else if (['ראש צוות', 'team_leader'].includes(lowerVal)) admin.role = 'team_leader';
+               else if (['צופה', 'viewer'].includes(lowerVal)) admin.role = 'viewer';
+               else admin.role = 'admin';
+            }
+            if (header === 'קבוצה' || header === 'category' || header === 'קטגוריה') admin.category = val;
+            if (header === 'סטטוס' || header === 'status') admin.status = val;
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
               // Handle Google Drive links
               if (val.includes('drive.google.com')) {
@@ -385,7 +448,8 @@ export default function AdminManagement() {
                           u.username.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = filterCategory.length === 0 || 
                             (u.category && filterCategory.includes(u.category)) ||
-                            (u.secondary_category && filterCategory.includes(u.secondary_category));
+                            (u.secondary_category && filterCategory.includes(u.secondary_category)) ||
+                            u.role === 'super_admin'; // Always show super_admin regardless of category filter
     return matchesSearch && matchesCategory;
   }).sort((a, b) => {
     if (a.role === 'super_admin') return -1;
@@ -398,9 +462,16 @@ export default function AdminManagement() {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-extrabold text-text-main tracking-tight">ניהול מנהלים</h1>
-          <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות וגישה למערכת {APP_NAME}</p>
+          <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות, מנהלים ואימיילים מורשים</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={() => setShowAuthModal(true)}
+            className="btn-secondary flex items-center gap-2 px-5 py-2.5 font-bold"
+          >
+            <Shield size={18} />
+            אישור אימייל מראש
+          </button>
           <button 
             onClick={() => setShowCsvModal(true)}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
@@ -436,7 +507,25 @@ export default function AdminManagement() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        <button 
+          onClick={() => setActiveTab('users')}
+          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'users' ? 'border-luxury-blue text-luxury-blue' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          רשימת מנהלים
+        </button>
+        <button 
+          onClick={() => setActiveTab('authorized')}
+          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'authorized' ? 'border-luxury-blue text-luxury-blue' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          אימיילים מורשים (גוגל)
+        </button>
+      </div>
+
+      {activeTab === 'users' ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
           <input 
@@ -684,7 +773,9 @@ export default function AdminManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className="text-sm font-medium text-text-secondary">{u.creator_name || 'מערכת'}</span>
+                    <span className="text-sm font-medium text-text-secondary">
+                      {users.find(c => c.id === u.created_by)?.name || '---'}
+                    </span>
                   </td>
                   <td className="px-6 py-5">
                     {u.is_from_file ? (
@@ -728,10 +819,10 @@ export default function AdminManagement() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-text-main font-medium">{u.username}</td>
+                  <td className="px-6 py-5 text-text-main font-medium">{u.username || '---'}</td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-text-main">{u.email}</span>
+                      <span className="text-sm font-medium text-text-main">{u.email || '---'}</span>
                       <span className="text-[10px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>
                     </div>
                   </td>
@@ -838,6 +929,62 @@ export default function AdminManagement() {
           </table>
         </div>
       </div>
+      </>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-text-main">רשימת אימיילים מורשים להתחברות</h2>
+            <div className="text-xs text-text-secondary bg-blue-50 px-3 py-1 rounded-full font-medium">
+              {authorizedEmails.length} אימיילים מורשים
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead>
+                <tr className="bg-slate-50/50 text-text-secondary text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                  <th className="px-6 py-4">שם (אופציונלי)</th>
+                  <th className="px-6 py-4">כתובת אימייל</th>
+                  <th className="px-6 py-4">תאריך הוספה</th>
+                  <th className="px-6 py-4 text-center">פעולות</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {authorizedEmails.map(auth => (
+                  <tr key={auth.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="text-sm font-bold text-text-main">{auth.name || '---'}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm font-medium text-luxury-blue">{auth.email}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs text-text-secondary">{new Date(auth.created_at).toLocaleDateString('he-IL')}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-center gap-2">
+                        <button 
+                          onClick={() => handleDeleteAuthEmail(auth.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                          title="הסר הרשאה"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {authorizedEmails.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">
+                      אין אימיילים מורשים ברשימה. הוסף אימייל כדי לאפשר התחברות עם גוגל.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* CSV Upload Modal */}
       <AnimatePresence>
@@ -1160,6 +1307,63 @@ export default function AdminManagement() {
                   </div>
                 </form>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Authorized Email Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-luxury-blue">
+                  <Shield size={24} />
+                  <h2 className="text-xl font-bold">אישור אימייל מראש</h2>
+                </div>
+                <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddAuthEmail} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">כתובת אימייל (גוגל)</label>
+                  <input 
+                    type="email" 
+                    required
+                    value={authEmailData.email}
+                    onChange={(e) => setAuthEmailData({...authEmailData, email: e.target.value})}
+                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none font-medium"
+                    placeholder="example@gmail.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">שם המנהל (אופציונלי)</label>
+                  <input 
+                    type="text" 
+                    value={authEmailData.name}
+                    onChange={(e) => setAuthEmailData({...authEmailData, name: e.target.value})}
+                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none font-medium"
+                    placeholder="שם המנהל"
+                  />
+                </div>
+                
+                <div className="pt-4">
+                  <button 
+                    type="submit"
+                    className="w-full py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                  >
+                    אשר אימייל
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
