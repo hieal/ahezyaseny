@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS admins (
     avatar_url TEXT,
     is_from_file INTEGER DEFAULT 0,
     is_approved INTEGER DEFAULT 1,
+    created_by INTEGER REFERENCES admins(id),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
     password_updated_at TIMESTAMPTZ
@@ -98,9 +99,10 @@ CREATE TABLE IF NOT EXISTS tracking_logs (
 );
 
 -- Insert Iron User if not exists
-INSERT INTO admins (username, password_plain, email, role, status, is_approved)
-VALUES ('good', 'good', 'admin@shidduchim.com', 'super_admin', 'active', 1)
-ON CONFLICT (username) DO NOTHING;
+INSERT INTO admins (username, password_plain, email, role, status, is_approved, avatar_url)
+VALUES ('good', 'good', 'admin@shidduchim.com', 'super_admin', 'active', 1, 'https://api.dicebear.com/9.x/avataaars/svg?seed=Felix')
+ON CONFLICT (username) DO UPDATE SET
+  avatar_url = COALESCE(admins.avatar_url, 'https://api.dicebear.com/9.x/avataaars/svg?seed=Felix');
 
 -- Insert default settings
 INSERT INTO settings (key, value) VALUES ('iron_username', 'good') ON CONFLICT (key) DO NOTHING;
@@ -123,6 +125,23 @@ export class DatabaseService {
         return await this.initializeDatabase(client);
       }
       
+      // 2. Ensure 'good' user has an avatar (fix for existing databases)
+      const { data: goodUser } = await client.from('admins').select('avatar_url').eq('username', 'good').single();
+      if (goodUser && !goodUser.avatar_url) {
+        await client.from('admins').update({ 
+          avatar_url: 'https://api.dicebear.com/9.x/avataaars/svg?seed=Felix' 
+        }).eq('username', 'good');
+      }
+
+      // 3. Ensure 'created_by' column exists in admins table
+      const { error: colError } = await client.from('admins').select('created_by').limit(1);
+      if (colError && colError.message.includes('does not exist')) {
+        console.log('Adding missing created_by column to admins table...');
+        await client.rpc('exec_sql', { 
+          sql: 'ALTER TABLE admins ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES admins(id);' 
+        });
+      }
+
       return true;
     } catch (err) {
       console.error('Error checking database status:', err);

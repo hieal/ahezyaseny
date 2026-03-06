@@ -94,7 +94,7 @@ export default function AdminManagement() {
     try {
       const dataToSave = {
         ...formData,
-        created_by: currentUser?.id || 0
+        created_by: currentUser?.id || null
       };
 
       let res;

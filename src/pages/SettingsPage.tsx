@@ -56,7 +56,8 @@ export default function SettingsPage() {
       ];
 
       for (const s of settings) {
-        await client.from('settings').upsert(s, { onConflict: 'key' });
+        const { error } = await client.from('settings').upsert(s, { onConflict: 'key' });
+        if (error) throw error;
       }
 
       toast.success('ההגדרות נשמרו בהצלחה');

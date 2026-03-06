@@ -7,8 +7,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase credentials missing. Please check your environment variables.');
 }
 
+const options = {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+};
+
 // Internal global client instance
-let currentClient = createClient(supabaseUrl, supabaseAnonKey);
+let currentClient = createClient(supabaseUrl, supabaseAnonKey, options);
 
 /**
  * Returns the current active Supabase client.
@@ -21,7 +29,7 @@ export const getSupabase = (): SupabaseClient => {
  * Updates the global Supabase client with new credentials.
  */
 export const setSupabase = (url: string, key: string): SupabaseClient => {
-  currentClient = createClient(url, key);
+  currentClient = createClient(url, key, options);
   return currentClient;
 };
 
@@ -29,7 +37,7 @@ export const setSupabase = (url: string, key: string): SupabaseClient => {
  * Creates a new Supabase client with custom credentials without updating the global one.
  */
 export const createSupabaseClient = (url: string, key: string): SupabaseClient => {
-  return createClient(url, key);
+  return createClient(url, key, options);
 };
 
 // For backward compatibility while migrating, we use a Proxy to always point to the currentClient
