@@ -23,6 +23,9 @@ export interface User {
   created_by?: number;
   creator_name?: string;
   password?: string;
+  daily_message_template?: string;
+  daily_message_template_male?: string;
+  daily_message_template_female?: string;
 }
 
 export interface WhatsAppGroup {

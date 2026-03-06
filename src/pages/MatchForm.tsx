@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
 import { APP_NAME } from '../constants';
+import { supabase } from '../lib/supabase';
+import { GoogleGenAI } from '@google/genai';
 
 export default function MatchForm() {
   const { user } = useAuth();
@@ -66,10 +68,12 @@ export default function MatchForm() {
 
   useEffect(() => {
     if (isEdit) {
-      fetch(`/api/matches`)
-        .then(res => res.json())
-        .then(data => {
-          const match = data.find((m: Match) => m.id === parseInt(id));
+      supabase
+        .from('matches')
+        .select('*')
+        .eq('id', parseInt(id))
+        .single()
+        .then(({ data: match }) => {
           if (match) {
             setFormData(match);
             try {
@@ -106,18 +110,48 @@ export default function MatchForm() {
 
     setParsing(true);
     try {
-      const res = await fetch('/api/parse-match-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: aiText }),
+      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Gemini API key is missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `
+        You are an expert at parsing Hebrew matchmaking profiles. 
+        Parse the following text into a JSON object. 
+        Crucially, determine the 'type' (male or female) based on the name or context if not explicitly stated.
+        
+        Fields: 
+        - type: "male" or "female"
+        - name: Full name
+        - age: Number
+        - height: Height string
+        - ethnicity: Origin/Ethnicity
+        - marital_status: Current status
+        - city: City
+        - religious_level: Religious level
+        - service: Military/National service
+        - occupation: Job/Studies
+        - about: Short description about the person
+        - looking_for: What they are looking for
+        - smoking: Smoking status
+        - negiah: Shomer negiah status
+        - age_range: Age range looking for
+        
+        If a field is missing, set it to null.
+        Text: ${aiText}
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'API request failed');
-      }
-
-      const data = await res.json();
+      const responseText = response.text;
+      if (!responseText) throw new Error("Empty response from AI");
+      
+      const data = JSON.parse(responseText);
       setFormData(prev => ({ ...prev, ...data, creation_source: 'ai' }));
       toast.success('הטקסט נותח בהצלחה! הפרטים הוזנו ללשונית ההזנה הידנית.');
       setActiveTab('manual');
@@ -134,31 +168,39 @@ export default function MatchForm() {
     e.preventDefault();
     setSaving(true);
     try {
-      const url = isEdit ? `/api/matches/${id}` : '/api/matches';
-      const method = isEdit ? 'PUT' : 'POST';
-      
       const mainImage = images[selectedImageIndex];
       const otherImages = images.filter((_, i) => i !== selectedImageIndex && !!images[i]);
       
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          image_url: mainImage,
-          additional_images: JSON.stringify(otherImages),
-          crop_config: mainImage ? JSON.stringify({ crop, zoom, rotation, croppedAreaPixels }) : null
-        }),
-      });
-      if (res.ok) {
+      const payload = {
+        ...formData,
+        image_url: mainImage,
+        additional_images: JSON.stringify(otherImages),
+        crop_config: mainImage ? JSON.stringify({ crop, zoom, rotation, croppedAreaPixels }) : null,
+        created_by: user?.id
+      };
+
+      let error;
+      if (isEdit) {
+        const { error: err } = await supabase
+          .from('matches')
+          .update(payload)
+          .eq('id', parseInt(id!));
+        error = err;
+      } else {
+        const { error: err } = await supabase
+          .from('matches')
+          .insert(payload);
+        error = err;
+      }
+
+      if (!error) {
         toast.success(isEdit ? 'הכרטיס עודכן' : 'הכרטיס נוצר בהצלחה');
         navigate('/');
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בשמירה');
+        toast.error(error.message || 'שגיאה בשמירה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בחיבור');
     } finally {
       setSaving(false);
     }
@@ -330,23 +372,23 @@ export default function MatchForm() {
     if (scannedMatches.length === 0) return;
     setImporting(true);
     
-    let successCount = 0;
-    for (const match of scannedMatches) {
-      try {
-        const res = await fetch('/api/matches', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...match, creation_source: 'csv' }),
-        });
-        if (res.ok) successCount++;
-      } catch (err) {
-        console.error('Error importing match:', err);
+    try {
+      const { error } = await supabase
+        .from('matches')
+        .insert(scannedMatches.map(m => ({ ...m, created_by: user?.id })));
+      
+      if (!error) {
+        toast.success(`יובאו ${scannedMatches.length} כרטיסים בהצלחה`);
+        navigate('/');
+      } else {
+        toast.error(error.message || 'שגיאה בייבוא');
       }
+    } catch (err) {
+      console.error('Error importing matches:', err);
+      toast.error('שגיאה בתקשורת');
+    } finally {
+      setImporting(false);
     }
-    
-    setImporting(false);
-    toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
-    navigate('/');
   };
 
   return (
@@ -365,10 +407,32 @@ export default function MatchForm() {
           <button 
             onClick={async () => {
               try {
-                const res = await fetch('/api/matches/demo', { method: 'POST' });
-                if (res.ok) {
+                const demoMatch = {
+                  type: 'male',
+                  name: 'ישראל ישראלי (דמו)',
+                  age: 28,
+                  height: '1.80',
+                  ethnicity: 'ספרדי',
+                  marital_status: 'רווק/ה',
+                  city: 'ירושלים',
+                  religious_level: 'דתי',
+                  service: 'צבאי',
+                  occupation: 'סטודנט להנדסה',
+                  about: 'בחור חיובי, אוהב לטייל וללמוד תורה. מחפש קשר רציני למטרת חתונה.',
+                  looking_for: 'בחורה יראת שמיים, עם לב טוב ושמחת חיים.',
+                  smoking: 'לא',
+                  negiah: 'כן',
+                  age_range: '24-28',
+                  phone: '0501234567',
+                  creation_source: 'manual',
+                  created_by: user?.id
+                };
+                const { error } = await supabase.from('matches').insert(demoMatch);
+                if (!error) {
                   toast.success('נוצר משודך דמו בהצלחה');
                   navigate('/');
+                } else {
+                  toast.error(error.message);
                 }
               } catch (err) {
                 toast.error('שגיאה ביצירת דמו');

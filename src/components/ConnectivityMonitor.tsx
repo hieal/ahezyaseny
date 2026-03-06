@@ -24,23 +24,12 @@ export default function ConnectivityMonitor() {
     // 2. Auth Key Check
     const googleClientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
     const hasGoogleKey = !!googleClientId && googleClientId.length > 0;
-    if (!hasGoogleKey) {
-      console.error('[CONNECTION_ERROR] Google Client ID is missing in environment variables.');
-    }
     setStatus(prev => ({ ...prev, auth: { ok: hasGoogleKey, loading: false } }));
 
-    // 3. API Check
-    try {
-      const res = await fetch('/api/health');
-      if (res.ok) {
-        setStatus(prev => ({ ...prev, api: { ok: true, loading: false } }));
-      } else {
-        throw new Error(`Server responded with ${res.status}`);
-      }
-    } catch (err: any) {
-      console.error('[CONNECTION_ERROR] API server is unreachable:', err);
-      setStatus(prev => ({ ...prev, api: { ok: false, loading: false } }));
-    }
+    // 3. Gemini API Check
+    const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+    const hasGeminiKey = !!geminiKey && geminiKey.length > 0;
+    setStatus(prev => ({ ...prev, api: { ok: hasGeminiKey, loading: false } }));
   };
 
   useEffect(() => {
@@ -61,14 +50,14 @@ export default function ConnectivityMonitor() {
         />
         <div className="w-px h-6 bg-slate-200" />
         <StatusItem 
-          label="אישור גוגל" 
+          label="Google Auth" 
           ok={status.auth.ok} 
           loading={status.auth.loading} 
           icon={<Shield size={14} />}
         />
         <div className="w-px h-6 bg-slate-200" />
         <StatusItem 
-          label="API שרת" 
+          label="Gemini API" 
           ok={status.api.ok} 
           loading={status.api.loading} 
           icon={<Activity size={14} />}

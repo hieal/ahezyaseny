@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play } from 'lucide-react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
+import { supabase } from '../lib/supabase';
 
 import { WhatsAppGroup } from '../types';
 
@@ -16,17 +17,23 @@ export default function SettingsPage() {
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        setTemplate(data.whatsapp_template || '');
-        setInitialMessage(data.whatsapp_initial_message || '');
-        setGoogleLoginEnabled(data.google_login_enabled === 'true');
+    supabase.from('settings').select('*')
+      .then(({ data }) => {
+        if (data) {
+          const settingsObj = data.reduce((acc: any, s: any) => {
+            acc[s.key] = s.value;
+            return acc;
+          }, {});
+          setTemplate(settingsObj.whatsapp_template || '');
+          setInitialMessage(settingsObj.whatsapp_initial_message || '');
+          setGoogleLoginEnabled(settingsObj.google_login_enabled === 'true');
+        }
       });
 
-    fetch('/api/whatsapp/groups')
-      .then(res => res.json())
-      .then(data => setWhatsappGroups(data));
+    supabase.from('whatsapp_groups').select('*')
+      .then(({ data }) => {
+        if (data) setWhatsappGroups(data as WhatsAppGroup[]);
+      });
   }, []);
 
   const handleSave = async () => {
@@ -39,11 +46,7 @@ export default function SettingsPage() {
       ];
 
       for (const s of settings) {
-        await fetch('/api/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(s),
-        });
+        await supabase.from('settings').upsert(s, { onConflict: 'key' });
       }
 
       toast.success('ההגדרות נשמרו בהצלחה');
@@ -64,14 +67,14 @@ export default function SettingsPage() {
     };
     
     try {
-      const res = await fetch('/api/whatsapp/groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newGroup),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setWhatsappGroups(prev => [...prev, { ...newGroup, id: data.id, last_initial_sent: null }]);
+      const { data, error } = await supabase
+        .from('whatsapp_groups')
+        .insert(newGroup)
+        .select()
+        .single();
+
+      if (!error && data) {
+        setWhatsappGroups(prev => [...prev, data as WhatsAppGroup]);
         toast.success('קבוצה נוספה');
       }
     } catch (err) {
@@ -82,8 +85,12 @@ export default function SettingsPage() {
   const deleteGroup = async (id: number) => {
     if (!confirm('האם למחוק קבוצה זו?')) return;
     try {
-      const res = await fetch(`/api/whatsapp/groups/${id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('whatsapp_groups')
+        .delete()
+        .eq('id', id);
+
+      if (!error) {
         setWhatsappGroups(prev => prev.filter(g => g.id !== id));
         toast.success('קבוצה נמחקה');
       }
@@ -94,12 +101,18 @@ export default function SettingsPage() {
 
   const saveGroup = async (group: WhatsAppGroup) => {
     try {
-      const res = await fetch(`/api/whatsapp/groups/${group.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(group),
-      });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('whatsapp_groups')
+        .update({
+          name: group.name,
+          link: group.link,
+          whapi_id: group.whapi_id,
+          category: group.category,
+          type: group.type
+        })
+        .eq('id', group.id);
+
+      if (!error) {
         toast.success(`הקבוצה ${group.name} נשמרה`);
       }
     } catch (err) {

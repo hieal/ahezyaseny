@@ -16,6 +16,7 @@ import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
 import ConnectivityMonitor from './components/ConnectivityMonitor';
+import { supabase } from './lib/supabase';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -27,10 +28,6 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
   return <>{children}</>;
 }
 
-import { io } from 'socket.io-client';
-
-const socket = io();
-
 function Sidebar() {
   const { user, logout, refreshUser } = useAuth();
   const location = useLocation();
@@ -41,19 +38,21 @@ function Sidebar() {
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [onlineUsers, setOnlineUsers] = React.useState<number[]>([]);
+  const [onlineUsers, setOnlineUsers] = React.useState<string[]>([]);
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
   const [showChat, setShowChat] = React.useState<any>(null); // { id, name }
 
   React.useEffect(() => {
     if (user) {
-      socket.emit('user_login', user.id);
-      
       const fetchAdmins = async () => {
         try {
-          const res = await fetch('/api/users');
-          if (res.ok) {
-            const data = await res.json();
+          const { data, error } = await supabase
+            .from("admins")
+            .select("*")
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false });
+
+          if (!error && data) {
             setAllAdmins(data);
           }
         } catch (err) {
@@ -62,20 +61,52 @@ function Sidebar() {
       };
       fetchAdmins();
 
-      const handleOnlineUsers = (users: number[]) => {
-        setOnlineUsers(users);
-      };
+      // Supabase Presence for online users
+      const channel = supabase.channel('online-users', {
+        config: {
+          presence: {
+            key: user.id.toString(),
+          },
+        },
+      });
 
-      const handleNewNotification = (notif: any) => {
-        toast(notif.text, { icon: '🔔' });
-      };
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = channel.presenceState();
+          setOnlineUsers(Object.keys(newState));
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          console.log('join', key, newPresences);
+        })
+        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+          console.log('leave', key, leftPresences);
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.track({ online_at: new Date().toISOString() });
+          }
+        });
 
-      socket.on('online_users', handleOnlineUsers);
-      socket.on('new_notification', handleNewNotification);
+      // Notifications subscription
+      const notifChannel = supabase
+        .channel('notifications')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            toast(payload.new.text, { icon: '🔔' });
+          }
+        )
+        .subscribe();
 
       return () => {
-        socket.off('online_users', handleOnlineUsers);
-        socket.off('new_notification', handleNewNotification);
+        supabase.removeChannel(channel);
+        supabase.removeChannel(notifChannel);
       };
     }
   }, [user]);
@@ -94,14 +125,16 @@ function Sidebar() {
     reader.onloadend = async () => {
       const base64 = reader.result as string;
       try {
-        const res = await fetch('/api/users/me/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ avatar_url: base64 })
-        });
-        if (res.ok) {
+        const { error } = await supabase
+          .from('admins')
+          .update({ avatar_url: base64 })
+          .eq('id', user?.id);
+
+        if (!error) {
           toast.success('תמונת הפרופיל עודכנה');
           refreshUser();
+        } else {
+          toast.error(error.message);
         }
       } catch (err) {
         toast.error('שגיאה בעדכון התמונה');
@@ -271,19 +304,19 @@ function Sidebar() {
                 <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
                   <p className="text-[10px] text-blue-600 font-black uppercase tracking-wider mb-1">בנים מחוברים</p>
                   <p className="text-3xl font-black text-blue-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'male').length}
+                    {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.gender === 'male').length}
                   </p>
                 </div>
                 <div className="bg-pink-50 p-4 rounded-2xl text-center border border-pink-100">
                   <p className="text-[10px] text-pink-600 font-black uppercase tracking-wider mb-1">בנות מחוברות</p>
                   <p className="text-3xl font-black text-pink-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length}
+                    {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.gender === 'female').length}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).map(admin => (
+                {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.id !== user?.id).map(admin => (
                   <div key={admin.id} className="flex flex-col p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all gap-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -340,7 +373,7 @@ function Sidebar() {
                     )}
                   </div>
                 ))}
-                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).length === 0 && (
+                {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.id !== user?.id).length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-8">אין מנהלים אחרים מחוברים כרגע</p>
                 )}
               </div>
@@ -403,23 +436,35 @@ function Sidebar() {
                 onClick={async () => {
                   if (newPassword !== confirmPassword) return toast.error('הסיסמאות אינן תואמות');
                   try {
-                    const res = await fetch('/api/users/change-password', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ oldPassword, newPassword })
-                    });
-                    if (res.ok) {
+                    const { data: userToUpdate } = await supabase
+                      .from('admins')
+                      .select('password_plain')
+                      .eq('id', user?.id)
+                      .single();
+
+                    if (userToUpdate?.password_plain !== oldPassword) {
+                      return toast.error('סיסמה ישנה שגויה');
+                    }
+
+                    const { error } = await supabase
+                      .from('admins')
+                      .update({ 
+                        password_plain: newPassword,
+                        password_updated_at: new Date().toISOString()
+                      })
+                      .eq('id', user?.id);
+
+                    if (!error) {
                       toast.success('הסיסמא שונתה בהצלחה');
                       setShowPasswordModal(false);
                       setOldPassword('');
                       setNewPassword('');
                       setConfirmPassword('');
                     } else {
-                      const data = await res.json();
-                      toast.error(data.error || 'שגיאה בשינוי הסיסמא');
+                      toast.error(error.message);
                     }
                   } catch (err) {
-                    toast.error('שגיאה בתקשורת עם השרת');
+                    toast.error('שגיאה בתקשורת');
                   }
                 }}
                 className="w-full py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg"

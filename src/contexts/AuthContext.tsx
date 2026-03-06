@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -17,10 +18,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     try {
-      const res = await fetch('/api/auth/me');
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data);
+      // Check local storage for super admin session first
+      const superAdminSession = localStorage.getItem('super_admin_session');
+      if (superAdminSession === 'true') {
+        setUser({
+          id: 0,
+          name: 'מנהל ראשי',
+          username: 'admin',
+          email: 'admin@shidduchim.com',
+          role: 'super_admin',
+          status: 'active',
+          category: null,
+          secondary_category: null,
+          gender: null,
+          phone: null,
+          google_login_allowed: 'true',
+          avatar_url: null,
+          is_from_file: 0,
+          is_approved: 1,
+          created_at: new Date().toISOString()
+        } as User);
+        setLoading(false);
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        // Fetch from admins table
+        const { data: admin, error } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('email', session.user.email)
+          .is('deleted_at', null)
+          .single();
+          
+        if (admin) {
+          setUser(admin as User);
+        } else {
+          setUser(null);
+        }
       } else {
         setUser(null);
       }
@@ -33,6 +70,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     refreshUser();
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        refreshUser();
+      } else if (localStorage.getItem('super_admin_session') !== 'true') {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = (userData: User) => {
@@ -40,7 +87,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await supabase.auth.signOut();
+    localStorage.removeItem('super_admin_session');
     setUser(null);
   };
 

@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast';
 import { History, Search, Filter, Calendar, User as UserIcon, MessageSquare, CheckCircle, X, Eye, Clock, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MatchCard from '../components/MatchCard';
+import { supabase } from '../lib/supabase';
 
 export default function MatchesHistoryPage() {
   const { user } = useAuth();
@@ -22,10 +23,15 @@ export default function MatchesHistoryPage() {
   const fetchConfirmedMatches = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/matches/confirmed');
-      if (res.ok) {
-        const data = await res.json();
-        setMatches(data);
+      const { data, error } = await supabase
+        .from('matches')
+        .select('*')
+        .is('deleted_at', null)
+        .eq('is_published_confirmed', 1)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setMatches(data as Match[]);
       }
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית משודכים');
@@ -37,9 +43,20 @@ export default function MatchesHistoryPage() {
   const fetchMatchHistory = async (matchId: number) => {
     try {
       setHistoryLoading(true);
-      const res = await fetch(`/api/matches/${matchId}/publications`);
-      if (res.ok) {
-        setPublishHistory(await res.json());
+      const { data, error } = await supabase
+        .from('publish_logs')
+        .select(`
+          *,
+          user:admins(name)
+        `)
+        .eq('match_id', matchId)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setPublishHistory(data.map(log => ({
+          ...log,
+          user_name: log.user?.name
+        })));
       }
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית פרסומים');

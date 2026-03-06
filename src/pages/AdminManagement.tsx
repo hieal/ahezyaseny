@@ -5,6 +5,7 @@ import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, Use
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
@@ -60,18 +61,16 @@ export default function AdminManagement() {
   const fetchUsers = async () => {
     try {
       const [usersRes, groupsRes, authRes] = await Promise.all([
-        fetch('/api/users'),
-        fetch('/api/whatsapp/groups'),
-        fetch('/api/authorized-emails')
+        supabase.from('admins').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('whatsapp_groups').select('*'),
+        supabase.from('authorized_emails').select('*')
       ]);
       
-      if (usersRes.ok) {
-        const data = await usersRes.json();
-        console.log('Fetched Admins:', data);
-        setUsers(data);
+      if (usersRes.data) {
+        setUsers(usersRes.data as User[]);
       }
-      if (groupsRes.ok) setWhatsappGroups(await groupsRes.json());
-      if (authRes.ok) setAuthorizedEmails(await authRes.json());
+      if (groupsRes.data) setWhatsappGroups(groupsRes.data as WhatsAppGroup[]);
+      if (authRes.data) setAuthorizedEmails(authRes.data);
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -86,14 +85,24 @@ export default function AdminManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
-      const method = editingUser ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (res.ok) {
+      const dataToSave = {
+        ...formData,
+        created_by: currentUser?.id || 0
+      };
+
+      let res;
+      if (editingUser) {
+        res = await supabase
+          .from('admins')
+          .update(dataToSave)
+          .eq('id', editingUser.id);
+      } else {
+        res = await supabase
+          .from('admins')
+          .insert([dataToSave]);
+      }
+
+      if (!res.error) {
         toast.success(editingUser ? 'המנהל עודכן' : 'מנהל חדש נוצר');
         setShowModal(false);
         setEditingUser(null);
@@ -114,43 +123,46 @@ export default function AdminManagement() {
         });
         fetchUsers();
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בשמירה');
+        toast.error(res.error.message || 'שגיאה בשמירה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בחיבור');
     }
   };
 
   const handleAddAuthEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/authorized-emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authEmailData),
-      });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('authorized_emails')
+        .insert([authEmailData]);
+        
+      if (!error) {
         toast.success('אימייל נוסף לרשימת המורשים');
         setShowAuthModal(false);
         setAuthEmailData({ email: '', name: '' });
         fetchUsers();
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בהוספה');
+        toast.error(error.message || 'שגיאה בהוספה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בחיבור');
     }
   };
 
   const handleDeleteAuthEmail = async (id: number) => {
     if (!confirm('האם אתה בטוח שברצונך להסיר אימייל זה מרשימת המורשים?')) return;
     try {
-      const res = await fetch(`/api/authorized-emails/${id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('authorized_emails')
+        .delete()
+        .eq('id', id);
+        
+      if (!error) {
         toast.success('האימייל הוסר');
         fetchUsers();
+      } else {
+        toast.error(error.message || 'שגיאה במחיקה');
       }
     } catch (err) {
       toast.error('שגיאה במחיקה');
@@ -268,37 +280,41 @@ export default function AdminManagement() {
     
     setImporting(true);
     const processingToast = toast.loading(`מייבא ${scannedAdmins.length} מנהלים...`);
-    let successCount = 0;
     
-    for (const admin of scannedAdmins) {
-      try {
-        const res = await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(admin),
-        });
-        if (res.ok) successCount++;
-      } catch (err) {
-        console.error('Failed to import admin', admin);
-      }
-    }
+    const { error } = await supabase
+      .from('admins')
+      .insert(scannedAdmins.map(admin => ({
+        ...admin,
+        created_by: currentUser?.id || 0
+      })));
 
     toast.dismiss(processingToast);
     setImporting(false);
-    setShowCsvModal(false);
-    setCsvFile(null);
-    setScannedAdmins([]);
-    fetchUsers();
-    toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
+    
+    if (!error) {
+      setShowCsvModal(false);
+      setCsvFile(null);
+      setScannedAdmins([]);
+      fetchUsers();
+      toast.success(`המנהלים יובאו בהצלחה למערכת!`);
+    } else {
+      toast.error(error.message || 'שגיאה בייבוא');
+    }
   };
 
   const handleDelete = async (user: User) => {
     if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${user.name}?`)) return;
     try {
-      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('admins')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', user.id);
+        
+      if (!error) {
         toast.success('המנהל נמחק');
         fetchUsers();
+      } else {
+        toast.error(error.message || 'שגיאה במחיקה');
       }
     } catch (err) {
       toast.error('שגיאה במחיקה');
@@ -327,10 +343,16 @@ export default function AdminManagement() {
 
   const handleApprove = async (userId: number) => {
     try {
-      const res = await fetch(`/api/users/approve/${userId}`, { method: 'POST' });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('admins')
+        .update({ is_approved: 1 })
+        .eq('id', userId);
+        
+      if (!error) {
         toast.success('המנהל אושר בהצלחה');
         fetchUsers();
+      } else {
+        toast.error(error.message || 'שגיאה באישור');
       }
     } catch (err) {
       toast.error('שגיאה באישור המנהל');
@@ -391,23 +413,18 @@ export default function AdminManagement() {
   const handleUpdateGender = async () => {
     if (!genderModalUser || !tempGender) return;
     try {
-      // Create a clean object without password fields to prevent re-hashing/corruption
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password, password_plain, ...userToUpdate } = genderModalUser;
-      
-      const res = await fetch(`/api/users/${genderModalUser.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...userToUpdate, gender: tempGender })
-      });
-      if (res.ok) {
+      const { error } = await supabase
+        .from('admins')
+        .update({ gender: tempGender })
+        .eq('id', genderModalUser.id);
+        
+      if (!error) {
         toast.success('מין עודכן בהצלחה');
         setGenderModalUser(null);
         setTempGender(null);
         fetchUsers();
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בעדכון המין');
+        toast.error(error.message || 'שגיאה בעדכון המין');
       }
     } catch (e) {
       toast.error('שגיאה בעדכון המין');
@@ -417,26 +434,20 @@ export default function AdminManagement() {
   const handleUpdatePhone = async () => {
     if (!phoneModalUser) return;
     try {
-      // Create a clean object without password fields
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password, password_plain, ...userToUpdate } = phoneModalUser;
-
-      const res = await fetch(`/api/users/${phoneModalUser.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          ...userToUpdate, 
+      const { error } = await supabase
+        .from('admins')
+        .update({ 
           phone: tempPhone,
-          username: tempPhone // Update username to match phone as requested
+          username: tempPhone 
         })
-      });
-      if (res.ok) {
+        .eq('id', phoneModalUser.id);
+        
+      if (!error) {
         toast.success('מספר טלפון ושם משתמש עודכנו');
         setPhoneModalUser(null);
         fetchUsers();
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בעדכון מספר טלפון');
+        toast.error(error.message || 'שגיאה בעדכון מספר טלפון');
       }
     } catch (e) {
       toast.error('שגיאה בעדכון');

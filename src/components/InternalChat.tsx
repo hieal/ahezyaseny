@@ -2,10 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, Smile, Paperclip, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
-import { io } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
-
-const socket = io();
+import { supabase } from '../lib/supabase';
 
 interface Message {
   id: number;
@@ -38,8 +36,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        const res = await fetch('/api/matches');
-        if (res.ok) setMatches(await res.json());
+        const { data } = await supabase
+          .from('matches')
+          .select('*')
+          .is('deleted_at', null);
+        if (data) setMatches(data);
       } catch (e) {}
     };
     fetchMatches();
@@ -52,10 +53,25 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const res = await fetch(`/api/internal-messages/${otherUser.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setMessages(data);
+        const { data, error } = await supabase
+          .from('internal_messages')
+          .select(`
+            *,
+            match:matches(name, type, age, city),
+            sender:admins!internal_messages_sender_id_fkey(name)
+          `)
+          .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},receiver_id.eq.${user?.id})`)
+          .order('created_at', { ascending: true });
+
+        if (data) {
+          setMessages(data.map(msg => ({
+            ...msg,
+            match_name: msg.match?.name,
+            match_type: msg.match?.type,
+            match_age: msg.match?.age,
+            match_city: msg.match?.city,
+            sender_name: msg.sender?.name
+          })));
         }
       } catch (err) {
         console.error('Failed to fetch messages:', err);
@@ -66,20 +82,49 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
 
     fetchMessages();
 
-    const handleNewMessage = (msg: Message) => {
-      if (msg.sender_id === otherUser.id || msg.receiver_id === otherUser.id) {
-        setMessages(prev => [...prev, msg]);
-      }
-    };
-
-    socket.on('new_internal_message', handleNewMessage);
-    socket.on('internal_message_sent', handleNewMessage);
+    const channel = supabase
+      .channel(`chat-${user?.id}-${otherUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'internal_messages',
+          filter: `receiver_id=eq.${user?.id}`,
+        },
+        async (payload) => {
+          const msg = payload.new as any;
+          if (msg.sender_id === otherUser.id) {
+            // Fetch sender name and match details for the new message
+            const { data } = await supabase
+              .from('internal_messages')
+              .select(`
+                *,
+                match:matches(name, type, age, city),
+                sender:admins!internal_messages_sender_id_fkey(name)
+              `)
+              .eq('id', msg.id)
+              .single();
+            
+            if (data) {
+              setMessages(prev => [...prev, {
+                ...data,
+                match_name: data.match?.name,
+                match_type: data.match?.type,
+                match_age: data.match?.age,
+                match_city: data.match?.city,
+                sender_name: data.sender?.name
+              }]);
+            }
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      socket.off('new_internal_message', handleNewMessage);
-      socket.off('internal_message_sent', handleNewMessage);
+      supabase.removeChannel(channel);
     };
-  }, [otherUser.id]);
+  }, [otherUser.id, user?.id]);
 
   useEffect(scrollToBottom, [messages]);
 
@@ -87,12 +132,33 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     e?.preventDefault();
     if (!newMessage.trim() && !matchId) return;
 
-    socket.emit('send_internal_message', {
-      senderId: user?.id,
-      receiverId: otherUser.id,
+    const payload = {
+      sender_id: user?.id,
+      receiver_id: otherUser.id,
       text: newMessage || 'שלחתי לך הצעה למשודך',
-      matchId: matchId
-    });
+      match_id: matchId
+    };
+
+    const { data, error } = await supabase
+      .from('internal_messages')
+      .insert(payload)
+      .select(`
+        *,
+        match:matches(name, type, age, city),
+        sender:admins!internal_messages_sender_id_fkey(name)
+      `)
+      .single();
+
+    if (data) {
+      setMessages(prev => [...prev, {
+        ...data,
+        match_name: data.match?.name,
+        match_type: data.match?.type,
+        match_age: data.match?.age,
+        match_city: data.match?.city,
+        sender_name: data.sender?.name
+      }]);
+    }
 
     setNewMessage('');
     setShowPicker(false);
@@ -177,8 +243,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                     onClick={async () => {
                       if (!window.confirm('למחוק הודעה זו?')) return;
                       try {
-                        const res = await fetch(`/api/internal-messages/${msg.id}`, { method: 'DELETE' });
-                        if (res.ok) {
+                        const { error } = await supabase
+                          .from('internal_messages')
+                          .delete()
+                          .eq('id', msg.id);
+                        if (!error) {
                           setMessages(prev => prev.filter(m => m.id !== msg.id));
                           toast.success('הודעה נמחקה');
                         }
