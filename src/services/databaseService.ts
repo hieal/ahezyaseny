@@ -116,14 +116,24 @@ export class DatabaseService {
    */
   static async ensureInitialized(customClient?: SupabaseClient) {
     const client = customClient || getSupabase();
+    console.log('DatabaseService: Ensuring initialization...');
     try {
-      // 1. Check if admins table exists by trying a simple query
-      const { error } = await client.from('admins').select('id').limit(1);
+      // 1. Warm up schema cache with a simple query
+      // Using a slightly different approach to force a fresh schema check
+      const { data, error } = await client.from('admins').select('id', { count: 'exact' }).limit(1);
       
-      if (error && (error.code === '42P01' || error.message.includes('relation "admins" does not exist'))) {
-        console.log('Database not initialized. Attempting auto-initialization...');
-        return await this.initializeDatabase(client);
+      if (error) {
+        console.warn('DatabaseService: Initial check failed, might be uninitialized or cache issue:', error);
+        
+        if (error.code === '42P01' || error.message.includes('relation "admins" does not exist')) {
+          console.log('Database not initialized. Attempting auto-initialization...');
+          return await this.initializeDatabase(client);
+        }
+        // If it's a different error, we might still want to try initializing or just return false
+        return false;
       }
+      
+      console.log('DatabaseService: Schema cache warmed successfully.');
       
       // 2. Ensure 'good' user has an avatar (fix for existing databases)
       const { data: goodUser } = await client.from('admins').select('avatar_url').eq('username', 'good').single();

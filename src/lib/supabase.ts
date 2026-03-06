@@ -4,7 +4,9 @@ const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials missing. Please check your environment variables.');
+  console.error('Supabase environment variables are missing! URL:', supabaseUrl, 'Key:', supabaseAnonKey ? '***' : 'MISSING');
+} else {
+  console.log('Supabase initialized with URL:', supabaseUrl);
 }
 
 const options = {

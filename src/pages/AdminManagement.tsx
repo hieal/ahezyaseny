@@ -485,6 +485,32 @@ export default function AdminManagement() {
         </div>
         <div className="flex flex-wrap gap-3">
           <button 
+            onClick={async () => {
+              const demoAdmin = {
+                name: 'מנהל דמו',
+                username: `demo_${Date.now()}`,
+                email: `demo_${Date.now()}@example.com`,
+                password: 'password123',
+                role: 'admin',
+                status: 'active',
+                gender: 'male',
+                phone: '0500000000',
+                created_by: currentUser?.id
+              };
+              const { error } = await client.from('admins').insert([demoAdmin]);
+              if (!error) {
+                toast.success('מנהל דמו נוצר בהצלחה');
+                fetchUsers();
+              } else {
+                toast.error(error.message || 'שגיאה ביצירת דמו');
+              }
+            }}
+            className="btn-secondary flex items-center gap-2 px-5 py-2.5 font-bold text-amber-600 border-amber-200 hover:bg-amber-50"
+          >
+            <UserPlus size={18} />
+            הוסף מנהל דמו
+          </button>
+          <button 
             onClick={() => setShowAuthModal(true)}
             className="btn-secondary flex items-center gap-2 px-5 py-2.5 font-bold"
           >
