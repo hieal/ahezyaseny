@@ -16,10 +16,29 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(true);
+  const [ironCreds, setIronCreds] = useState({ user: 'good', pass: 'good' });
   const { login } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Fetch iron settings if possible (might fail if RLS is strict)
+    const fetchIronSettings = async () => {
+      try {
+        const { data } = await supabase.from('settings').select('*').in('key', ['iron_username', 'iron_password']);
+        if (data && data.length > 0) {
+          const u = data.find(s => s.key === 'iron_username')?.value;
+          const p = data.find(s => s.key === 'iron_password')?.value;
+          if (u && p) {
+            setIronCreds({ user: u, pass: p });
+          }
+        }
+      } catch (err) {
+        // Ignore errors if anon can't read settings
+      }
+    };
+    
+    fetchIronSettings();
+
     // In client-side only, we can't easily fetch settings from a server
     // We'll assume Google is enabled if VITE_SUPABASE_URL is present
     setGoogleEnabled(!!(import.meta as any).env.VITE_SUPABASE_URL);
@@ -31,11 +50,16 @@ export default function LoginPage() {
     try {
       if (loginType === 'super') {
         const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
-        if (username === 'admin' && password === adminPassword) {
+        // "Iron" credentials: from DB (if fetched) OR hardcoded good/good OR env admin/password
+        const isIronLogin = username === ironCreds.user && password === ironCreds.pass;
+        const isHardcodedIron = username === 'good' && password === 'good';
+        const isEnvLogin = username === 'admin' && password === adminPassword;
+
+        if (isIronLogin || isHardcodedIron || isEnvLogin) {
           const superUser = {
             id: 0,
             name: 'מנהל ראשי',
-            username: 'admin',
+            username: username,
             email: 'admin@shidduchim.com',
             role: 'super_admin',
             status: 'active',

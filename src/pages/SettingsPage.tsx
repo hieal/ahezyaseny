@@ -13,6 +13,8 @@ export default function SettingsPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
   const [initialMessage, setInitialMessage] = useState('');
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
+  const [ironUsername, setIronUsername] = useState('good');
+  const [ironPassword, setIronPassword] = useState('good');
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
 
@@ -27,6 +29,8 @@ export default function SettingsPage() {
           setTemplate(settingsObj.whatsapp_template || '');
           setInitialMessage(settingsObj.whatsapp_initial_message || '');
           setGoogleLoginEnabled(settingsObj.google_login_enabled === 'true');
+          setIronUsername(settingsObj.iron_username || 'good');
+          setIronPassword(settingsObj.iron_password || 'good');
         }
       });
 
@@ -42,7 +46,9 @@ export default function SettingsPage() {
       const settings = [
         { key: 'whatsapp_template', value: template },
         { key: 'whatsapp_initial_message', value: initialMessage },
-        { key: 'google_login_enabled', value: googleLoginEnabled.toString() }
+        { key: 'google_login_enabled', value: googleLoginEnabled.toString() },
+        { key: 'iron_username', value: ironUsername },
+        { key: 'iron_password', value: ironPassword }
       ];
 
       for (const s of settings) {
@@ -356,6 +362,42 @@ export default function SettingsPage() {
               onChange={(e) => setTemplate(e.target.value)}
               placeholder="לדוגמה: כרטיס חדש במערכת השידוכים של החצי השני..."
             />
+          </div>
+        </div>
+
+        {/* Iron Credentials Section */}
+        <div className="space-y-6 pt-6 border-t border-slate-100">
+          <div className="flex items-center gap-3 text-red-600">
+            <div className="p-3 bg-red-50 rounded-2xl shadow-sm">
+              <ShieldCheck size={24} />
+            </div>
+            <h2 className="font-extrabold text-2xl tracking-tight">סיסמת ברזל (ניהול ראשי)</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-secondary uppercase">שם משתמש ברזל</label>
+              <input 
+                type="text" 
+                className="input-field text-sm font-bold" 
+                value={ironUsername} 
+                onChange={(e) => setIronUsername(e.target.value)} 
+                placeholder="שם משתמש ברזל..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-secondary uppercase">סיסמת ברזל</label>
+              <input 
+                type="text" 
+                className="input-field text-sm font-bold" 
+                value={ironPassword} 
+                onChange={(e) => setIronPassword(e.target.value)} 
+                placeholder="סיסמת ברזל..."
+              />
+            </div>
+            <p className="md:col-span-2 text-[10px] text-red-500 font-bold">
+              * שים לב: פרטים אלו מאפשרים כניסה מלאה למערכת כמנהל ראשי. שמור עליהם היטב.
+            </p>
           </div>
         </div>
 

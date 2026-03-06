@@ -12,7 +12,7 @@ const WHAPI_BASE_URL = "https://gate.whapi.cloud";
 const whapiFetch = async (endpoint: string, options: any = {}) => {
   if (!WHAPI_TOKEN) return null;
   
-  const res = await fetch(`${WHAPI_BASE_URL}${endpoint}`, {
+  const res = await window.fetch(`${WHAPI_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
       'Authorization': `Bearer ${WHAPI_TOKEN}`,
