@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play } from 'lucide-react';
+import { Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
+import { ConnectionDebugger } from '../components/ConnectionDebugger';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { WhatsAppGroup } from '../types';
 
 export default function SettingsPage() {
+  const { client } = useSupabase();
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
@@ -17,9 +20,10 @@ export default function SettingsPage() {
   const [ironPassword, setIronPassword] = useState('good');
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
+  const [showDebugger, setShowDebugger] = useState(false);
 
   useEffect(() => {
-    supabase.from('settings').select('*')
+    client.from('settings').select('*')
       .then(({ data }) => {
         if (data) {
           const settingsObj = data.reduce((acc: any, s: any) => {
@@ -34,11 +38,11 @@ export default function SettingsPage() {
         }
       });
 
-    supabase.from('whatsapp_groups').select('*')
+    client.from('whatsapp_groups').select('*')
       .then(({ data }) => {
         if (data) setWhatsappGroups(data as WhatsAppGroup[]);
       });
-  }, []);
+  }, [client]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -52,7 +56,7 @@ export default function SettingsPage() {
       ];
 
       for (const s of settings) {
-        await supabase.from('settings').upsert(s, { onConflict: 'key' });
+        await client.from('settings').upsert(s, { onConflict: 'key' });
       }
 
       toast.success('ההגדרות נשמרו בהצלחה');
@@ -73,7 +77,7 @@ export default function SettingsPage() {
     };
     
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('whatsapp_groups')
         .insert(newGroup)
         .select()
@@ -91,7 +95,7 @@ export default function SettingsPage() {
   const deleteGroup = async (id: number) => {
     if (!confirm('האם למחוק קבוצה זו?')) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('whatsapp_groups')
         .delete()
         .eq('id', id);
@@ -107,7 +111,7 @@ export default function SettingsPage() {
 
   const saveGroup = async (group: WhatsAppGroup) => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('whatsapp_groups')
         .update({
           name: group.name,
@@ -126,7 +130,7 @@ export default function SettingsPage() {
     }
   };
 
-  const updateGroup = (id: number, field: keyof WhatsAppGroup, value: string) => {
+  const updateGroup = (id: number, field: keyof WhatsAppGroup, value: any) => {
     setWhatsappGroups(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g));
   };
 
@@ -149,6 +153,40 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-4xl font-extrabold text-text-main tracking-tight">הגדרות מערכת</h1>
         <p className="text-text-secondary mt-1 font-medium">ניהול תבניות והגדרות כלליות עבור {APP_NAME}</p>
+      </div>
+
+      {/* Connection Debugger Toggle */}
+      <div className="card border-none shadow-sm overflow-hidden">
+        <button 
+          onClick={() => setShowDebugger(!showDebugger)}
+          className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-3 text-luxury-blue">
+            <div className="p-2 bg-blue-50 rounded-xl">
+              <Activity size={20} />
+            </div>
+            <div className="text-right">
+              <h3 className="font-bold text-sm">בדיקת חיבור למסד הנתונים</h3>
+              <p className="text-xs text-text-secondary">כלי לאבחון ושינוי פרטי התחברות ל-Supabase</p>
+            </div>
+          </div>
+          {showDebugger ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+        </button>
+        
+        <AnimatePresence>
+          {showDebugger && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-t border-slate-100"
+            >
+              <div className="p-4 bg-slate-50/50">
+                <ConnectionDebugger />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="card p-10 space-y-10 shadow-xl border-none">

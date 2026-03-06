@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from './SupabaseContext';
 
 interface AuthContextType {
   user: User | null;
@@ -13,6 +13,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { client } = useSupabase();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -42,11 +43,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await client.auth.getSession();
       
       if (session?.user) {
         // Fetch from admins table
-        const { data: admin, error } = await supabase
+        const { data: admin, error } = await client
           .from('admins')
           .select('*')
           .eq('email', session.user.email)
@@ -71,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     refreshUser();
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       if (session) {
         refreshUser();
       } else if (localStorage.getItem('super_admin_session') !== 'true') {
@@ -80,14 +81,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [client]);
 
   const login = (userData: User) => {
     setUser(userData);
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await client.auth.signOut();
     localStorage.removeItem('super_admin_session');
     setUser(null);
   };

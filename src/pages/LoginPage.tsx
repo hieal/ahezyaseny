@@ -6,10 +6,12 @@ import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, Clipbo
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
 import { Logo } from '../components/Logo';
+import { DatabaseService } from '../services/databaseService';
 
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 
 export default function LoginPage() {
+  const { client } = useSupabase();
   const [loginType, setLoginType] = useState<'selection' | 'super' | 'admin'>('selection');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -24,7 +26,7 @@ export default function LoginPage() {
     // Fetch iron settings if possible (might fail if RLS is strict)
     const fetchIronSettings = async () => {
       try {
-        const { data } = await supabase.from('settings').select('*').in('key', ['iron_username', 'iron_password']);
+        const { data } = await client.from('settings').select('*').in('key', ['iron_username', 'iron_password']);
         if (data && data.length > 0) {
           const u = data.find(s => s.key === 'iron_username')?.value;
           const p = data.find(s => s.key === 'iron_password')?.value;
@@ -56,6 +58,11 @@ export default function LoginPage() {
         const isEnvLogin = username === 'admin' && password === adminPassword;
 
         if (isIronLogin || isHardcodedIron || isEnvLogin) {
+          // If it's the iron user, ensure the database is initialized
+          if (username === 'good' && password === 'good') {
+            await DatabaseService.ensureInitialized();
+          }
+
           const superUser = {
             id: 0,
             name: 'מנהל ראשי',
@@ -86,7 +93,7 @@ export default function LoginPage() {
       }
 
       // Admin login via Supabase
-      const { data: admin, error: fetchError } = await supabase
+      const { data: admin, error: fetchError } = await client
         .from('admins')
         .select('email')
         .or(`username.eq."${username}",phone.eq."${username}"`)
@@ -99,7 +106,7 @@ export default function LoginPage() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error } = await client.auth.signInWithPassword({
         email: admin.email,
         password: password,
       });
@@ -119,7 +126,7 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await client.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.origin,

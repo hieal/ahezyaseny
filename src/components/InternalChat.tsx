@@ -3,7 +3,7 @@ import { Send, X, Smile, Paperclip, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 
 interface Message {
   id: number;
@@ -26,6 +26,7 @@ interface InternalChatProps {
 
 export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }) => {
   const { user } = useAuth();
+  const { client } = useSupabase();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -36,7 +37,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        const { data } = await supabase
+        const { data } = await client
           .from('matches')
           .select('*')
           .is('deleted_at', null);
@@ -53,7 +54,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await client
           .from('internal_messages')
           .select(`
             *,
@@ -82,7 +83,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
 
     fetchMessages();
 
-    const channel = supabase
+    const channel = client
       .channel(`chat-${user?.id}-${otherUser.id}`)
       .on(
         'postgres_changes',
@@ -96,7 +97,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
           const msg = payload.new as any;
           if (msg.sender_id === otherUser.id) {
             // Fetch sender name and match details for the new message
-            const { data } = await supabase
+            const { data } = await client
               .from('internal_messages')
               .select(`
                 *,
@@ -122,9 +123,9 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      client.removeChannel(channel);
     };
-  }, [otherUser.id, user?.id]);
+  }, [otherUser.id, user?.id, client]);
 
   useEffect(scrollToBottom, [messages]);
 
@@ -139,7 +140,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
       match_id: matchId
     };
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('internal_messages')
       .insert(payload)
       .select(`
@@ -243,7 +244,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                     onClick={async () => {
                       if (!window.confirm('למחוק הודעה זו?')) return;
                       try {
-                        const { error } = await supabase
+                        const { error } = await client
                           .from('internal_messages')
                           .delete()
                           .eq('id', msg.id);

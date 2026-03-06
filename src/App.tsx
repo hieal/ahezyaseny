@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SupabaseProvider } from './contexts/SupabaseContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import MatchForm from './pages/MatchForm';
@@ -17,6 +18,7 @@ import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
 import ConnectivityMonitor from './components/ConnectivityMonitor';
 import { supabase } from './lib/supabase';
+import { DatabaseService } from './services/databaseService';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -556,27 +558,38 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  React.useEffect(() => {
+    // Run database initialization on app startup
+    DatabaseService.ensureInitialized();
+  }, []);
+
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Toaster position="top-center" />
-        <MainLayout>
+    <SupabaseProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Toaster position="top-center" />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-            <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-            <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
-            <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
-            <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
-            <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
-            <Route path="*" element={<Navigate to="/" />} />
+            <Route path="/*" element={
+              <MainLayout>
+                <Routes>
+                  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+                  <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+                  <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
+                  <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
+                  <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
+                  <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </MainLayout>
+            } />
           </Routes>
-        </MainLayout>
-        <ConnectivityMonitor />
-      </BrowserRouter>
-    </AuthProvider>
+          <ConnectivityMonitor />
+        </BrowserRouter>
+      </AuthProvider>
+    </SupabaseProvider>
   );
 }

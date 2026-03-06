@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Shield, Database, CheckCircle, XCircle, Info } from 'lucide-react';
 
 export default function ConnectivityMonitor() {
+  const { client } = useSupabase();
   const [status, setStatus] = useState({
     database: { ok: false, loading: true, error: null as string | null },
     auth: { ok: false, loading: false },
@@ -13,7 +14,7 @@ export default function ConnectivityMonitor() {
   const checkConnectivity = async () => {
     // 1. Database Check
     try {
-      const { error } = await supabase.from('admins').select('id', { count: 'exact', head: true });
+      const { error } = await client.from('admins').select('id', { count: 'exact', head: true });
       if (error) throw error;
       setStatus(prev => ({ ...prev, database: { ok: true, loading: false, error: null } }));
     } catch (err: any) {

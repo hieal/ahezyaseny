@@ -4,10 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 import { History, Search, Filter, Calendar, RefreshCw, User as UserIcon, Info, Send, CheckCircle, MessageSquare, Phone } from 'lucide-react';
 import { motion } from 'motion/react';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 
 export default function TrackingPage() {
   const { user } = useAuth();
+  const { client } = useSupabase();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [publishLogs, setPublishLogs] = useState<PublishLog[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -54,7 +55,7 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      let query = supabase
+      let query = client
         .from('activity_logs')
         .select(`
           *,
@@ -83,7 +84,7 @@ export default function TrackingPage() {
   const fetchUsers = async () => {
     if (user?.role !== 'super_admin') return;
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('admins')
         .select('*')
         .is('deleted_at', null);
@@ -97,7 +98,7 @@ export default function TrackingPage() {
 
   const fetchPublishLogs = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('publish_logs')
         .select(`
           *,
@@ -120,7 +121,7 @@ export default function TrackingPage() {
 
   const fetchMatches = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('matches')
         .select('*')
         .is('deleted_at', null)
@@ -140,7 +141,7 @@ export default function TrackingPage() {
 
   const handleConfirmPublish = async (matchId: number, confirmed: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ is_published_confirmed: confirmed ? 1 : 0 })
         .eq('id', matchId);
@@ -156,7 +157,7 @@ export default function TrackingPage() {
 
   const handleUpdatePhone = async (matchId: number, phone: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ phone })
         .eq('id', matchId);
@@ -178,7 +179,7 @@ export default function TrackingPage() {
 
     try {
       const table = log.entity_type === 'match' ? 'matches' : 'admins';
-      const { error } = await supabase
+      const { error } = await client
         .from(table)
         .update({ deleted_at: null })
         .eq('id', log.entity_id);

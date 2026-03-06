@@ -8,10 +8,12 @@ import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
 import MatchCard from '../components/MatchCard';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
+import { DatabaseService } from '../services/databaseService';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
+  const { client } = useSupabase();
   const { type } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -72,7 +74,10 @@ export default function Dashboard() {
   const fetchDailySuggestions = async () => {
     setLoadingSuggestions(true);
     try {
-      const { data, error } = await supabase
+      // Ensure database is initialized before fetching suggestions
+      await DatabaseService.ensureInitialized(client);
+
+      const { data, error } = await client
         .from('matches')
         .select('*')
         .is('deleted_at', null)
@@ -465,7 +470,7 @@ export default function Dashboard() {
       if (!dbField) return;
 
       const updatedMatch = { ...validationMatch, [dbField]: editValue };
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ [dbField]: editValue })
         .eq('id', validationMatch.id);
@@ -498,7 +503,7 @@ export default function Dashboard() {
     setHistoryMatch(match);
     setShowHistoryModal(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('publish_logs')
         .select(`
           *,
@@ -523,10 +528,10 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const [matchesRes, settingsRes, groupsRes, usersRes] = await Promise.all([
-        supabase.from('matches').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-        supabase.from('settings').select('*'),
-        supabase.from('whatsapp_groups').select('*'),
-        supabase.from('admins').select('*').is('deleted_at', null)
+        client.from('matches').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
+        client.from('settings').select('*'),
+        client.from('whatsapp_groups').select('*'),
+        client.from('admins').select('*').is('deleted_at', null)
       ]);
       
       if (matchesRes.data) setMatches(matchesRes.data as Match[]);
@@ -578,7 +583,7 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deleteConfirmId);
@@ -693,7 +698,7 @@ export default function Dashboard() {
     if (!group) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ 
           last_published_at: new Date().toISOString(),
@@ -702,7 +707,7 @@ export default function Dashboard() {
         .eq('id', selectedMatch.id);
 
       if (!error) {
-        await supabase.from('publish_logs').insert({
+        await client.from('publish_logs').insert({
           match_id: selectedMatch.id,
           user_id: user?.id || 0,
           group_name: group.name
@@ -731,7 +736,7 @@ export default function Dashboard() {
       toast.error('שגיאה בהעתקה ללוח');
     }
 
-    await supabase
+    await client
       .from('whatsapp_groups')
       .update({ last_initial_sent: new Date().toISOString() })
       .eq('id', selectedGroupId);
@@ -752,7 +757,7 @@ export default function Dashboard() {
   const markInitialAsSent = async () => {
     if (!selectedGroupId) return;
     try {
-      await supabase
+      await client
         .from('whatsapp_groups')
         .update({ last_initial_sent: new Date().toISOString() })
         .eq('id', selectedGroupId);
@@ -767,7 +772,7 @@ export default function Dashboard() {
 
   const savePersonalTemplate = async () => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('admins')
         .update({ 
           daily_message_template_male: personalTemplateMale,
@@ -806,7 +811,7 @@ export default function Dashboard() {
 
   const confirmBulkDelete = async () => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update({ deleted_at: new Date().toISOString() })
         .in('id', selectedMatchIds);
@@ -828,7 +833,7 @@ export default function Dashboard() {
 
   const handleQuickUpdate = async (id: number, updates: Partial<Match>) => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('matches')
         .update(updates)
         .eq('id', id);
@@ -1017,8 +1022,8 @@ export default function Dashboard() {
             <button 
               onClick={async () => {
                 try {
-                  const { data: userData } = await supabase.auth.getUser();
-                  const { error } = await supabase.from('matches').insert({
+                  const { data: userData } = await client.auth.getUser();
+                  const { error } = await client.from('matches').insert({
                     name: 'משודך דמו ' + Math.floor(Math.random() * 1000),
                     age: 25,
                     city: 'ירושלים',

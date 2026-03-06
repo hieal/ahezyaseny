@@ -6,9 +6,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { DatabaseService } from '../services/databaseService';
+import { useSupabase } from '../contexts/SupabaseContext';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
+  const { client } = useSupabase();
   const [users, setUsers] = useState<User[]>([]);
   const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
@@ -60,10 +64,13 @@ export default function AdminManagement() {
 
   const fetchUsers = async () => {
     try {
+      // Ensure database is initialized before fetching
+      await DatabaseService.ensureInitialized(client);
+
       const [usersRes, groupsRes, authRes] = await Promise.all([
-        supabase.from('admins').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-        supabase.from('whatsapp_groups').select('*'),
-        supabase.from('authorized_emails').select('*')
+        client.from('admins').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
+        client.from('whatsapp_groups').select('*'),
+        client.from('authorized_emails').select('*')
       ]);
       
       if (usersRes.data) {
@@ -80,7 +87,7 @@ export default function AdminManagement() {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [client]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,12 +99,12 @@ export default function AdminManagement() {
 
       let res;
       if (editingUser) {
-        res = await supabase
+        res = await client
           .from('admins')
           .update(dataToSave)
           .eq('id', editingUser.id);
       } else {
-        res = await supabase
+        res = await client
           .from('admins')
           .insert([dataToSave]);
       }
@@ -133,7 +140,7 @@ export default function AdminManagement() {
   const handleAddAuthEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('authorized_emails')
         .insert([authEmailData]);
         
@@ -153,7 +160,7 @@ export default function AdminManagement() {
   const handleDeleteAuthEmail = async (id: number) => {
     if (!confirm('האם אתה בטוח שברצונך להסיר אימייל זה מרשימת המורשים?')) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('authorized_emails')
         .delete()
         .eq('id', id);
@@ -281,7 +288,7 @@ export default function AdminManagement() {
     setImporting(true);
     const processingToast = toast.loading(`מייבא ${scannedAdmins.length} מנהלים...`);
     
-    const { error } = await supabase
+    const { error } = await client
       .from('admins')
       .insert(scannedAdmins.map(admin => ({
         ...admin,
@@ -305,7 +312,7 @@ export default function AdminManagement() {
   const handleDelete = async (user: User) => {
     if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${user.name}?`)) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('admins')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', user.id);
@@ -343,7 +350,7 @@ export default function AdminManagement() {
 
   const handleApprove = async (userId: number) => {
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('admins')
         .update({ is_approved: 1 })
         .eq('id', userId);
@@ -413,7 +420,7 @@ export default function AdminManagement() {
   const handleUpdateGender = async () => {
     if (!genderModalUser || !tempGender) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('admins')
         .update({ gender: tempGender })
         .eq('id', genderModalUser.id);
@@ -434,7 +441,7 @@ export default function AdminManagement() {
   const handleUpdatePhone = async () => {
     if (!phoneModalUser) return;
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from('admins')
         .update({ 
           phone: tempPhone,
@@ -470,6 +477,7 @@ export default function AdminManagement() {
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
+      
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-extrabold text-text-main tracking-tight">ניהול מנהלים</h1>

@@ -5,10 +5,11 @@ import { toast } from 'react-hot-toast';
 import { History, Search, Filter, Calendar, User as UserIcon, MessageSquare, CheckCircle, X, Eye, Clock, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MatchCard from '../components/MatchCard';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 
 export default function MatchesHistoryPage() {
   const { user } = useAuth();
+  const { client } = useSupabase();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -23,7 +24,7 @@ export default function MatchesHistoryPage() {
   const fetchConfirmedMatches = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('matches')
         .select('*')
         .is('deleted_at', null)
@@ -43,7 +44,7 @@ export default function MatchesHistoryPage() {
   const fetchMatchHistory = async (matchId: number) => {
     try {
       setHistoryLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('publish_logs')
         .select(`
           *,

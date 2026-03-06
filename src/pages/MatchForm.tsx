@@ -7,11 +7,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
 import { APP_NAME } from '../constants';
-import { supabase } from '../lib/supabase';
+import { useSupabase } from '../contexts/SupabaseContext';
 import { GoogleGenAI } from '@google/genai';
+import { DatabaseService } from '../services/databaseService';
 
 export default function MatchForm() {
   const { user } = useAuth();
+  const { client } = useSupabase();
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
@@ -68,7 +70,7 @@ export default function MatchForm() {
 
   useEffect(() => {
     if (isEdit) {
-      supabase
+      client
         .from('matches')
         .select('*')
         .eq('id', parseInt(id))
@@ -168,6 +170,9 @@ export default function MatchForm() {
     e.preventDefault();
     setSaving(true);
     try {
+      // Ensure database is initialized before saving
+      await DatabaseService.ensureInitialized();
+
       const mainImage = images[selectedImageIndex];
       const otherImages = images.filter((_, i) => i !== selectedImageIndex && !!images[i]);
       
@@ -181,13 +186,13 @@ export default function MatchForm() {
 
       let error;
       if (isEdit) {
-        const { error: err } = await supabase
+        const { error: err } = await client
           .from('matches')
           .update(payload)
           .eq('id', parseInt(id!));
         error = err;
       } else {
-        const { error: err } = await supabase
+        const { error: err } = await client
           .from('matches')
           .insert(payload);
         error = err;
@@ -373,7 +378,10 @@ export default function MatchForm() {
     setImporting(true);
     
     try {
-      const { error } = await supabase
+      // Ensure database is initialized before importing
+      await DatabaseService.ensureInitialized();
+
+      const { error } = await client
         .from('matches')
         .insert(scannedMatches.map(m => ({ ...m, created_by: user?.id })));
       
@@ -427,7 +435,7 @@ export default function MatchForm() {
                   creation_source: 'manual',
                   created_by: user?.id
                 };
-                const { error } = await supabase.from('matches').insert(demoMatch);
+                const { error } = await client.from('matches').insert(demoMatch);
                 if (!error) {
                   toast.success('נוצר משודך דמו בהצלחה');
                   navigate('/');
