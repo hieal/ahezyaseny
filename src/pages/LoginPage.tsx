@@ -63,8 +63,15 @@ export default function LoginPage() {
             await DatabaseService.ensureInitialized();
           }
 
-          const superUser = {
-            id: 0,
+          // Try to get the real user from DB first
+          const { data: realAdmin } = await client
+            .from('admins')
+            .select('*')
+            .eq('username', 'good')
+            .single();
+
+          const superUser = realAdmin || {
+            id: 0, // Fallback only if DB fetch fails
             name: 'מנהל ראשי',
             username: username,
             email: 'admin@shidduchim.com',
@@ -79,9 +86,10 @@ export default function LoginPage() {
             is_from_file: 0,
             is_approved: 1,
             created_at: new Date().toISOString()
-          } as any;
+          };
+          
           localStorage.setItem('super_admin_session', 'true');
-          login(superUser);
+          login(superUser as User);
           toast.success('ברוך הבא מנהל ראשי!');
           navigate('/');
           return;

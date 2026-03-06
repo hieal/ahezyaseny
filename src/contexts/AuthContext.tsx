@@ -19,26 +19,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     try {
+      // Ensure we have an anonymous session first to bypass RLS if needed
+      const { data: { session: currentSession } } = await client.auth.getSession();
+      if (!currentSession) {
+        try {
+          await client.auth.signInAnonymously();
+        } catch (e) {
+          console.error('Anonymous login failed', e);
+        }
+      }
+
       // Check local storage for super admin session first
       const superAdminSession = localStorage.getItem('super_admin_session');
       if (superAdminSession === 'true') {
-        setUser({
-          id: 0,
-          name: 'מנהל ראשי',
-          username: 'admin',
-          email: 'admin@shidduchim.com',
-          role: 'super_admin',
-          status: 'active',
-          category: null,
-          secondary_category: null,
-          gender: null,
-          phone: null,
-          google_login_allowed: 'true',
-          avatar_url: null,
-          is_from_file: 0,
-          is_approved: 1,
-          created_at: new Date().toISOString()
-        } as User);
+        // Fetch the real 'good' user from DB to get the correct ID
+        const { data: realAdmin } = await client
+          .from('admins')
+          .select('*')
+          .eq('username', 'good')
+          .single();
+
+        if (realAdmin) {
+          setUser(realAdmin as User);
+        } else {
+          // Fallback if DB fetch fails (shouldn't happen if initialized)
+          setUser({
+            id: 0, // Temporary fallback, but we prefer real ID
+            name: 'מנהל ראשי',
+            username: 'good',
+            email: 'admin@shidduchim.com',
+            role: 'super_admin',
+            status: 'active',
+            category: null,
+            secondary_category: null,
+            gender: null,
+            phone: null,
+            google_login_allowed: 'true',
+            avatar_url: null,
+            is_from_file: 0,
+            is_approved: 1,
+            created_at: new Date().toISOString()
+          } as User);
+        }
         setLoading(false);
         return;
       }
