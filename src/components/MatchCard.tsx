@@ -97,34 +97,6 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
           <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors" />
         </div>
       )}
-      
-      {/* Additional Images */}
-      {!minimal && match.additional_images && (() => {
-        try {
-          const extras = JSON.parse(match.additional_images);
-          if (extras.length > 0) {
-            return (
-              <div className="flex gap-2 px-4 py-2 overflow-x-auto border-b border-slate-50 bg-slate-50/50">
-                {extras.map((img: string, i: number) => (
-                  <a 
-                    key={i} 
-                    href={img} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0 hover:border-luxury-blue transition-colors relative group/thumb"
-                    title="לחץ לפתיחה"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <img src={img} alt="" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/10 transition-colors" />
-                  </a>
-                ))}
-              </div>
-            );
-          }
-        } catch (e) { return null; }
-      })()}
-
       <div className="p-6 flex flex-col flex-1">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">

@@ -3,8 +3,6 @@ import { Sparkles, ArrowLeftRight, User, Heart, RefreshCw, X } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 import { Match } from '../types';
 import { toast } from 'react-hot-toast';
-import { useSupabase } from '../contexts/SupabaseContext';
-import { useAuth } from '../contexts/AuthContext';
 
 interface Suggestion {
   match: Match;
@@ -12,45 +10,18 @@ interface Suggestion {
 }
 
 export const MatchSuggestions: React.FC = () => {
-  const { user } = useAuth();
-  const { client } = useSupabase();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const fetchSuggestions = async () => {
-    if (!user) return;
     setLoading(true);
     try {
-      // Get 3 random matches of the current user
-      const { data: myMatches } = await client
-        .from("matches")
-        .select("*")
-        .eq("created_by", user.id)
-        .is("deleted_at", null)
-        .limit(3);
-      
-      if (!myMatches || myMatches.length === 0) {
-        setSuggestions([]);
-        return;
+      const res = await fetch('/api/matches/suggestions');
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestions(data);
       }
-
-      const newSuggestions: Suggestion[] = [];
-      for (const match of myMatches) {
-        const oppositeGender = match.type === 'male' ? 'female' : 'male';
-        const { data: potentialMatches } = await client
-          .from("matches")
-          .select("*")
-          .eq("type", oppositeGender)
-          .is("deleted_at", null)
-          .limit(5);
-        
-        newSuggestions.push({
-          match,
-          potentialMatches: potentialMatches || []
-        });
-      }
-      setSuggestions(newSuggestions);
     } catch (err) {
       console.error('Failed to fetch suggestions:', err);
     } finally {
@@ -60,7 +31,7 @@ export const MatchSuggestions: React.FC = () => {
 
   useEffect(() => {
     fetchSuggestions();
-  }, [user]);
+  }, []);
 
   if (loading) return (
     <div className="card p-8 flex flex-col items-center justify-center space-y-4">

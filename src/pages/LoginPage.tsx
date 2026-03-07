@@ -6,127 +6,57 @@ import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, Clipbo
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
 import { Logo } from '../components/Logo';
-import { DatabaseService } from '../services/databaseService';
-
-import { useSupabase } from '../contexts/SupabaseContext';
 
 export default function LoginPage() {
-  const { client } = useSupabase();
   const [loginType, setLoginType] = useState<'selection' | 'super' | 'admin'>('selection');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(true);
-  const [ironCreds, setIronCreds] = useState({ user: 'good', pass: 'good' });
   const { login } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch iron settings if possible (might fail if RLS is strict)
-    const fetchIronSettings = async () => {
-      try {
-        const { data } = await client.from('settings').select('*').in('key', ['iron_username', 'iron_password']);
-        if (data && data.length > 0) {
-          const u = data.find(s => s.key === 'iron_username')?.value;
-          const p = data.find(s => s.key === 'iron_password')?.value;
-          if (u && p) {
-            setIronCreds({ user: u, pass: p });
-          }
-        }
-      } catch (err) {
-        // Ignore errors if anon can't read settings
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        setGoogleEnabled(data.google_login_enabled !== 'false');
+      });
+
+    const handleMessage = (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) return;
+      
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        login(event.data.user);
+        toast.success('ברוך הבא!');
+        navigate('/');
       }
     };
-    
-    fetchIronSettings();
-
-    // In client-side only, we can't easily fetch settings from a server
-    // We'll assume Google is enabled if VITE_SUPABASE_URL is present
-    setGoogleEnabled(!!(import.meta as any).env.VITE_SUPABASE_URL);
-  }, []);
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [login, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (loginType === 'super') {
-        const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
-        // "Iron" credentials: from DB (if fetched) OR hardcoded good/good OR env admin/password
-        const isIronLogin = username === ironCreds.user && password === ironCreds.pass;
-        const isHardcodedIron = username === 'good' && password === 'good';
-        const isEnvLogin = username === 'admin' && password === adminPassword;
-
-        if (isIronLogin || isHardcodedIron || isEnvLogin) {
-          // If it's the iron user, ensure the database is initialized
-          if (username === 'good' && password === 'good') {
-            await DatabaseService.ensureInitialized();
-          }
-
-          // Try to get the real user from DB first
-          const { data: realAdmin } = await client
-            .from('admins')
-            .select('*')
-            .eq('username', 'good')
-            .single();
-
-          const superUser = realAdmin || {
-            id: 0, // Fallback only if DB fetch fails
-            name: 'מנהל ראשי',
-            username: username,
-            email: 'admin@shidduchim.com',
-            role: 'super_admin',
-            status: 'active',
-            category: null,
-            secondary_category: null,
-            gender: null,
-            phone: null,
-            google_login_allowed: 'true',
-            avatar_url: null,
-            is_from_file: 0,
-            is_approved: 1,
-            created_at: new Date().toISOString()
-          };
-          
-          localStorage.setItem('super_admin_session', 'true');
-          login(superUser as User);
-          toast.success('ברוך הבא מנהל ראשי!');
-          navigate('/');
-          return;
-        } else {
-          toast.error('שם משתמש או סיסמה שגויים');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Admin login via Supabase
-      const { data: admin, error: fetchError } = await client
-        .from('admins')
-        .select('email')
-        .or(`username.eq."${username}",phone.eq."${username}"`)
-        .is('deleted_at', null)
-        .maybeSingle();
-
-      if (fetchError || !admin) {
-        toast.error('מנהל לא נמצא או פרטים שגויים');
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await client.auth.signInWithPassword({
-        email: admin.email,
-        password: password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       });
-
-      if (error) {
-        toast.error('סיסמה שגויה או שגיאה בהתחברות');
-      } else {
+      const data = await res.json();
+      if (res.ok) {
+        login(data);
         toast.success('ברוך הבא!');
         navigate('/');
+      } else {
+        toast.error(data.error || 'שגיאה בהתחברות');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור');
+      toast.error('שגיאה בחיבור לשרת');
     } finally {
       setLoading(false);
     }
@@ -134,13 +64,9 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     try {
-      const { error } = await client.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        }
-      });
-      if (error) throw error;
+      const response = await fetch('/api/auth/google/url');
+      const { url } = await response.json();
+      window.open(url, 'google_login', 'width=500,height=600');
     } catch (err) {
       toast.error('שגיאה בהתחברות עם גוגל');
     }
@@ -314,12 +240,6 @@ export default function LoginPage() {
                     )}
                   </button>
                 </form>
-
-                {loginType === 'super' && (
-                  <div className="mt-6 pt-6 border-t border-slate-100">
-                    <p className="text-[10px] text-slate-400 text-center mt-2 font-medium">כניסה עם סיסמת מנהל מערכת</p>
-                  </div>
-                )}
               </motion.div>
             )}
           </AnimatePresence>

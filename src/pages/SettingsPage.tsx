@@ -1,48 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, ChevronDown, ChevronUp, Activity } from 'lucide-react';
+import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play } from 'lucide-react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
-import { useSupabase } from '../contexts/SupabaseContext';
-import { ConnectionDebugger } from '../components/ConnectionDebugger';
-import { motion, AnimatePresence } from 'motion/react';
 
 import { WhatsAppGroup } from '../types';
 
 export default function SettingsPage() {
-  const { client } = useSupabase();
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
   const [initialMessage, setInitialMessage] = useState('');
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
-  const [ironUsername, setIronUsername] = useState('good');
-  const [ironPassword, setIronPassword] = useState('good');
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
-  const [showDebugger, setShowDebugger] = useState(false);
 
   useEffect(() => {
-    client.from('settings').select('*')
-      .then(({ data }) => {
-        if (data) {
-          const settingsObj = data.reduce((acc: any, s: any) => {
-            acc[s.key] = s.value;
-            return acc;
-          }, {});
-          setTemplate(settingsObj.whatsapp_template || '');
-          setInitialMessage(settingsObj.whatsapp_initial_message || '');
-          setGoogleLoginEnabled(settingsObj.google_login_enabled === 'true');
-          setIronUsername(settingsObj.iron_username || 'good');
-          setIronPassword(settingsObj.iron_password || 'good');
-        }
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        setTemplate(data.whatsapp_template || '');
+        setInitialMessage(data.whatsapp_initial_message || '');
+        setGoogleLoginEnabled(data.google_login_enabled === 'true');
       });
 
-    client.from('whatsapp_groups').select('*')
-      .then(({ data }) => {
-        if (data) setWhatsappGroups(data as WhatsAppGroup[]);
-      });
-  }, [client]);
+    fetch('/api/whatsapp/groups')
+      .then(res => res.json())
+      .then(data => setWhatsappGroups(data));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -50,14 +35,15 @@ export default function SettingsPage() {
       const settings = [
         { key: 'whatsapp_template', value: template },
         { key: 'whatsapp_initial_message', value: initialMessage },
-        { key: 'google_login_enabled', value: googleLoginEnabled.toString() },
-        { key: 'iron_username', value: ironUsername },
-        { key: 'iron_password', value: ironPassword }
+        { key: 'google_login_enabled', value: googleLoginEnabled.toString() }
       ];
 
       for (const s of settings) {
-        const { error } = await client.from('settings').upsert(s, { onConflict: 'key' });
-        if (error) throw error;
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(s),
+        });
       }
 
       toast.success('ההגדרות נשמרו בהצלחה');
@@ -78,14 +64,14 @@ export default function SettingsPage() {
     };
     
     try {
-      const { data, error } = await client
-        .from('whatsapp_groups')
-        .insert(newGroup)
-        .select()
-        .single();
-
-      if (!error && data) {
-        setWhatsappGroups(prev => [...prev, data as WhatsAppGroup]);
+      const res = await fetch('/api/whatsapp/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newGroup),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWhatsappGroups(prev => [...prev, { ...newGroup, id: data.id, last_initial_sent: null }]);
         toast.success('קבוצה נוספה');
       }
     } catch (err) {
@@ -96,12 +82,8 @@ export default function SettingsPage() {
   const deleteGroup = async (id: number) => {
     if (!confirm('האם למחוק קבוצה זו?')) return;
     try {
-      const { error } = await client
-        .from('whatsapp_groups')
-        .delete()
-        .eq('id', id);
-
-      if (!error) {
+      const res = await fetch(`/api/whatsapp/groups/${id}`, { method: 'DELETE' });
+      if (res.ok) {
         setWhatsappGroups(prev => prev.filter(g => g.id !== id));
         toast.success('קבוצה נמחקה');
       }
@@ -112,18 +94,12 @@ export default function SettingsPage() {
 
   const saveGroup = async (group: WhatsAppGroup) => {
     try {
-      const { error } = await client
-        .from('whatsapp_groups')
-        .update({
-          name: group.name,
-          link: group.link,
-          whapi_id: group.whapi_id,
-          category: group.category,
-          type: group.type
-        })
-        .eq('id', group.id);
-
-      if (!error) {
+      const res = await fetch(`/api/whatsapp/groups/${group.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(group),
+      });
+      if (res.ok) {
         toast.success(`הקבוצה ${group.name} נשמרה`);
       }
     } catch (err) {
@@ -131,7 +107,7 @@ export default function SettingsPage() {
     }
   };
 
-  const updateGroup = (id: number, field: keyof WhatsAppGroup, value: any) => {
+  const updateGroup = (id: number, field: keyof WhatsAppGroup, value: string) => {
     setWhatsappGroups(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g));
   };
 
@@ -154,40 +130,6 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-4xl font-extrabold text-text-main tracking-tight">הגדרות מערכת</h1>
         <p className="text-text-secondary mt-1 font-medium">ניהול תבניות והגדרות כלליות עבור {APP_NAME}</p>
-      </div>
-
-      {/* Connection Debugger Toggle */}
-      <div className="card border-none shadow-sm overflow-hidden">
-        <button 
-          onClick={() => setShowDebugger(!showDebugger)}
-          className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
-        >
-          <div className="flex items-center gap-3 text-luxury-blue">
-            <div className="p-2 bg-blue-50 rounded-xl">
-              <Activity size={20} />
-            </div>
-            <div className="text-right">
-              <h3 className="font-bold text-sm">בדיקת חיבור למסד הנתונים</h3>
-              <p className="text-xs text-text-secondary">כלי לאבחון ושינוי פרטי התחברות ל-Supabase</p>
-            </div>
-          </div>
-          {showDebugger ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
-        </button>
-        
-        <AnimatePresence>
-          {showDebugger && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="border-t border-slate-100"
-            >
-              <div className="p-4 bg-slate-50/50">
-                <ConnectionDebugger />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       <div className="card p-10 space-y-10 shadow-xl border-none">
@@ -401,42 +343,6 @@ export default function SettingsPage() {
               onChange={(e) => setTemplate(e.target.value)}
               placeholder="לדוגמה: כרטיס חדש במערכת השידוכים של החצי השני..."
             />
-          </div>
-        </div>
-
-        {/* Iron Credentials Section */}
-        <div className="space-y-6 pt-6 border-t border-slate-100">
-          <div className="flex items-center gap-3 text-red-600">
-            <div className="p-3 bg-red-50 rounded-2xl shadow-sm">
-              <ShieldCheck size={24} />
-            </div>
-            <h2 className="font-extrabold text-2xl tracking-tight">סיסמת ברזל (ניהול ראשי)</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-text-secondary uppercase">שם משתמש ברזל</label>
-              <input 
-                type="text" 
-                className="input-field text-sm font-bold" 
-                value={ironUsername} 
-                onChange={(e) => setIronUsername(e.target.value)} 
-                placeholder="שם משתמש ברזל..."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-text-secondary uppercase">סיסמת ברזל</label>
-              <input 
-                type="text" 
-                className="input-field text-sm font-bold" 
-                value={ironPassword} 
-                onChange={(e) => setIronPassword(e.target.value)} 
-                placeholder="סיסמת ברזל..."
-              />
-            </div>
-            <p className="md:col-span-2 text-[10px] text-red-500 font-bold">
-              * שים לב: פרטים אלו מאפשרים כניסה מלאה למערכת כמנהל ראשי. שמור עליהם היטב.
-            </p>
           </div>
         </div>
 

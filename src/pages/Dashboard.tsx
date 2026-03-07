@@ -8,12 +8,9 @@ import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
 import MatchCard from '../components/MatchCard';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
-import { useSupabase } from '../contexts/SupabaseContext';
-import { DatabaseService } from '../services/databaseService';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
-  const { client } = useSupabase();
   const { type } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -64,7 +61,6 @@ export default function Dashboard() {
   const [showChat, setShowChat] = useState<any>(null);
   const [dailySuggestions, setDailySuggestions] = useState<any[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
 
   const handleSuggest = (match: Match) => {
     setShowConnectedAdminsModal(true);
@@ -74,18 +70,9 @@ export default function Dashboard() {
   const fetchDailySuggestions = async () => {
     setLoadingSuggestions(true);
     try {
-      // Ensure database is initialized before fetching suggestions
-      await DatabaseService.ensureInitialized(client);
-
-      const { data, error } = await client
-        .from('matches')
-        .select('*')
-        .is('deleted_at', null)
-        .order('last_published_at', { ascending: true, nullsFirst: true })
-        .limit(5);
-        
-      if (data) {
-        setDailySuggestions(data);
+      const res = await fetch('/api/daily-suggestions');
+      if (res.ok) {
+        setDailySuggestions(await res.json());
       }
     } catch (err) {
       console.error('Failed to fetch daily suggestions:', err);
@@ -97,57 +84,51 @@ export default function Dashboard() {
   const generateDesignedImage = async (match: Match) => {
     setIsGenerating(true);
     const canvas = document.createElement('canvas');
-    canvas.width = 2000; // Increased width
-    canvas.height = 3500; // Increased height
+    canvas.width = 1600; // Increased width
+    canvas.height = 3000; // Increased height
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
       return;
     }
 
-    const margin = 120;
+    const margin = 100;
     const accentColor = match.type === 'male' ? '#2563eb' : '#db2777';
     const lightAccent = match.type === 'male' ? '#eff6ff' : '#fdf2f8';
     const greenColor = '#16a34a'; 
     const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 3500);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 3000);
     gradient.addColorStop(0, loveBg);
     gradient.addColorStop(0.5, lightAccent);
     gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 2000, 3500);
+    ctx.fillRect(0, 0, 1600, 3000);
 
-    // Decorative Frame with Glow - Enhanced
+    // Decorative Frame with Glow
     ctx.save();
-    ctx.shadowBlur = 100; // Increased glow
+    ctx.shadowBlur = 50;
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
-    ctx.lineWidth = 40; // Thicker border
-    ctx.strokeRect(margin, margin, 2000 - margin*2, 3500 - margin*2);
-    
-    // Inner glow line
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(margin + 25, margin + 25, 2000 - margin*2 - 50, 3500 - margin*2 - 50);
+    ctx.lineWidth = 25;
+    ctx.strokeRect(margin, margin, 1600 - margin*2, 3000 - margin*2);
     ctx.restore();
     
     // Header Section
     ctx.fillStyle = '#ffffff';
-    ctx.roundRect(margin + 40, margin + 40, 2000 - margin*2 - 80, 320, 50);
+    ctx.roundRect(margin + 30, margin + 30, 1600 - margin*2 - 60, 280, 40);
     ctx.fill();
     
     // Logo and Title Side-by-Side
-    const headerCenterY = margin + 200;
+    const headerCenterY = margin + 170;
     
     // Logo
     ctx.save();
-    ctx.translate(200, margin + 90);
-    const logoSize = 220;
+    ctx.translate(150, margin + 70);
+    const logoSize = 200;
     ctx.strokeStyle = greenColor;
-    ctx.lineWidth = 18;
+    ctx.lineWidth = 16;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     
@@ -173,17 +154,17 @@ export default function Dashboard() {
     // Title
     ctx.textAlign = 'right';
     ctx.fillStyle = greenColor;
-    ctx.font = 'bold 95px sans-serif';
-    ctx.fillText('כרטיס היכרויות של החצי השני', 1800, headerCenterY - 25);
+    ctx.font = 'bold 85px sans-serif';
+    ctx.fillText('כרטיס היכרויות של החצי השני', 1450, headerCenterY - 20);
     
-    ctx.font = 'bold 55px sans-serif';
-    ctx.fillText('אנשים פוגשים אנשים', 1800, headerCenterY + 55);
+    ctx.font = 'bold 45px sans-serif';
+    ctx.fillText('אנשים פוגשים אנשים', 1450, headerCenterY + 50);
 
-    // Image Section - Adjusted for less cropping
-    const imgX = 200; // Wider image area
-    const imgY = 500;
-    const imgW = 1600; // Wider image area
-    const imgH_actual = 1600; 
+    // Image Section
+    const imgX = 250;
+    const imgY = 420;
+    const imgW = 1100;
+    const imgH = 1100;
 
     if (match.image_url) {
       try {
@@ -201,35 +182,30 @@ export default function Dashboard() {
         
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(imgX, imgY, imgW, imgH_actual, 100);
+        ctx.roundRect(imgX, imgY, imgW, imgH, 80);
         ctx.clip();
         
         if (match.crop_config) {
           const config = JSON.parse(match.crop_config);
-          const { crop, zoom, rotation } = config;
-          
-          if (crop && zoom) {
-            // Calculate center of image
-            const centerX = imgX + imgW / 2;
-            const centerY = imgY + imgH_actual / 2;
-
-            ctx.translate(centerX, centerY);
-            if (rotation) ctx.rotate((rotation * Math.PI) / 180);
-            ctx.translate(-centerX, -centerY);
-
-            const scale = Math.max(imgW / img.width, imgH_actual / img.height) * zoom;
+          const { croppedAreaPixels, crop, zoom } = config;
+          if (croppedAreaPixels) {
+            ctx.drawImage(
+              img, 
+              croppedAreaPixels.x, croppedAreaPixels.y, 
+              croppedAreaPixels.width, croppedAreaPixels.height, 
+              imgX, imgY, imgW, imgH
+            );
+          } else if (crop && zoom) {
+            const scale = Math.max(imgW / img.width, imgH / img.height) * zoom;
             const x = imgX + (imgW - img.width * scale) / 2 + (crop.x * scale);
-            const y = imgY + (imgH_actual - img.height * scale) / 2 + (crop.y * scale);
-            
+            const y = imgY + (imgH - img.height * scale) / 2 + (crop.y * scale);
             ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
           } else {
-             // Fallback for old crop config format or missing data
-             ctx.drawImage(img, imgX, imgY, imgW, imgH_actual);
+            ctx.drawImage(img, imgX, imgY, imgW, imgH);
           }
         } else {
-          // Default center crop
           const imgRatio = img.width / img.height;
-          const targetRatio = imgW / imgH_actual;
+          const targetRatio = imgW / imgH;
           let sw, sh, sx, sy;
           if (imgRatio > targetRatio) {
             sh = img.height;
@@ -242,34 +218,33 @@ export default function Dashboard() {
             sx = 0;
             sy = (img.height - sh) / 2;
           }
-          ctx.drawImage(img, sx, sy, sw, sh, imgX, imgY, imgW, imgH_actual);
+          ctx.drawImage(img, sx, sy, sw, sh, imgX, imgY, imgW, imgH);
         }
         ctx.restore();
 
         // Elegant border for image
         ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 25;
+        ctx.lineWidth = 20;
         ctx.beginPath();
-        ctx.roundRect(imgX - 15, imgY - 15, imgW + 30, imgH_actual + 30, 110);
+        ctx.roundRect(imgX - 10, imgY - 10, imgW + 20, imgH + 20, 90);
         ctx.stroke();
       } catch (e) {
         console.error("Failed to load image for canvas", e);
         ctx.fillStyle = '#f1f5f9';
-        ctx.roundRect(imgX, imgY, imgW, imgH_actual, 100);
+        ctx.roundRect(imgX, imgY, imgW, imgH, 80);
         ctx.fill();
       }
     }
 
     // "הכירו את" + Name
-    const nameY = imgY + imgH_actual + 150;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 100px sans-serif';
-    ctx.fillText('הכירו את', 1000, nameY);
+    ctx.font = 'bold 90px sans-serif';
+    ctx.fillText('הכירו את', 800, 1580);
     
     ctx.fillStyle = accentColor;
-    ctx.font = 'bold 180px sans-serif';
-    ctx.fillText(match.name, 1000, nameY + 180);
+    ctx.font = 'bold 160px sans-serif';
+    ctx.fillText(match.name, 800, 1740);
 
     // Details Grid
     const details = [
@@ -287,40 +262,40 @@ export default function Dashboard() {
     ];
 
     ctx.textAlign = 'right';
-    const gridStartY = nameY + 300;
+    const gridStartY = 1850;
     details.forEach((item, i) => {
       const col = i % 2;
       const row = Math.floor(i / 2);
-      const x = 1800 - (col * 850); // Adjusted for wider canvas
-      const y = gridStartY + (row * 110);
+      const x = 1450 - (col * 700);
+      const y = gridStartY + (row * 95);
       
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 55px sans-serif';
+      ctx.font = 'bold 46px sans-serif';
       ctx.fillText(':' + item.label, x, y);
       
       ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 55px sans-serif';
+      ctx.font = 'bold 48px sans-serif';
       
       // Handle wrapping/truncation for values
       let value = item.value;
-      const maxValWidth = 500;
+      const maxValWidth = 400;
       if (ctx.measureText(value).width > maxValWidth) {
         while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
           value = value.slice(0, -1);
         }
         value += '...';
       }
-      ctx.fillText(value, x - 350, y);
+      ctx.fillText(value, x - 300, y);
     });
 
     // About & Looking For sections
-    let currentY = gridStartY + (Math.ceil(details.length / 2) * 110) + 150;
+    let currentY = gridStartY + (Math.ceil(details.length / 2) * 95) + 120;
     
     const drawWrappedText = (title: string, text: string, y: number, maxLines: number) => {
-      const lineHeight = 85;
-      const maxWidth = 2000 - margin*2 - 200;
+      const lineHeight = 75;
+      const maxWidth = 1600 - margin*2 - 160;
       
-      ctx.font = '50px sans-serif';
+      ctx.font = '45px sans-serif';
       const words = text.split(' ');
       let lines: string[] = [];
       let currentLine = '';
@@ -339,28 +314,28 @@ export default function Dashboard() {
       lines.push(currentLine);
       lines = lines.slice(0, maxLines);
 
-      const boxHeight = (lines.length * lineHeight) + 200;
+      const boxHeight = (lines.length * lineHeight) + 180;
       
       // Box
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'rgba(0,0,0,0.1)';
-      ctx.shadowBlur = 30;
+      ctx.shadowBlur = 25;
       ctx.beginPath();
-      ctx.roundRect(margin + 50, y - 80, 2000 - margin*2 - 100, boxHeight, 60);
+      ctx.roundRect(margin + 40, y - 70, 1600 - margin*2 - 80, boxHeight, 50);
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Title
       ctx.textAlign = 'right';
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 60px sans-serif';
-      ctx.fillText(':' + title.replace(':', ''), 1800, y);
+      ctx.font = 'bold 52px sans-serif';
+      ctx.fillText(':' + title.replace(':', ''), 1450, y);
       
       // Text
       ctx.fillStyle = '#1e293b';
-      ctx.font = '50px sans-serif';
+      ctx.font = '45px sans-serif';
       lines.forEach((line, i) => {
-        ctx.fillText(line, 1800, y + 100 + (i * lineHeight));
+        ctx.fillText(line, 1450, y + 90 + (i * lineHeight));
       });
 
       return boxHeight;
@@ -368,33 +343,11 @@ export default function Dashboard() {
 
     if (match.about) {
       const height = drawWrappedText('קצת עליי', match.about, currentY, 8);
-      currentY += height + 120;
+      currentY += height + 100;
     }
 
     if (match.looking_for) {
-      const height = drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY, 8);
-      currentY += height + 120;
-    }
-
-    // Footer / Creator Info - MOVED TO BOTTOM
-    const footerY = 3380;
-    
-    if (match.creator_name) {
-      const isFemale = match.creator_gender === 'female';
-      const senderTitle = isFemale ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
-      const senderText = `${senderTitle} ${match.creator_name}`;
-      
-      ctx.textAlign = 'center';
-      ctx.fillStyle = accentColor;
-      ctx.font = 'bold 70px sans-serif';
-      ctx.fillText(senderText, 1000, footerY);
-    } else if (user?.name) {
-       // Fallback to current user if creator name is missing (e.g. self-created)
-      const senderText = `נשלח על ידי המנהל/ת ${user.name}`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = accentColor;
-      ctx.font = 'bold 70px sans-serif';
-      ctx.fillText(senderText, 1000, footerY);
+      drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY, 8);
     }
 
     // Corner Hearts
@@ -411,10 +364,24 @@ export default function Dashboard() {
       ctx.restore();
     };
 
-    drawHeart(margin + 60, margin + 60, 80, accentColor);
-    drawHeart(2000 - margin - 60, margin + 60, 80, accentColor);
-    drawHeart(margin + 60, 3500 - margin - 60, 80, accentColor);
-    drawHeart(2000 - margin - 60, 3500 - margin - 60, 80, accentColor);
+    drawHeart(margin + 50, margin + 50, 60, accentColor);
+    drawHeart(1600 - margin - 50, margin + 50, 60, accentColor);
+    drawHeart(margin + 50, 3000 - margin - 50, 60, accentColor);
+    drawHeart(1600 - margin - 50, 3000 - margin - 50, 60, accentColor);
+
+    // Footer / Creator Info
+    const footerY = 2850;
+    ctx.fillStyle = accentColor;
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    const creatorText = `נשלח על ידי ${match.creator_gender === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    ctx.fillText(creatorText, 800, footerY);
+    
+    if (match.creator_phone || user?.phone) {
+      ctx.font = 'bold 36px sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 50);
+    }
 
     setGeneratedImageUrl(canvas.toDataURL('image/png'));
     setIsGenerating(false);
@@ -470,12 +437,13 @@ export default function Dashboard() {
       if (!dbField) return;
 
       const updatedMatch = { ...validationMatch, [dbField]: editValue };
-      const { error } = await client
-        .from('matches')
-        .update({ [dbField]: editValue })
-        .eq('id', validationMatch.id);
+      const res = await fetch(`/api/matches/${validationMatch.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedMatch)
+      });
 
-      if (!error) {
+      if (res.ok) {
         toast.success('הפרט עודכן בהצלחה');
         const newMissing = getMissingFields(updatedMatch);
         setValidationErrors(newMissing);
@@ -492,7 +460,7 @@ export default function Dashboard() {
         toast.error('שגיאה בעדכון הפרט');
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת');
+      toast.error('שגיאה בתקשורת עם השרת');
     } finally {
       setIsSavingField(false);
     }
@@ -503,20 +471,9 @@ export default function Dashboard() {
     setHistoryMatch(match);
     setShowHistoryModal(true);
     try {
-      const { data, error } = await client
-        .from('publish_logs')
-        .select(`
-          *,
-          user:admins(name)
-        `)
-        .eq('match_id', match.id)
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        setPublishHistory(data.map(log => ({
-          ...log,
-          user_name: log.user?.name
-        })));
+      const res = await fetch(`/api/matches/${match.id}/publish-logs`);
+      if (res.ok) {
+        setPublishHistory(await res.json());
       }
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית פרסומים');
@@ -527,40 +484,26 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const [matchesRes, settingsRes, groupsRes, usersRes] = await Promise.all([
-        client.from('matches').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-        client.from('settings').select('*'),
-        client.from('whatsapp_groups').select('*'),
-        client.from('admins').select('*').is('deleted_at', null)
+      const [statsRes, matchesRes, settingsRes, groupsRes, usersRes] = await Promise.all([
+        fetch('/api/stats'),
+        fetch('/api/matches'),
+        fetch('/api/settings'),
+        fetch('/api/whatsapp/groups'),
+        fetch('/api/users')
       ]);
       
-      if (matchesRes.data) setMatches(matchesRes.data as Match[]);
-      if (settingsRes.data) {
-        const settingsObj = settingsRes.data.reduce((acc: any, s: any) => {
-          acc[s.key] = s.value;
-          return acc;
-        }, {});
-        setTemplate(settingsObj.whatsapp_template || '');
-        setInitialMessage(settingsObj.whatsapp_initial_message || '');
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (matchesRes.ok) setMatches(await matchesRes.json());
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        setTemplate(settings.whatsapp_template || '');
+        setInitialMessage(settings.whatsapp_initial_message || '');
       }
-      if (groupsRes.data) {
-        setWhatsappGroups(groupsRes.data as WhatsAppGroup[]);
+      if (groupsRes.ok) {
+        setWhatsappGroups(await groupsRes.json());
       }
-      if (usersRes.data) {
-        setAllUsers(usersRes.data);
-      }
-
-      // Fetch stats manually or via RPC if available
-      // For now, let's just calculate from matches
-      if (matchesRes.data) {
-        const m = matchesRes.data;
-        const today = new Date().toISOString().split('T')[0];
-        setStats({
-          males: m.filter(x => x.type === 'male').length,
-          females: m.filter(x => x.type === 'female').length,
-          publishedToday: m.filter(x => x.last_published_at?.startsWith(today)).length,
-          neverPublished: m.filter(x => !x.last_published_at).length
-        });
+      if (usersRes.ok) {
+        setAllUsers(await usersRes.json());
       }
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
@@ -583,19 +526,16 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     try {
-      const { error } = await client
-        .from('matches')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deleteConfirmId);
-
-      if (!error) {
+      const res = await fetch(`/api/matches/${deleteConfirmId}`, { method: 'DELETE' });
+      if (res.ok) {
         toast.success('הכרטיס נמחק');
         fetchData();
       } else {
-        toast.error(error.message || 'שגיאה במחיקה');
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה במחיקה');
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת');
+      toast.error('שגיאה בתקשורת עם השרת');
     } finally {
       setDeleteConfirmId(null);
     }
@@ -698,21 +638,13 @@ export default function Dashboard() {
     if (!group) return;
 
     try {
-      const { error } = await client
-        .from('matches')
-        .update({ 
-          last_published_at: new Date().toISOString(),
-          is_published_confirmed: 0 
-        })
-        .eq('id', selectedMatch.id);
+      const res = await fetch(`/api/matches/${selectedMatch.id}/publish`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupName: group.name })
+      });
 
-      if (!error) {
-        await client.from('publish_logs').insert({
-          match_id: selectedMatch.id,
-          user_id: user?.id || 0,
-          group_name: group.name
-        });
-
+      if (res.ok) {
         toast.success('הפרסום אושר ונרשם במערכת');
         setManualPublishConfirmed(true);
         setShowPublishModal(false);
@@ -736,10 +668,11 @@ export default function Dashboard() {
       toast.error('שגיאה בהעתקה ללוח');
     }
 
-    await client
-      .from('whatsapp_groups')
-      .update({ last_initial_sent: new Date().toISOString() })
-      .eq('id', selectedGroupId);
+    await fetch(`/api/whatsapp/initial-sent`, { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: selectedGroupId })
+    });
     
     // Open WhatsApp
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(effectiveInitialMessage)}`;
@@ -757,11 +690,11 @@ export default function Dashboard() {
   const markInitialAsSent = async () => {
     if (!selectedGroupId) return;
     try {
-      await client
-        .from('whatsapp_groups')
-        .update({ last_initial_sent: new Date().toISOString() })
-        .eq('id', selectedGroupId);
-
+      await fetch(`/api/whatsapp/initial-sent`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: selectedGroupId })
+      });
       setIsInitialMarkedSent(true);
       fetchData();
       toast.success('סומן כנשלח');
@@ -772,15 +705,15 @@ export default function Dashboard() {
 
   const savePersonalTemplate = async () => {
     try {
-      const { error } = await client
-        .from('admins')
-        .update({ 
+      const res = await fetch('/api/users/me/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
           daily_message_template_male: personalTemplateMale,
           daily_message_template_female: personalTemplateFemale
         })
-        .eq('id', user?.id);
-
-      if (!error) {
+      });
+      if (res.ok) {
         toast.success('הודעות הפתיחה האישיות עודכנו');
         setShowPersonalTemplateModal(false);
         await refreshUser();
@@ -811,15 +744,15 @@ export default function Dashboard() {
 
   const confirmBulkDelete = async () => {
     try {
-      const { error } = await client
-        .from('matches')
-        .update({ deleted_at: new Date().toISOString() })
-        .in('id', selectedMatchIds);
+      const results = await Promise.all(
+        selectedMatchIds.map(id => fetch(`/api/matches/${id}`, { method: 'DELETE' }))
+      );
       
-      if (!error) {
+      const allOk = results.every(r => r.ok);
+      if (allOk) {
         toast.success('הכרטיסים נמחקו בהצלחה');
       } else {
-        toast.error('חלק מהכרטיסים לא נמחקו.');
+        toast.error('חלק מהכרטיסים לא נמחקו. ייתכן שאין לך הרשאות מתאימות.');
       }
       
       setSelectedMatchIds([]);
@@ -833,16 +766,22 @@ export default function Dashboard() {
 
   const handleQuickUpdate = async (id: number, updates: Partial<Match>) => {
     try {
-      const { error } = await client
-        .from('matches')
-        .update(updates)
-        .eq('id', id);
+      const match = matches.find(m => m.id === id);
+      if (!match) return;
 
-      if (!error) {
+      const updatedMatch = { ...match, ...updates };
+      const res = await fetch(`/api/matches/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedMatch)
+      });
+
+      if (res.ok) {
         toast.success('הכרטיס עודכן בהצלחה');
         fetchData();
       } else {
-        toast.error(error.message || 'שגיאה בעדכון');
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בעדכון');
       }
     } catch (err) {
       toast.error('שגיאה בתקשורת עם השרת');
@@ -901,81 +840,60 @@ export default function Dashboard() {
               <Sparkles className="text-yellow-500" size={24} />
               הצעות יומיות חכמות בשבילך
             </h2>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={fetchDailySuggestions}
-                className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
-              >
-                <RefreshCw size={12} className={loadingSuggestions ? 'animate-spin' : ''} />
-                רענן הצעות
-              </button>
-              <button 
-                onClick={() => setSuggestionsExpanded(!suggestionsExpanded)}
-                className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-                title={suggestionsExpanded ? 'כווץ' : 'הרחב'}
-              >
-                {suggestionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </button>
-            </div>
+            <button 
+              onClick={fetchDailySuggestions}
+              className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
+            >
+              <RefreshCw size={12} className={loadingSuggestions ? 'animate-spin' : ''} />
+              רענן הצעות
+            </button>
           </div>
-          
-          <AnimatePresence>
-            {suggestionsExpanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {dailySuggestions.map((item, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: idx * 0.1 }}
+                className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4"
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-2">
-                  {dailySuggestions.map((item, idx) => (
-                    <motion.div 
-                      key={idx}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4"
-                    >
-                      <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
-                          {item.match.type === 'male' ? <User size={20} /> : <Heart size={20} />}
+                <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
+                    {item.match.type === 'male' ? <User size={20} /> : <Heart size={20} />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{item.match.name}</p>
+                    <p className="text-[10px] text-slate-500">{item.match.age} שנים • {item.match.city}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">התאמות פוטנציאליות:</p>
+                  {item.potentialMatches.map((pot: any) => (
+                    <div key={pot.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all group">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${pot.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                          {pot.name[0]}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-900">{item.match.name}</p>
-                          <p className="text-[10px] text-slate-500">{item.match.age} שנים • {item.match.city}</p>
+                          <p className="text-xs font-bold text-slate-800">{pot.name}</p>
+                          <p className="text-[9px] text-slate-500">מנהל: {pot.creator_name}</p>
                         </div>
                       </div>
-                      
-                      <div className="space-y-3">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">התאמות פוטנציאליות:</p>
-                        {item.potentialMatches.map((pot: any) => (
-                          <div key={pot.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all group">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${pot.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                                {pot.name[0]}
-                              </div>
-                              <div>
-                                <p className="text-xs font-bold text-slate-800">{pot.name}</p>
-                                <p className="text-[9px] text-slate-500">מנהל: {pot.creator_name}</p>
-                              </div>
-                            </div>
-                            <button 
-                              onClick={() => {
-                                toast(`פנה למנהל ${pot.creator_name} לגבי הצעה זו`, { icon: '💬' });
-                              }}
-                              className="p-1.5 text-luxury-blue opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <MessageSquare size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
+                      <button 
+                        onClick={() => {
+                          toast(`פנה למנהל ${pot.creator_name} לגבי הצעה זו`, { icon: '💬' });
+                        }}
+                        className="p-1.5 text-luxury-blue opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <MessageSquare size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </motion.div>
-            )}
-          </AnimatePresence>
+            ))}
+          </div>
         </section>
       )}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -1022,22 +940,10 @@ export default function Dashboard() {
             <button 
               onClick={async () => {
                 try {
-                  const { data: userData } = await client.auth.getUser();
-                  const { error } = await client.from('matches').insert({
-                    name: 'משודך דמו ' + Math.floor(Math.random() * 1000),
-                    age: 25,
-                    city: 'ירושלים',
-                    type: Math.random() > 0.5 ? 'male' : 'female',
-                    about: 'זהו כרטיס דמו שנוצר לבדיקה',
-                    creation_source: 'demo',
-                    created_by: userData.user?.id
-                  });
-                  
-                  if (!error) {
+                  const res = await fetch('/api/matches/demo', { method: 'POST' });
+                  if (res.ok) {
                     toast.success('נוצר משודך דמו בהצלחה');
                     fetchData();
-                  } else {
-                    toast.error(error.message);
                   }
                 } catch (err) {
                   toast.error('שגיאה ביצירת דמו');
@@ -1521,7 +1427,6 @@ export default function Dashboard() {
             onEdit={(id) => navigate(`/matches/edit/${id}`)}
             onDelete={handleDelete}
             onHistory={fetchPublishHistory}
-            onImageClick={(match) => navigate(`/matches/edit/${match.id}`)}
             onQuickUpdate={handleQuickUpdate}
             onSuggest={handleSuggest}
             showCreator={user?.role === 'super_admin'}
@@ -2039,7 +1944,7 @@ export default function Dashboard() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="w-full max-w-5xl h-[90vh] relative"
+              className="w-full max-w-2xl h-[80vh] relative"
             >
               <WhatsAppWidget 
                 groupId={whatsappGroups.find(g => g.id === selectedGroupId)?.whapi_id || whatsappGroups.find(g => g.id === selectedGroupId)?.name || ""}

@@ -3,32 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2, Smile } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
+import { io } from 'socket.io-client';
 import { Match } from '../types';
-import { supabase } from '../lib/supabase';
-
-const WHAPI_TOKEN = (import.meta as any).env.VITE_WHAPI_TOKEN;
-const WHAPI_BASE_URL = "https://gate.whapi.cloud";
-
-const whapiFetch = async (endpoint: string, options: any = {}) => {
-  if (!WHAPI_TOKEN) return null;
-  
-  const res = await fetch(`${WHAPI_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${WHAPI_TOKEN}`,
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
-  });
-  
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    console.error(`Whapi error (${endpoint}):`, error);
-    return null;
-  }
-  
-  return res.json();
-};
 
 interface Message {
   id: number | string;
@@ -104,76 +80,10 @@ export function WhatsAppWidget({
     
     setIsChatLoading(true);
     try {
-      let whapiGroupId = groupId;
-      if (whapiGroupId && !whapiGroupId.includes('@') && /^\d+$/.test(whapiGroupId)) {
-        whapiGroupId = `${whapiGroupId}@g.us`;
-      }
-
-      if (WHAPI_TOKEN && whapiGroupId && whapiGroupId.includes('@')) {
-        const data = await whapiFetch(`/messages/list/${whapiGroupId}?count=20`);
-        if (data && data.messages) {
-          setMessages(data.messages.map((m: any) => {
-            let text = m.text?.body || m.caption || (m.type === 'image' ? '[תמונה]' : '[הודעה]');
-            let sender = m.from_name || (m.from_me ? 'אני' : 'משתמש');
-            
-            if (m.from_me && text.includes('*מאת המנהל')) {
-              const match = text.match(/\*מאת המנהל ([^*]+):\*\n\n?/);
-              if (match) {
-                sender = match[1];
-                text = text.replace(/\*מאת המנהל ([^*]+):\*\n\n?/, '');
-              }
-            } else if (m.from_me && text.startsWith('*') && text.includes(':*\n')) {
-              const match = text.match(/^\*([^*]+):\*\n/);
-              if (match) {
-                sender = match[1];
-                text = text.replace(/^\*([^*]+):\*\n/, '');
-              }
-            }
-            
-            return {
-              id: m.id,
-              text,
-              image: m.image?.link || m.image?.url || null,
-              sender,
-              timestamp: new Date(m.timestamp * 1000).toISOString(),
-              type: m.from_me ? 'me' : 'other'
-            };
-          }));
-          return;
-        }
-      }
-
-      // Fallback to simulation (publish logs)
-      let groupNameFilter = groupId;
-      const { data: group } = await supabase
-        .from("whatsapp_groups")
-        .select("name")
-        .or(`whapi_id.eq.${groupId},name.eq.${groupId}`)
-        .maybeSingle();
-        
-      if (group) {
-        groupNameFilter = group.name;
-      }
-
-      const { data: logs } = await supabase
-        .from("publish_logs")
-        .select(`
-          *,
-          match:matches(name),
-          user:admins(name)
-        `)
-        .eq("group_name", groupNameFilter)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      
-      if (logs) {
-        setMessages(logs.map((l: any) => ({
-          id: l.id,
-          text: l.match?.name ? `פורסם כרטיס: ${l.match.name}` : 'הודעה נשלחה',
-          sender: l.user?.name,
-          timestamp: l.created_at,
-          type: 'system'
-        })));
+      const res = await fetch(`/api/whatsapp/messages/${encodeURIComponent(groupId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
       }
     } catch (err) {
       console.error("Failed to fetch messages", err);
@@ -187,9 +97,22 @@ export function WhatsAppWidget({
     
     if (!groupId || groupId === "ניהול כללי") return;
 
-    // Polling as a workaround for missing webhooks/sockets
-    const interval = setInterval(fetchMessages, 10000);
-    return () => clearInterval(interval);
+    const socket = io();
+    
+    socket.emit("join_group", groupId);
+
+    socket.on("new_message", (msg) => {
+      if (msg.chatId === groupId || msg.chatId.split('@')[0] === groupId.split('@')[0]) {
+        setMessages(prev => {
+          if (prev.find(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [groupId]);
 
   useEffect(() => {
@@ -201,92 +124,23 @@ export function WhatsAppWidget({
     
     setLoading(true);
     try {
-      const senderNameFinal = senderName || "מנהל";
-      const signature = `*מאת המנהל ${senderNameFinal}:*\n\n`;
-      const fullText = text ? `${signature}${text}` : "";
-      
-      let success = true;
-      let whapiGroupId = groupId;
-      if (whapiGroupId && !whapiGroupId.includes('@') && /^\d+$/.test(whapiGroupId)) {
-        whapiGroupId = `${whapiGroupId}@g.us`;
-      }
+      const payload = {
+        groupId,
+        text,
+        matchId,
+        includeImage: options?.isOpeningOnly ? false : includeImage,
+        matchImage: options?.isOpeningOnly ? null : matchImage,
+        includeOpening: options?.isOpeningOnly ? false : includeOpening,
+        senderName // Pass the custom sender name if provided
+      };
 
-      if (WHAPI_TOKEN && whapiGroupId && whapiGroupId.includes('@')) {
-        if (includeImage && matchImage && !options?.isOpeningOnly) {
-          const imageRes = await whapiFetch('/messages/image', {
-            method: 'POST',
-            body: JSON.stringify({
-              to: whapiGroupId,
-              media: matchImage,
-              caption: fullText
-            })
-          });
-          if (!imageRes) success = false;
-        } else {
-          const textRes = await whapiFetch('/messages/text', {
-            method: 'POST',
-            body: JSON.stringify({
-              to: whapiGroupId,
-              body: fullText
-            })
-          });
-          if (!textRes) success = false;
-        }
-      }
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-      if (success && includeOpening) {
-        const today = new Date().toISOString().split('T')[0];
-        await supabase
-          .from("whatsapp_groups")
-          .update({ last_initial_sent: today, last_initial_sent_method: 'auto' })
-          .or(`whapi_id.eq.${groupId},name.eq.${groupId}`);
-      }
-
-      if (matchId && success) {
-        const { data: group } = await supabase
-          .from("whatsapp_groups")
-          .select("name")
-          .or(`whapi_id.eq.${groupId},name.eq.${groupId}`)
-          .maybeSingle();
-          
-        const finalGroupName = group?.name || groupId;
-
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData.user?.id;
-
-        await supabase.from("publish_logs").insert({
-          match_id: matchId,
-          user_id: userId,
-          group_name: finalGroupName
-        });
-        
-        const { data: match } = await supabase.from("matches").select("publish_count").eq("id", matchId).single();
-        const newCount = (match?.publish_count || 0) + 1;
-        
-        await supabase.from("matches").update({ 
-          last_published_at: new Date().toISOString(), 
-          publish_count: newCount 
-        }).eq("id", matchId);
-          
-        await supabase.from("activity_logs").insert({
-          user_id: userId,
-          action: "פרסום בוואטסאפ",
-          details: `פורסם כרטיס מזהה ${matchId} בקבוצה ${finalGroupName}`,
-          entity_type: "match",
-          entity_id: matchId
-        });
-      } else if (success) {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData.user?.id;
-        await supabase.from("activity_logs").insert({
-          user_id: userId,
-          action: "שליחת הודעה",
-          details: `נשלחה הודעה חופשית: ${text.substring(0, 30)}...`,
-          entity_type: "system"
-        });
-      }
-
-      if (success) {
+      if (res.ok) {
         toast.success('ההודעה נשלחה בהצלחה');
         setInputText('');
         fetchMessages();
@@ -294,7 +148,7 @@ export function WhatsAppWidget({
         toast.error('שגיאה בשליחת ההודעה');
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת');
+      toast.error('שגיאה בחיבור לשרת');
     } finally {
       setLoading(false);
     }
@@ -323,35 +177,29 @@ export function WhatsAppWidget({
     if (!window.confirm('האם אתה בטוח שברצונך למחוק את ההודעה?')) return;
 
     try {
-      if (WHAPI_TOKEN && messageId && !messageId.toString().startsWith('local_')) {
-        const deleteRes = await whapiFetch(`/messages/${messageId}`, {
-          method: 'DELETE'
-        });
-        if (deleteRes) {
-          setMessages(prev => prev.filter(m => m.id !== messageId));
-          toast.success('ההודעה נמחקה');
-        } else {
-          toast.error('שגיאה במחיקת ההודעה');
-        }
-      } else {
+      const res = await fetch(`/api/whatsapp/messages/${messageId}?groupId=${groupId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
         setMessages(prev => prev.filter(m => m.id !== messageId));
-        toast.success('ההודעה הוסרה מהתצוגה');
+        toast.success('ההודעה נמחקה');
+      } else {
+        toast.error('שגיאה במחיקת ההודעה');
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת');
+      toast.error('שגיאה בתקשורת עם השרת');
     }
   };
 
   const markAsSentManually = async () => {
     if (!groupIdNum) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const { error } = await supabase
-        .from("whatsapp_groups")
-        .update({ last_initial_sent: today, last_initial_sent_method: 'manual' })
-        .eq('id', groupIdNum);
-
-      if (!error) {
+      const res = await fetch('/api/whatsapp/initial-sent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: groupIdNum })
+      });
+      if (res.ok) {
         toast.success('הסטטוס עודכן ידנית');
         onRefreshStatus?.();
       }
@@ -610,7 +458,7 @@ export function WhatsAppWidget({
                       <span className="text-[10px] font-bold text-slate-600">כלול</span>
                     </label>
                   </div>
-                  <div className="rounded-2xl overflow-hidden border-4 border-white shadow-lg relative group max-w-2xl mx-auto">
+                  <div className="rounded-2xl overflow-hidden border-4 border-white shadow-lg relative group max-w-sm mx-auto">
                     <img src={matchImage} alt="Designed Card" className="w-full h-auto" />
                     {currentMatch && (
                       <button 

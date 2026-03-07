@@ -1,31 +1,29 @@
 export interface User {
   id: number;
+  name: string;
   username: string;
+  email: string;
   role: 'super_admin' | 'admin' | 'team_leader' | 'viewer';
-  created_at: string;
-  // Optional fields that might not exist in DB anymore but kept for compatibility or if added later
-  name?: string;
-  email?: string;
-  status?: 'active' | 'inactive';
-  category?: string | null;
-  secondary_category?: string | null;
-  gender?: 'male' | 'female' | null;
-  phone?: string | null;
-  google_login_allowed?: 'true' | 'false';
-  avatar_url?: string | null;
-  deleted_at?: string | null;
-  is_from_file?: number;
-  is_approved?: number;
+  status: 'active' | 'inactive';
+  category: string | null;
+  secondary_category: string | null;
+  gender: 'male' | 'female' | null;
+  phone: string | null;
+  google_login_allowed: 'true' | 'false';
+  avatar_url: string | null;
+  deleted_at: string | null;
+  daily_message_template: string | null;
+  daily_message_template_male: string | null;
+  daily_message_template_female: string | null;
+  is_from_file: number;
+  is_approved: number;
   is_shaham_manager?: number;
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
   created_by?: number;
   creator_name?: string;
-  password?: string;
-  daily_message_template?: string;
-  daily_message_template_male?: string;
-  daily_message_template_female?: string;
+  created_at: string;
 }
 
 export interface WhatsAppGroup {

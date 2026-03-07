@@ -5,21 +5,13 @@ import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, Use
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
-import { DatabaseService } from '../services/databaseService';
-import { useSupabase } from '../contexts/SupabaseContext';
-import { SupabaseClient } from '@supabase/supabase-js';
 
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
-  const { client } = useSupabase();
   const [users, setUsers] = useState<User[]>([]);
-  const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'authorized'>('users');
   const [showModal, setShowModal] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<number | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
@@ -55,29 +47,15 @@ export default function AdminManagement() {
     is_shaham_manager: 0
   });
 
-  const [authEmailData, setAuthEmailData] = useState({
-    email: '',
-    name: ''
-  });
-
-  const [tempGender, setTempGender] = useState<'male' | 'female' | null>(null);
-
   const fetchUsers = async () => {
     try {
-      // Ensure database is initialized before fetching
-      await DatabaseService.ensureInitialized(client);
-
-      const [usersRes, groupsRes, authRes] = await Promise.all([
-        client.from('admins').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-        client.from('whatsapp_groups').select('*'),
-        client.from('authorized_emails').select('*')
+      const [usersRes, groupsRes] = await Promise.all([
+        fetch('/api/users'),
+        fetch('/api/whatsapp/groups')
       ]);
       
-      if (usersRes.data) {
-        setUsers(usersRes.data as User[]);
-      }
-      if (groupsRes.data) setWhatsappGroups(groupsRes.data as WhatsAppGroup[]);
-      if (authRes.data) setAuthorizedEmails(authRes.data);
+      if (usersRes.ok) setUsers(await usersRes.json());
+      if (groupsRes.ok) setWhatsappGroups(await groupsRes.json());
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -87,29 +65,19 @@ export default function AdminManagement() {
 
   useEffect(() => {
     fetchUsers();
-  }, [client]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const dataToSave = {
-        ...formData,
-        created_by: currentUser?.id || null
-      };
-
-      let res;
-      if (editingUser) {
-        res = await client
-          .from('admins')
-          .update(dataToSave)
-          .eq('id', editingUser.id);
-      } else {
-        res = await client
-          .from('admins')
-          .insert([dataToSave]);
-      }
-
-      if (!res.error) {
+      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
+      const method = editingUser ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
         toast.success(editingUser ? 'המנהל עודכן' : 'מנהל חדש נוצר');
         setShowModal(false);
         setEditingUser(null);
@@ -130,49 +98,11 @@ export default function AdminManagement() {
         });
         fetchUsers();
       } else {
-        toast.error(res.error.message || 'שגיאה בשמירה');
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בשמירה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור');
-    }
-  };
-
-  const handleAddAuthEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { error } = await client
-        .from('authorized_emails')
-        .insert([authEmailData]);
-        
-      if (!error) {
-        toast.success('אימייל נוסף לרשימת המורשים');
-        setShowAuthModal(false);
-        setAuthEmailData({ email: '', name: '' });
-        fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה בהוספה');
-      }
-    } catch (err) {
-      toast.error('שגיאה בחיבור');
-    }
-  };
-
-  const handleDeleteAuthEmail = async (id: number) => {
-    if (!confirm('האם אתה בטוח שברצונך להסיר אימייל זה מרשימת המורשים?')) return;
-    try {
-      const { error } = await client
-        .from('authorized_emails')
-        .delete()
-        .eq('id', id);
-        
-      if (!error) {
-        toast.success('האימייל הוסר');
-        fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה במחיקה');
-      }
-    } catch (err) {
-      toast.error('שגיאה במחיקה');
+      toast.error('שגיאה בחיבור לשרת');
     }
   };
 
@@ -223,44 +153,19 @@ export default function AdminManagement() {
             }
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-            if (header === 'טלפון' || header === 'phone' || header === 'נייד') admin.phone = val;
-            if (header === 'סיסמה' || header === 'password' || header.includes('סיסמה')) admin.password = val;
+            if (header === 'טלפון' || header === 'phone') admin.phone = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
-            if (header === 'מין' || header === 'gender' || header.includes('מין')) {
-              const lowerVal = val.toLowerCase().trim();
-              if (['בת', 'נקבה', 'female', 'f', 'אישה'].includes(lowerVal)) admin.gender = 'female';
-              else if (['בן', 'זכר', 'male', 'm', 'גבר'].includes(lowerVal)) admin.gender = 'male';
-              else admin.gender = null;
-            }
-            if (header === 'תפקיד' || header === 'role') {
-               const lowerVal = val.toLowerCase().trim();
-               if (['מנהל ראשי', 'super_admin'].includes(lowerVal)) admin.role = 'super_admin';
-               else if (['ראש צוות', 'team_leader'].includes(lowerVal)) admin.role = 'team_leader';
-               else if (['צופה', 'viewer'].includes(lowerVal)) admin.role = 'viewer';
-               else admin.role = 'admin';
-            }
-            if (header === 'קבוצה' || header === 'category' || header === 'קטגוריה') admin.category = val;
-            if (header === 'סטטוס' || header === 'status') admin.status = val;
+            if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
-              // Handle Google Drive links
-              if (val.includes('drive.google.com')) {
-                const idMatch = val.match(/[-\w]{25,}/);
-                if (idMatch) {
-                  admin.avatar_url = `https://lh3.googleusercontent.com/d/${idMatch[0]}`;
-                }
-              } else {
-                const match = val.match(/\((https?:\/\/[^\)]+)\)/);
-                if (match) {
-                  admin.avatar_url = match[1];
-                } else if (val.trim().startsWith('http')) {
-                  admin.avatar_url = val.trim();
-                }
+              const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+              if (match) {
+                admin.avatar_url = match[1];
+              } else if (val.trim().startsWith('http')) {
+                admin.avatar_url = val.trim();
               }
             }
           });
-          if (!admin.username) admin.username = admin.phone || `user_${Date.now()}_${i}`;
-          if (!admin.name) admin.name = admin.username || 'מנהל ללא שם';
-          if (!admin.email) admin.email = `${admin.username}@shidduchim.com`;
+          if (!admin.username && admin.phone) admin.username = admin.phone;
           admins.push(admin);
 
           // Simulate scan progress
@@ -287,41 +192,37 @@ export default function AdminManagement() {
     
     setImporting(true);
     const processingToast = toast.loading(`מייבא ${scannedAdmins.length} מנהלים...`);
+    let successCount = 0;
     
-    const { error } = await client
-      .from('admins')
-      .insert(scannedAdmins.map(admin => ({
-        ...admin,
-        created_by: currentUser?.id || 0
-      })));
+    for (const admin of scannedAdmins) {
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(admin),
+        });
+        if (res.ok) successCount++;
+      } catch (err) {
+        console.error('Failed to import admin', admin);
+      }
+    }
 
     toast.dismiss(processingToast);
     setImporting(false);
-    
-    if (!error) {
-      setShowCsvModal(false);
-      setCsvFile(null);
-      setScannedAdmins([]);
-      fetchUsers();
-      toast.success(`המנהלים יובאו בהצלחה למערכת!`);
-    } else {
-      toast.error(error.message || 'שגיאה בייבוא');
-    }
+    setShowCsvModal(false);
+    setCsvFile(null);
+    setScannedAdmins([]);
+    fetchUsers();
+    toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
   };
 
   const handleDelete = async (user: User) => {
     if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${user.name}?`)) return;
     try {
-      const { error } = await client
-        .from('admins')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', user.id);
-        
-      if (!error) {
+      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+      if (res.ok) {
         toast.success('המנהל נמחק');
         fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה במחיקה');
       }
     } catch (err) {
       toast.error('שגיאה במחיקה');
@@ -350,16 +251,10 @@ export default function AdminManagement() {
 
   const handleApprove = async (userId: number) => {
     try {
-      const { error } = await client
-        .from('admins')
-        .update({ is_approved: 1 })
-        .eq('id', userId);
-        
-      if (!error) {
+      const res = await fetch(`/api/users/approve/${userId}`, { method: 'POST' });
+      if (res.ok) {
         toast.success('המנהל אושר בהצלחה');
         fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה באישור');
       }
     } catch (err) {
       toast.error('שגיאה באישור המנהל');
@@ -405,33 +300,24 @@ export default function AdminManagement() {
     
     const reader = new FileReader();
     reader.onloadend = () => {
-      try {
-        setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
-      } catch (err) {
-        console.error('Error processing avatar:', err);
-        toast.error('שגיאה בעיבוד התמונה');
-      }
+      setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
     };
     reader.readAsDataURL(file);
   };
 
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
 
-  const handleUpdateGender = async () => {
-    if (!genderModalUser || !tempGender) return;
+  const handleUpdateGender = async (user: User, gender: 'male' | 'female') => {
     try {
-      const { error } = await client
-        .from('admins')
-        .update({ gender: tempGender })
-        .eq('id', genderModalUser.id);
-        
-      if (!error) {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...user, gender })
+      });
+      if (res.ok) {
         toast.success('מין עודכן בהצלחה');
         setGenderModalUser(null);
-        setTempGender(null);
         fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה בעדכון המין');
       }
     } catch (e) {
       toast.error('שגיאה בעדכון המין');
@@ -441,20 +327,19 @@ export default function AdminManagement() {
   const handleUpdatePhone = async () => {
     if (!phoneModalUser) return;
     try {
-      const { error } = await client
-        .from('admins')
-        .update({ 
+      const res = await fetch(`/api/users/${phoneModalUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ...phoneModalUser, 
           phone: tempPhone,
-          username: tempPhone 
+          username: tempPhone // Update username to match phone as requested
         })
-        .eq('id', phoneModalUser.id);
-        
-      if (!error) {
+      });
+      if (res.ok) {
         toast.success('מספר טלפון ושם משתמש עודכנו');
         setPhoneModalUser(null);
         fetchUsers();
-      } else {
-        toast.error(error.message || 'שגיאה בעדכון מספר טלפון');
       }
     } catch (e) {
       toast.error('שגיאה בעדכון');
@@ -466,8 +351,7 @@ export default function AdminManagement() {
                           u.username.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = filterCategory.length === 0 || 
                             (u.category && filterCategory.includes(u.category)) ||
-                            (u.secondary_category && filterCategory.includes(u.secondary_category)) ||
-                            u.role === 'super_admin'; // Always show super_admin regardless of category filter
+                            (u.secondary_category && filterCategory.includes(u.secondary_category));
     return matchesSearch && matchesCategory;
   }).sort((a, b) => {
     if (a.role === 'super_admin') return -1;
@@ -477,46 +361,12 @@ export default function AdminManagement() {
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
-      
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-extrabold text-text-main tracking-tight">ניהול מנהלים</h1>
-          <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות, מנהלים ואימיילים מורשים</p>
+          <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות וגישה למערכת {APP_NAME}</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button 
-            onClick={async () => {
-              const demoAdmin = {
-                name: 'מנהל דמו',
-                username: `demo_${Date.now()}`,
-                email: `demo_${Date.now()}@example.com`,
-                password: 'password123',
-                role: 'admin',
-                status: 'active',
-                gender: 'male',
-                phone: '0500000000',
-                created_by: currentUser?.id
-              };
-              const { error } = await client.from('admins').insert([demoAdmin]);
-              if (!error) {
-                toast.success('מנהל דמו נוצר בהצלחה');
-                fetchUsers();
-              } else {
-                toast.error(error.message || 'שגיאה ביצירת דמו');
-              }
-            }}
-            className="btn-secondary flex items-center gap-2 px-5 py-2.5 font-bold text-amber-600 border-amber-200 hover:bg-amber-50"
-          >
-            <UserPlus size={18} />
-            הוסף מנהל דמו
-          </button>
-          <button 
-            onClick={() => setShowAuthModal(true)}
-            className="btn-secondary flex items-center gap-2 px-5 py-2.5 font-bold"
-          >
-            <Shield size={18} />
-            אישור אימייל מראש
-          </button>
+        <div className="flex gap-3">
           <button 
             onClick={() => setShowCsvModal(true)}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
@@ -552,25 +402,7 @@ export default function AdminManagement() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200">
-        <button 
-          onClick={() => setActiveTab('users')}
-          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'users' ? 'border-luxury-blue text-luxury-blue' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          רשימת מנהלים
-        </button>
-        <button 
-          onClick={() => setActiveTab('authorized')}
-          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'authorized' ? 'border-luxury-blue text-luxury-blue' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-        >
-          אימיילים מורשים (גוגל)
-        </button>
-      </div>
-
-      {activeTab === 'users' ? (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
           <input 
@@ -630,18 +462,18 @@ export default function AdminManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <button 
-                  onClick={() => setTempGender('male')}
+                  onClick={() => handleUpdateGender(genderModalUser, 'male')}
                   className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
-                    tempGender === 'male' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-100 hover:border-blue-200'
+                    genderModalUser.gender === 'male' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-100 hover:border-blue-200'
                   }`}
                 >
                   <UserIcon size={32} />
                   <span className="font-bold">משודך (זכר)</span>
                 </button>
                 <button 
-                  onClick={() => setTempGender('female')}
+                  onClick={() => handleUpdateGender(genderModalUser, 'female')}
                   className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
-                    tempGender === 'female' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-100 hover:border-pink-200'
+                    genderModalUser.gender === 'female' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-100 hover:border-pink-200'
                   }`}
                 >
                   <Heart size={32} />
@@ -651,20 +483,10 @@ export default function AdminManagement() {
 
               <div className="flex gap-3">
                 <button 
-                  onClick={() => {
-                    setGenderModalUser(null);
-                    setTempGender(null);
-                  }}
+                  onClick={() => setGenderModalUser(null)}
                   className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
                 >
                   ביטול
-                </button>
-                <button 
-                  onClick={handleUpdateGender}
-                  disabled={!tempGender}
-                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  אישור ועדכון
                 </button>
               </div>
             </motion.div>
@@ -818,9 +640,7 @@ export default function AdminManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className="text-sm font-medium text-text-secondary">
-                      {users.find(c => c.id === u.created_by)?.name || '---'}
-                    </span>
+                    <span className="text-sm font-medium text-text-secondary">{u.creator_name || 'מערכת'}</span>
                   </td>
                   <td className="px-6 py-5">
                     {u.is_from_file ? (
@@ -831,10 +651,7 @@ export default function AdminManagement() {
                   </td>
                   <td className="px-6 py-5 text-text-secondary font-medium">
                     <button 
-                      onClick={() => {
-                        setGenderModalUser(u);
-                        setTempGender(u.gender);
-                      }}
+                      onClick={() => setGenderModalUser(u)}
                       className="hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
                     >
                       {u.gender === 'male' ? 'בן' : u.gender === 'female' ? 'בת' : '---'}
@@ -864,33 +681,28 @@ export default function AdminManagement() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-text-main font-medium">{u.username || '---'}</td>
+                  <td className="px-6 py-5 text-text-main font-medium">{u.username}</td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-text-main">{u.email || '---'}</span>
+                      <span className="text-sm font-medium text-text-main">{u.email}</span>
                       <span className="text-[10px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="relative group/nav">
-                      <div className="flex flex-col gap-1 w-full">
-                        {u.is_shaham_manager === 1 ? (
-                          <div className="text-[10px] font-bold px-2 py-0.5 rounded-full text-center border bg-blue-50 text-blue-700 border-blue-200">
-                            פרויקט שח"ם
+                      <button 
+                        onClick={() => setGenderModalUser(u)}
+                        className="flex flex-col gap-1 cursor-pointer w-full"
+                      >
+                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.category)}`}>
+                          {u.category || 'ללא שיוך'}
+                        </div>
+                        {u.secondary_category && (
+                          <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
+                            {u.secondary_category}
                           </div>
-                        ) : (
-                          <>
-                            <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.category)}`}>
-                              {u.category || 'ללא שיוך'}
-                            </div>
-                            {u.secondary_category && (
-                              <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
-                                {u.secondary_category}
-                              </div>
-                            )}
-                          </>
                         )}
-                      </div>
+                      </button>
                       
                       {/* Group Navigation Menu */}
                       <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
@@ -974,62 +786,6 @@ export default function AdminManagement() {
           </table>
         </div>
       </div>
-      </>
-      ) : (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-text-main">רשימת אימיילים מורשים להתחברות</h2>
-            <div className="text-xs text-text-secondary bg-blue-50 px-3 py-1 rounded-full font-medium">
-              {authorizedEmails.length} אימיילים מורשים
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-right">
-              <thead>
-                <tr className="bg-slate-50/50 text-text-secondary text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                  <th className="px-6 py-4">שם (אופציונלי)</th>
-                  <th className="px-6 py-4">כתובת אימייל</th>
-                  <th className="px-6 py-4">תאריך הוספה</th>
-                  <th className="px-6 py-4 text-center">פעולות</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {authorizedEmails.map(auth => (
-                  <tr key={auth.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <span className="text-sm font-bold text-text-main">{auth.name || '---'}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm font-medium text-luxury-blue">{auth.email}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs text-text-secondary">{new Date(auth.created_at).toLocaleDateString('he-IL')}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex justify-center gap-2">
-                        <button 
-                          onClick={() => handleDeleteAuthEmail(auth.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                          title="הסר הרשאה"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {authorizedEmails.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">
-                      אין אימיילים מורשים ברשימה. הוסף אימייל כדי לאפשר התחברות עם גוגל.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* CSV Upload Modal */}
       <AnimatePresence>
@@ -1352,63 +1108,6 @@ export default function AdminManagement() {
                   </div>
                 </form>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Authorized Email Modal */}
-      <AnimatePresence>
-        {showAuthModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-6"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 text-luxury-blue">
-                  <Shield size={24} />
-                  <h2 className="text-xl font-bold">אישור אימייל מראש</h2>
-                </div>
-                <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={handleAddAuthEmail} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">כתובת אימייל (גוגל)</label>
-                  <input 
-                    type="email" 
-                    required
-                    value={authEmailData.email}
-                    onChange={(e) => setAuthEmailData({...authEmailData, email: e.target.value})}
-                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none font-medium"
-                    placeholder="example@gmail.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">שם המנהל (אופציונלי)</label>
-                  <input 
-                    type="text" 
-                    value={authEmailData.name}
-                    onChange={(e) => setAuthEmailData({...authEmailData, name: e.target.value})}
-                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none font-medium"
-                    placeholder="שם המנהל"
-                  />
-                </div>
-                
-                <div className="pt-4">
-                  <button 
-                    type="submit"
-                    className="w-full py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
-                  >
-                    אשר אימייל
-                  </button>
-                </div>
-              </form>
             </motion.div>
           </div>
         )}

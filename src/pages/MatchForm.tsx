@@ -2,18 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
-import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, GraduationCap, Info, Image as ImageIcon, Plus, Trash2, Camera, Crop, X, Check, FileUp, Database, Loader2, Search, RotateCw, Link } from 'lucide-react';
+import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, GraduationCap, Info, Image as ImageIcon, Plus, Trash2, Camera, Crop, X, Check, FileUp, Database, Loader2, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
 import { APP_NAME } from '../constants';
-import { useSupabase } from '../contexts/SupabaseContext';
-import { GoogleGenAI } from '@google/genai';
-import { DatabaseService } from '../services/databaseService';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export default function MatchForm() {
   const { user } = useAuth();
-  const { client } = useSupabase();
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
@@ -60,38 +57,18 @@ export default function MatchForm() {
   const [scannedMatches, setScannedMatches] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
 
-  const [images, setImages] = useState<(string | null)[]>([null, null, null]);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [rotation, setRotation] = useState(0);
-
-  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
-
   useEffect(() => {
     if (isEdit) {
-      client
-        .from('matches')
-        .select('*')
-        .eq('id', parseInt(id))
-        .single()
-        .then(({ data: match }) => {
+      fetch(`/api/matches`)
+        .then(res => res.json())
+        .then(data => {
+          const match = data.find((m: Match) => m.id === parseInt(id));
           if (match) {
             setFormData(match);
             try {
-              const extras = JSON.parse(match.additional_images || '[]');
-              const allImages = [match.image_url, ...extras].filter(Boolean);
-              // Pad to 3
-              const paddedImages = [...allImages, null, null, null].slice(0, 3);
-              setImages(paddedImages);
-              if (match.crop_config) {
-                const config = JSON.parse(match.crop_config);
-                setCrop(config.crop || { x: 0, y: 0 });
-                setZoom(config.zoom || 1);
-                setRotation(config.rotation || 0);
-              }
+              setAdditionalImages(JSON.parse(match.additional_images || '[]'));
             } catch (e) {
-              setImages([match.image_url || null, null, null]);
+              setAdditionalImages([]);
             }
           }
         });
@@ -112,12 +89,16 @@ export default function MatchForm() {
 
     setParsing(true);
     try {
-      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('Gemini API key is missing');
-      
+      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        toast.error("מפתח ה-API של Gemini חסר במערכת. אנא פנה למנהל.");
+        return;
+      }
+
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `
-        You are an expert at parsing Hebrew matchmaking profiles. 
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `You are an expert at parsing Hebrew matchmaking profiles. 
         Parse the following text into a JSON object. 
         Crucially, determine the 'type' (male or female) based on the name or context if not explicitly stated.
         
@@ -139,21 +120,38 @@ export default function MatchForm() {
         - age_range: Age range looking for
         
         If a field is missing, set it to null.
-        Text: ${aiText}
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt,
+        Text: ${aiText}`,
         config: {
           responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING, description: "male or female" },
+              name: { type: Type.STRING },
+              age: { type: Type.NUMBER },
+              height: { type: Type.STRING },
+              ethnicity: { type: Type.STRING },
+              marital_status: { type: Type.STRING },
+              city: { type: Type.STRING },
+              religious_level: { type: Type.STRING },
+              service: { type: Type.STRING },
+              occupation: { type: Type.STRING },
+              about: { type: Type.STRING },
+              looking_for: { type: Type.STRING },
+              smoking: { type: Type.STRING },
+              negiah: { type: Type.STRING },
+              age_range: { type: Type.STRING },
+            },
+            required: ["type", "name"]
+          }
         }
       });
 
-      const responseText = response.text;
-      if (!responseText) throw new Error("Empty response from AI");
-      
-      const data = JSON.parse(responseText);
+      if (!response.text) {
+        throw new Error("Empty response from AI");
+      }
+
+      const data = JSON.parse(response.text);
       setFormData(prev => ({ ...prev, ...data, creation_source: 'ai' }));
       toast.success('הטקסט נותח בהצלחה! הפרטים הוזנו ללשונית ההזנה הידנית.');
       setActiveTab('manual');
@@ -170,52 +168,31 @@ export default function MatchForm() {
     e.preventDefault();
     setSaving(true);
     try {
-      // Ensure database is initialized before saving
-      await DatabaseService.ensureInitialized();
-
-      const mainImage = images[selectedImageIndex];
-      const otherImages = images.filter((_, i) => i !== selectedImageIndex && !!images[i]);
-      
-      const payload = {
-        ...formData,
-        image_url: mainImage,
-        additional_images: JSON.stringify(otherImages),
-        crop_config: mainImage ? JSON.stringify({ crop, zoom, rotation, croppedAreaPixels }) : null,
-        created_by: user?.id
-      };
-
-      let error;
-      if (isEdit) {
-        const { error: err } = await client
-          .from('matches')
-          .update(payload)
-          .eq('id', parseInt(id!));
-        error = err;
-      } else {
-        const { error: err } = await client
-          .from('matches')
-          .insert(payload);
-        error = err;
-      }
-
-      if (!error) {
+      const url = isEdit ? `/api/matches/${id}` : '/api/matches';
+      const method = isEdit ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          additional_images: JSON.stringify(additionalImages)
+        }),
+      });
+      if (res.ok) {
         toast.success(isEdit ? 'הכרטיס עודכן' : 'הכרטיס נוצר בהצלחה');
         navigate('/');
       } else {
-        toast.error(error.message || 'שגיאה בשמירה');
+        const data = await res.json();
+        toast.error(data.error || 'שגיאה בשמירה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור');
+      toast.error('שגיאה בחיבור לשרת');
     } finally {
       setSaving(false);
     }
   };
 
-  const [showUrlModal, setShowUrlModal] = useState(false);
-  const [urlInputIndex, setUrlInputIndex] = useState<number | null>(null);
-  const [tempUrl, setTempUrl] = useState('');
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isMain: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -225,58 +202,71 @@ export default function MatchForm() {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      try {
-        const base64 = reader.result as string;
-        const newImages = [...images];
-        newImages[index] = base64;
-        setImages(newImages);
-        if (index === selectedImageIndex) {
-          setTempImageUrl(base64);
-          setCrop({ x: 0, y: 0 });
-          setZoom(1);
-          setRotation(0);
-          setShowCropper(true);
-        }
-      } catch (err) {
-        console.error('Error processing image:', err);
-        toast.error('שגיאה בעיבוד התמונה');
+      const base64 = reader.result as string;
+      if (isMain) {
+        setTempImageUrl(base64);
+        setShowCropper(true);
+      } else {
+        setAdditionalImages(prev => [...prev, base64]);
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const handleUrlAddClick = (index: number) => {
-    setUrlInputIndex(index);
-    setTempUrl('');
-    setShowUrlModal(true);
+  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> => {
+    const image = new Image();
+    image.src = imageSrc;
+    await new Promise((resolve) => { image.onload = resolve; });
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('No 2d context');
+    }
+
+    canvas.width = pixelCrop.width;
+    canvas.height = pixelCrop.height;
+
+    ctx.drawImage(
+      image,
+      pixelCrop.x,
+      pixelCrop.y,
+      pixelCrop.width,
+      pixelCrop.height,
+      0,
+      0,
+      pixelCrop.width,
+      pixelCrop.height
+    );
+
+    return canvas.toDataURL('image/jpeg');
   };
 
-  const handleUrlSubmit = () => {
-    if (urlInputIndex !== null && tempUrl) {
-      const newImages = [...images];
-      newImages[urlInputIndex] = tempUrl;
-      setImages(newImages);
-      setShowUrlModal(false);
-      setUrlInputIndex(null);
-      setTempUrl('');
+  const handleSaveCrop = async () => {
+    if (tempImageUrl && croppedAreaPixels) {
+      try {
+        const croppedImage = await getCroppedImg(tempImageUrl, croppedAreaPixels);
+        setFormData(prev => ({ 
+          ...prev, 
+          image_url: croppedImage,
+          crop_config: null // No longer need crop config since we save the cropped image
+        }));
+        setShowCropper(false);
+        setTempImageUrl(null);
+      } catch (e) {
+        console.error(e);
+        toast.error('שגיאה בחיתוך התמונה');
+      }
     }
   };
 
-  const handleRemoveImage = (index: number) => {
-    const newImages = [...images];
-    newImages[index] = null;
-    setImages(newImages);
-    if (index === selectedImageIndex) {
-      // If removed selected, try to select another one
-      const firstAvailable = newImages.findIndex(img => img !== null);
-      if (firstAvailable !== -1) setSelectedImageIndex(firstAvailable);
-    }
-  };
-
-  const handleSaveCrop = () => {
-    // Just close the cropper, we save the state on submit
-    setShowCropper(false);
-    setTempImageUrl(null);
+  const removeAdditionalImage = (index: number) => {
+    setAdditionalImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleCsvScan = async () => {
@@ -377,26 +367,23 @@ export default function MatchForm() {
     if (scannedMatches.length === 0) return;
     setImporting(true);
     
-    try {
-      // Ensure database is initialized before importing
-      await DatabaseService.ensureInitialized();
-
-      const { error } = await client
-        .from('matches')
-        .insert(scannedMatches.map(m => ({ ...m, created_by: user?.id })));
-      
-      if (!error) {
-        toast.success(`יובאו ${scannedMatches.length} כרטיסים בהצלחה`);
-        navigate('/');
-      } else {
-        toast.error(error.message || 'שגיאה בייבוא');
+    let successCount = 0;
+    for (const match of scannedMatches) {
+      try {
+        const res = await fetch('/api/matches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...match, creation_source: 'csv' }),
+        });
+        if (res.ok) successCount++;
+      } catch (err) {
+        console.error('Error importing match:', err);
       }
-    } catch (err) {
-      console.error('Error importing matches:', err);
-      toast.error('שגיאה בתקשורת');
-    } finally {
-      setImporting(false);
     }
+    
+    setImporting(false);
+    toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
+    navigate('/');
   };
 
   return (
@@ -415,32 +402,10 @@ export default function MatchForm() {
           <button 
             onClick={async () => {
               try {
-                const demoMatch = {
-                  type: 'male',
-                  name: 'ישראל ישראלי (דמו)',
-                  age: 28,
-                  height: '1.80',
-                  ethnicity: 'ספרדי',
-                  marital_status: 'רווק/ה',
-                  city: 'ירושלים',
-                  religious_level: 'דתי',
-                  service: 'צבאי',
-                  occupation: 'סטודנט להנדסה',
-                  about: 'בחור חיובי, אוהב לטייל וללמוד תורה. מחפש קשר רציני למטרת חתונה.',
-                  looking_for: 'בחורה יראת שמיים, עם לב טוב ושמחת חיים.',
-                  smoking: 'לא',
-                  negiah: 'כן',
-                  age_range: '24-28',
-                  phone: '0501234567',
-                  creation_source: 'manual',
-                  created_by: user?.id
-                };
-                const { error } = await client.from('matches').insert(demoMatch);
-                if (!error) {
+                const res = await fetch('/api/matches/demo', { method: 'POST' });
+                if (res.ok) {
                   toast.success('נוצר משודך דמו בהצלחה');
                   navigate('/');
-                } else {
-                  toast.error(error.message);
                 }
               } catch (err) {
                 toast.error('שגיאה ביצירת דמו');
@@ -748,68 +713,71 @@ export default function MatchForm() {
           <div>
             <h3 className="text-xl font-extrabold text-text-main mb-6 flex items-center gap-2">
               <Camera size={20} className="text-luxury-blue" />
-              תמונות (עד 3 תמונות)
+              תמונות
             </h3>
-            <p className="text-sm text-text-secondary mb-4">בחר את התמונה הראשית שתוצג בכרטיס המעוצב. ניתן להעלות קובץ או להזין קישור.</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[0, 1, 2].map((index) => (
-                <div key={index} className={`relative flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${
-                  selectedImageIndex === index ? 'border-luxury-blue bg-blue-50/50 shadow-md' : 'border-slate-200 bg-slate-50'
-                }`}>
-                  <div className="flex justify-between items-center">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="mainImage" 
-                        checked={selectedImageIndex === index} 
-                        onChange={() => setSelectedImageIndex(index)}
-                        className="w-4 h-4 text-luxury-blue"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונה ראשית</label>
+                <div className="relative group aspect-square max-w-[250px] rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-luxury-blue">
+                  {formData.image_url ? (
+                    <>
+                      <img 
+                        src={formData.image_url} 
+                        alt="Main" 
+                        className="w-full h-full object-cover" 
                       />
-                      <span className="text-xs font-bold uppercase text-slate-500">
-                        {selectedImageIndex === index ? 'תמונה ראשית' : 'תמונה נוספת'}
-                      </span>
-                    </label>
-                    {images[index] && (
-                      <button type="button" onClick={() => handleRemoveImage(index)} className="text-red-400 hover:text-red-600">
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="aspect-[3/4] rounded-xl bg-white border border-slate-200 overflow-hidden relative group">
-                    {images[index] ? (
-                      <>
-                        <img src={images[index]!} alt={`Image ${index + 1}`} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <button type="button" onClick={() => {
-                            setTempImageUrl(images[index]!);
-                            setCrop({ x: 0, y: 0 });
-                            setZoom(1);
-                            setRotation(0);
-                            setShowCropper(true);
-                          }} className="p-2 bg-white text-luxury-blue rounded-full hover:bg-slate-100 shadow-lg" title="ערוך וחתוך">
-                            <Crop size={20} />
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-400">
-                        <ImageIcon size={32} />
-                        <div className="flex gap-2">
-                          <label className="p-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-luxury-blue hover:text-luxury-blue transition-all" title="העלה קובץ">
-                            <FileUp size={20} />
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, index)} />
-                          </label>
-                          <button type="button" onClick={() => handleUrlAddClick(index)} className="p-2 bg-white border border-slate-200 rounded-lg hover:border-luxury-blue hover:text-luxury-blue transition-all" title="הוסף קישור">
-                            <Link size={20} />
-                          </button>
-                        </div>
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button type="button" onClick={() => {
+                          setTempImageUrl(formData.image_url!);
+                          setCrop({ x: 0, y: 0 });
+                          setZoom(1);
+                          setShowCropper(true);
+                        }} className="p-2 bg-luxury-blue text-white rounded-full hover:bg-luxury-blue/90">
+                          <Crop size={20} />
+                        </button>
+                        <button type="button" onClick={() => setFormData({...formData, image_url: null, crop_config: null})} className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600">
+                          <Trash2 size={20} />
+                        </button>
                       </div>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer relative group">
+                      <img 
+                        src={formData.type === 'male' ? 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400&h=400' : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=400'} 
+                        alt="Demo" 
+                        className="w-full h-full object-cover opacity-50 grayscale" 
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
+                        <Camera size={40} className="text-white mb-2 drop-shadow-md" />
+                        <span className="text-sm font-bold text-white drop-shadow-md bg-black/50 px-3 py-1 rounded-full">לחץ להעלאת תמונה</span>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, true)} />
+                    </label>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              <div className="space-y-4">
+                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונות נוספות</label>
+                <div className="grid grid-cols-2 gap-4">
+                  {additionalImages.map((img, idx) => (
+                    <div key={idx} className="relative group aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+                      <img src={img} alt={`Extra ${idx}`} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button type="button" onClick={() => removeAdditionalImage(idx)} className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {additionalImages.length < 4 && (
+                    <label className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center cursor-pointer hover:border-luxury-blue transition-all">
+                      <Plus size={24} className="text-slate-300" />
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, false)} />
+                    </label>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -840,55 +808,6 @@ export default function MatchForm() {
       </form>
       )}
 
-      {/* URL Input Modal */}
-      <AnimatePresence>
-        {showUrlModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
-            >
-              <div className="text-center space-y-2">
-                <h3 className="text-2xl font-black text-slate-900">הוספת תמונה מקישור</h3>
-                <p className="text-slate-500 font-medium">הדבק את הקישור לתמונה שברצונך להוסיף</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase">קישור לתמונה</label>
-                  <input 
-                    type="text"
-                    value={tempUrl}
-                    onChange={(e) => setTempUrl(e.target.value)}
-                    className="input-field text-left ltr"
-                    placeholder="https://example.com/image.jpg"
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowUrlModal(false)}
-                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
-                >
-                  ביטול
-                </button>
-                <button 
-                  onClick={handleUrlSubmit}
-                  disabled={!tempUrl}
-                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  הוסף תמונה
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* Crop Modal */}
       <AnimatePresence>
         {showCropper && tempImageUrl && (
@@ -906,59 +825,38 @@ export default function MatchForm() {
                 </button>
               </div>
               
-              <div className="relative h-[500px] bg-slate-900">
+              <div className="relative h-[400px] bg-slate-900">
                 <Cropper
                   image={tempImageUrl}
                   crop={crop}
                   zoom={zoom}
-                  rotation={rotation}
-                  aspect={3/4} // Vertical aspect ratio for card
+                  aspect={1}
                   onCropChange={setCrop}
                   onCropComplete={onCropComplete}
                   onZoomChange={setZoom}
-                  onRotationChange={setRotation}
                 />
               </div>
               
               <div className="p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                      <Search size={16} />
-                      זום
-                    </label>
-                    <input
-                      type="range"
-                      value={zoom}
-                      min={1}
-                      max={3}
-                      step={0.1}
-                      onChange={(e) => setZoom(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                      <RotateCw size={16} />
-                      סיבוב
-                    </label>
-                    <input
-                      type="range"
-                      value={rotation}
-                      min={0}
-                      max={360}
-                      step={1}
-                      onChange={(e) => setRotation(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-text-secondary uppercase tracking-wider">זום</label>
+                  <input
+                    type="range"
+                    value={zoom}
+                    min={1}
+                    max={3}
+                    step={0.1}
+                    aria-labelledby="Zoom"
+                    onChange={(e) => setZoom(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
+                  />
                 </div>
                 
                 <div className="flex justify-end gap-3">
                   <button onClick={() => setShowCropper(false)} className="btn-secondary px-6 py-2.5 font-bold">ביטול</button>
                   <button onClick={handleSaveCrop} className="btn-primary px-8 py-2.5 font-bold flex items-center gap-2">
                     <Check size={20} />
-                    שמור הגדרות תצוגה
+                    אישור והתאמה
                   </button>
                 </div>
               </div>

@@ -2,7 +2,6 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { SupabaseProvider } from './contexts/SupabaseContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import MatchForm from './pages/MatchForm';
@@ -16,9 +15,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
-import ConnectivityMonitor from './components/ConnectivityMonitor';
-import { supabase } from './lib/supabase';
-import { DatabaseService } from './services/databaseService';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -30,6 +26,10 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
   return <>{children}</>;
 }
 
+import { io } from 'socket.io-client';
+
+const socket = io();
+
 function Sidebar() {
   const { user, logout, refreshUser } = useAuth();
   const location = useLocation();
@@ -40,21 +40,19 @@ function Sidebar() {
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [onlineUsers, setOnlineUsers] = React.useState<string[]>([]);
+  const [onlineUsers, setOnlineUsers] = React.useState<number[]>([]);
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
   const [showChat, setShowChat] = React.useState<any>(null); // { id, name }
 
   React.useEffect(() => {
     if (user) {
+      socket.emit('user_login', user.id);
+      
       const fetchAdmins = async () => {
         try {
-          const { data, error } = await supabase
-            .from("admins")
-            .select("*")
-            .is("deleted_at", null)
-            .order("created_at", { ascending: false });
-
-          if (!error && data) {
+          const res = await fetch('/api/users');
+          if (res.ok) {
+            const data = await res.json();
             setAllAdmins(data);
           }
         } catch (err) {
@@ -63,52 +61,20 @@ function Sidebar() {
       };
       fetchAdmins();
 
-      // Supabase Presence for online users
-      const channel = supabase.channel('online-users', {
-        config: {
-          presence: {
-            key: user.id.toString(),
-          },
-        },
-      });
+      const handleOnlineUsers = (users: number[]) => {
+        setOnlineUsers(users);
+      };
 
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          const newState = channel.presenceState();
-          setOnlineUsers(Object.keys(newState));
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          console.log('join', key, newPresences);
-        })
-        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          console.log('leave', key, leftPresences);
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.track({ online_at: new Date().toISOString() });
-          }
-        });
+      const handleNewNotification = (notif: any) => {
+        toast(notif.text, { icon: '🔔' });
+      };
 
-      // Notifications subscription
-      const notifChannel = supabase
-        .channel('notifications')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            toast(payload.new.text, { icon: '🔔' });
-          }
-        )
-        .subscribe();
+      socket.on('online_users', handleOnlineUsers);
+      socket.on('new_notification', handleNewNotification);
 
       return () => {
-        supabase.removeChannel(channel);
-        supabase.removeChannel(notifChannel);
+        socket.off('online_users', handleOnlineUsers);
+        socket.off('new_notification', handleNewNotification);
       };
     }
   }, [user]);
@@ -127,16 +93,14 @@ function Sidebar() {
     reader.onloadend = async () => {
       const base64 = reader.result as string;
       try {
-        const { error } = await supabase
-          .from('admins')
-          .update({ avatar_url: base64 })
-          .eq('id', user?.id);
-
-        if (!error) {
+        const res = await fetch('/api/users/me/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ avatar_url: base64 })
+        });
+        if (res.ok) {
           toast.success('תמונת הפרופיל עודכנה');
           refreshUser();
-        } else {
-          toast.error(error.message);
         }
       } catch (err) {
         toast.error('שגיאה בעדכון התמונה');
@@ -258,7 +222,7 @@ function Sidebar() {
                     />
                   ) : null}
                   <div className={`w-10 h-10 rounded-xl bg-luxury-blue text-white flex items-center justify-center font-bold text-lg shadow-sm group-hover:bg-luxury-blue/80 transition-colors ${user?.avatar_url ? 'hidden' : ''}`}>
-                    {(user?.name || user?.username)?.[0]?.toUpperCase()}
+                    {user?.name?.[0]}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Plus size={16} className="text-white drop-shadow-md" />
@@ -266,7 +230,7 @@ function Sidebar() {
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-text-main truncate">{user?.name || user?.username}</p>
+                  <p className="text-sm font-bold text-text-main truncate">{user?.name}</p>
                   <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}</p>
                 </div>
               </div>
@@ -306,19 +270,19 @@ function Sidebar() {
                 <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
                   <p className="text-[10px] text-blue-600 font-black uppercase tracking-wider mb-1">בנים מחוברים</p>
                   <p className="text-3xl font-black text-blue-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.gender === 'male').length}
+                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'male').length}
                   </p>
                 </div>
                 <div className="bg-pink-50 p-4 rounded-2xl text-center border border-pink-100">
                   <p className="text-[10px] text-pink-600 font-black uppercase tracking-wider mb-1">בנות מחוברות</p>
                   <p className="text-3xl font-black text-pink-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.gender === 'female').length}
+                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.id !== user?.id).map(admin => (
+                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).map(admin => (
                   <div key={admin.id} className="flex flex-col p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all gap-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -375,7 +339,7 @@ function Sidebar() {
                     )}
                   </div>
                 ))}
-                {allAdmins.filter(a => onlineUsers.includes(a.id.toString()) && a.id !== user?.id).length === 0 && (
+                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-8">אין מנהלים אחרים מחוברים כרגע</p>
                 )}
               </div>
@@ -438,35 +402,23 @@ function Sidebar() {
                 onClick={async () => {
                   if (newPassword !== confirmPassword) return toast.error('הסיסמאות אינן תואמות');
                   try {
-                    const { data: userToUpdate } = await supabase
-                      .from('admins')
-                      .select('password_plain')
-                      .eq('id', user?.id)
-                      .single();
-
-                    if (userToUpdate?.password_plain !== oldPassword) {
-                      return toast.error('סיסמה ישנה שגויה');
-                    }
-
-                    const { error } = await supabase
-                      .from('admins')
-                      .update({ 
-                        password_plain: newPassword,
-                        password_updated_at: new Date().toISOString()
-                      })
-                      .eq('id', user?.id);
-
-                    if (!error) {
+                    const res = await fetch('/api/users/change-password', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ oldPassword, newPassword })
+                    });
+                    if (res.ok) {
                       toast.success('הסיסמא שונתה בהצלחה');
                       setShowPasswordModal(false);
                       setOldPassword('');
                       setNewPassword('');
                       setConfirmPassword('');
                     } else {
-                      toast.error(error.message);
+                      const data = await res.json();
+                      toast.error(data.error || 'שגיאה בשינוי הסיסמא');
                     }
                   } catch (err) {
-                    toast.error('שגיאה בתקשורת');
+                    toast.error('שגיאה בתקשורת עם השרת');
                   }
                 }}
                 className="w-full py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg"
@@ -520,7 +472,7 @@ function Header() {
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
           <span>ברוך הבא,</span>
-          <span className="text-text-main font-bold">{user?.name || user?.username}</span>
+          <span className="text-text-main font-bold">{user?.name}</span>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -558,38 +510,26 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  React.useEffect(() => {
-    // Run database initialization on app startup
-    DatabaseService.ensureInitialized();
-  }, []);
-
   return (
-    <SupabaseProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Toaster position="top-center" />
+    <AuthProvider>
+      <BrowserRouter>
+        <Toaster position="top-center" />
+        <MainLayout>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/*" element={
-              <MainLayout>
-                <Routes>
-                  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                  <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                  <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-                  <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-                  <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
-                  <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
-                  <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
-                  <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </MainLayout>
-            } />
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+            <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+            <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
+            <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
+            <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
+            <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/" />} />
           </Routes>
-          <ConnectivityMonitor />
-        </BrowserRouter>
-      </AuthProvider>
-    </SupabaseProvider>
+        </MainLayout>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
