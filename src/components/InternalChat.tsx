@@ -3,7 +3,6 @@ import { Send, X, Smile, Paperclip, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
-import { useSupabase } from '../contexts/SupabaseContext';
 
 interface Message {
   id: number;
@@ -26,7 +25,6 @@ interface InternalChatProps {
 
 export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }) => {
   const { user } = useAuth();
-  const { client } = useSupabase();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -37,11 +35,8 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        const { data } = await client
-          .from('matches')
-          .select('*')
-          .is('deleted_at', null);
-        if (data) setMatches(data);
+        const res = await fetch('/api/matches');
+        if (res.ok) setMatches(await res.json());
       } catch (e) {}
     };
     fetchMatches();
@@ -54,25 +49,10 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const { data, error } = await client
-          .from('internal_messages')
-          .select(`
-            *,
-            match:matches(name, type, age, city),
-            sender:admins!internal_messages_sender_id_fkey(name)
-          `)
-          .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},receiver_id.eq.${user?.id})`)
-          .order('created_at', { ascending: true });
-
-        if (data) {
-          setMessages(data.map(msg => ({
-            ...msg,
-            match_name: msg.match?.name,
-            match_type: msg.match?.type,
-            match_age: msg.match?.age,
-            match_city: msg.match?.city,
-            sender_name: msg.sender?.name
-          })));
+        const res = await fetch(`/api/internal-messages/${otherUser.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMessages(data);
         }
       } catch (err) {
         console.error('Failed to fetch messages:', err);
@@ -83,49 +63,8 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
 
     fetchMessages();
 
-    const channel = client
-      .channel(`chat-${user?.id}-${otherUser.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'internal_messages',
-          filter: `receiver_id=eq.${user?.id}`,
-        },
-        async (payload) => {
-          const msg = payload.new as any;
-          if (msg.sender_id === otherUser.id) {
-            // Fetch sender name and match details for the new message
-            const { data } = await client
-              .from('internal_messages')
-              .select(`
-                *,
-                match:matches(name, type, age, city),
-                sender:admins!internal_messages_sender_id_fkey(name)
-              `)
-              .eq('id', msg.id)
-              .single();
-            
-            if (data) {
-              setMessages(prev => [...prev, {
-                ...data,
-                match_name: data.match?.name,
-                match_type: data.match?.type,
-                match_age: data.match?.age,
-                match_city: data.match?.city,
-                sender_name: data.sender?.name
-              }]);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      client.removeChannel(channel);
-    };
-  }, [otherUser.id, user?.id, client]);
+    // Removed socket logic
+  }, [otherUser.id]);
 
   useEffect(scrollToBottom, [messages]);
 
@@ -133,34 +72,18 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     e?.preventDefault();
     if (!newMessage.trim() && !matchId) return;
 
-    const payload = {
-      sender_id: user?.id,
+    // Mock send for temporary mode
+    const newMsg: Message = {
+      id: Date.now(),
+      sender_id: user?.id || 0,
       receiver_id: otherUser.id,
       text: newMessage || 'שלחתי לך הצעה למשודך',
-      match_id: matchId
+      match_id: matchId,
+      sender_name: user?.name || '',
+      created_at: new Date().toISOString()
     };
-
-    const { data, error } = await client
-      .from('internal_messages')
-      .insert(payload)
-      .select(`
-        *,
-        match:matches(name, type, age, city),
-        sender:admins!internal_messages_sender_id_fkey(name)
-      `)
-      .single();
-
-    if (data) {
-      setMessages(prev => [...prev, {
-        ...data,
-        match_name: data.match?.name,
-        match_type: data.match?.type,
-        match_age: data.match?.age,
-        match_city: data.match?.city,
-        sender_name: data.sender?.name
-      }]);
-    }
-
+    
+    setMessages(prev => [...prev, newMsg]);
     setNewMessage('');
     setShowPicker(false);
   };
@@ -244,11 +167,8 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                     onClick={async () => {
                       if (!window.confirm('למחוק הודעה זו?')) return;
                       try {
-                        const { error } = await client
-                          .from('internal_messages')
-                          .delete()
-                          .eq('id', msg.id);
-                        if (!error) {
+                        const res = await fetch(`/api/internal-messages/${msg.id}`, { method: 'DELETE' });
+                        if (res.ok) {
                           setMessages(prev => prev.filter(m => m.id !== msg.id));
                           toast.success('הודעה נמחקה');
                         }

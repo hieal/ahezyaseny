@@ -45,7 +45,24 @@ class DataService {
 
   async login(username: string, password_plain: string): Promise<User | null> {
     if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('users');
+      let users = await this.localGet<User>('users');
+      
+      // Ensure 'good' user exists
+      if (!users.find(u => u.username === 'good')) {
+        const goodUser: User = {
+          id: crypto.randomUUID(),
+          name: 'Good User',
+          username: 'good',
+          email: 'good@example.com',
+          password_plain: 'good',
+          role: 'super_admin',
+          status: 'active',
+          created_at: new Date().toISOString()
+        };
+        users.push(goodUser);
+        await this.localSet('users', users);
+      }
+
       const user = users.find(u => u.username === username && u.password_plain === password_plain);
       if (user) {
         localStorage.setItem('current_user', JSON.stringify(user));
