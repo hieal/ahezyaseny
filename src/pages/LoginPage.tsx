@@ -110,7 +110,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
-  username TEXT NOT NULL,
+  username TEXT NOT NULL UNIQUE,
   email TEXT NOT NULL,
   role TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
@@ -191,7 +191,12 @@ CREATE TABLE IF NOT EXISTS publish_logs (
   user_name TEXT,
   group_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);`;
+);
+
+-- Insert initial admin user
+INSERT INTO admins (name, username, email, role, password_plain, status)
+VALUES ('Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active')
+ON CONFLICT DO NOTHING;`;
         setSqlScript(script);
         setShowSqlModal(true);
         toast.error('חסרות טבלאות במסד הנתונים. אנא הרץ את ה-SQL המצורף.');
