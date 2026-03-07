@@ -24,6 +24,17 @@ class DataService {
     localStorage.setItem(key, JSON.stringify(data));
   }
 
+  private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
+    try {
+      const { data, error } = await promise;
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error('Supabase error:', err);
+      throw new Error('שגיאה בחיבור לשרת. אנא עבור לשרת זמני בהגדרות.');
+    }
+  }
+
   // Auth
   async getCurrentUser(): Promise<User | null> {
     const userJson = localStorage.getItem('current_user');
@@ -140,10 +151,16 @@ class DataService {
       const matches = await this.localGet<Match>('matches');
       return type ? matches.filter(m => m.type === type && !m.deleted_at) : matches.filter(m => !m.deleted_at);
     } else {
-      let query = supabase.from('matches').select('*').is('deleted_at', null);
-      if (type) query = query.eq('type', type);
-      const { data } = await query;
-      return data || [];
+      try {
+        let query = supabase.from('matches').select('*').is('deleted_at', null);
+        if (type) query = query.eq('type', type);
+        const { data, error } = await query;
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.error('Supabase error:', err);
+        throw new Error('שגיאה בחיבור לשרת. אנא עבור לשרת זמני בהגדרות.');
+      }
     }
   }
 
@@ -164,9 +181,8 @@ class DataService {
       await this.localSet('matches', matches);
       return newMatch;
     } else {
-      const { data, error } = await supabase.from('matches').insert(newMatch).select().single();
-      if (error) throw error;
-      return data;
+      const data = await this.handleSupabase(supabase.from('matches').insert(newMatch).select().single());
+      return data as Match;
     }
   }
 
@@ -179,9 +195,8 @@ class DataService {
       await this.localSet('matches', matches);
       return matches[index];
     } else {
-      const { data, error } = await supabase.from('matches').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      const data = await this.handleSupabase(supabase.from('matches').update(updates).eq('id', id).select().single());
+      return data as Match;
     }
   }
 
@@ -213,15 +228,15 @@ class DataService {
       };
     } else {
       // In a real app, you'd use a RPC or multiple queries
-      const { data: matches } = await supabase.from('matches').select('type, last_published_at').is('deleted_at', null);
+      const matches = await this.handleSupabase(supabase.from('matches').select('type, last_published_at').is('deleted_at', null));
       const activeMatches = matches || [];
       const today = new Date().toISOString().split('T')[0];
 
       return {
-        males: activeMatches.filter(m => m.type === 'male').length,
-        females: activeMatches.filter(m => m.type === 'female').length,
-        publishedToday: activeMatches.filter(m => m.last_published_at?.startsWith(today)).length,
-        neverPublished: activeMatches.filter(m => !m.last_published_at).length
+        males: activeMatches.filter((m: any) => m.type === 'male').length,
+        females: activeMatches.filter((m: any) => m.type === 'female').length,
+        publishedToday: activeMatches.filter((m: any) => m.last_published_at?.startsWith(today)).length,
+        neverPublished: activeMatches.filter((m: any) => !m.last_published_at).length
       };
     }
   }
@@ -231,7 +246,7 @@ class DataService {
     if (this.mode === 'temporary') {
       return this.localGet<User>('users');
     } else {
-      const { data } = await supabase.from('profiles').select('*');
+      const data = await this.handleSupabase(supabase.from('profiles').select('*'));
       return data || [];
     }
   }
@@ -249,9 +264,8 @@ class DataService {
       await this.localSet('users', users);
       return newUser;
     } else {
-      const { data, error } = await supabase.from('profiles').insert(newUser).select().single();
-      if (error) throw error;
-      return data;
+      const data = await this.handleSupabase(supabase.from('profiles').insert(newUser).select().single());
+      return data as User;
     }
   }
 
@@ -274,9 +288,8 @@ class DataService {
       
       return users[index];
     } else {
-      const { data, error } = await supabase.from('profiles').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      const data = await this.handleSupabase(supabase.from('profiles').update(updates).eq('id', id).select().single());
+      return data as User;
     }
   }
 
@@ -312,7 +325,7 @@ class DataService {
     if (this.mode === 'temporary') {
       return this.localGet<WhatsAppGroup>('whatsapp_groups');
     } else {
-      const { data } = await supabase.from('whatsapp_groups').select('*');
+      const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*'));
       return data || [];
     }
   }
@@ -384,8 +397,12 @@ class DataService {
       const settings = localStorage.getItem('app_settings');
       return settings ? JSON.parse(settings) : { whatsapp_template: '', whatsapp_initial_message: '' };
     } else {
-      const { data } = await supabase.from('settings').select('*').single();
-      return data || {};
+      try {
+        const data = await this.handleSupabase(supabase.from('settings').select('*').single());
+        return data || {};
+      } catch (e) {
+        return { whatsapp_template: '', whatsapp_initial_message: '' };
+      }
     }
   }
 

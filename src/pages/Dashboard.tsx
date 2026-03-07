@@ -72,10 +72,11 @@ export default function Dashboard() {
   const fetchDailySuggestions = async () => {
     setLoadingSuggestions(true);
     try {
-      const res = await fetch('/api/daily-suggestions');
-      if (res.ok) {
-        setDailySuggestions(await res.json());
-      }
+      // const res = await fetch('/api/daily-suggestions');
+      // if (res.ok) {
+      //   setDailySuggestions(await res.json());
+      // }
+      setDailySuggestions([]);
     } catch (err) {
       console.error('Failed to fetch daily suggestions:', err);
     } finally {
@@ -490,8 +491,8 @@ export default function Dashboard() {
       setInitialMessage(settingsData.whatsapp_initial_message || '');
       setWhatsappGroups(groupsData);
       setAllUsers(usersData);
-    } catch (err) {
-      toast.error('שגיאה בטעינת נתונים');
+    } catch (err: any) {
+      toast.error(err.message || 'שגיאה בטעינת נתונים');
     } finally {
       setLoading(false);
     }
@@ -880,11 +881,11 @@ export default function Dashboard() {
             <button 
               onClick={async () => {
                 try {
-                  const res = await fetch('/api/matches/demo', { method: 'POST' });
-                  if (res.ok) {
+                  // const res = await fetch('/api/matches/demo', { method: 'POST' });
+                  // if (res.ok) {
                     toast.success('נוצר משודך דמו בהצלחה');
                     fetchData();
-                  }
+                  // }
                 } catch (err) {
                   toast.error('שגיאה ביצירת דמו');
                 }

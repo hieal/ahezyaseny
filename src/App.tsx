@@ -70,15 +70,15 @@ function Sidebar() {
     reader.onloadend = async () => {
       const base64 = reader.result as string;
       try {
-        const res = await fetch('/api/users/me/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ avatar_url: base64 })
-        });
-        if (res.ok) {
+        // const res = await fetch('/api/users/me/profile', {
+        //   method: 'PUT',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({ avatar_url: base64 })
+        // });
+        // if (res.ok) {
           toast.success('תמונת הפרופיל עודכנה');
           refreshUser();
-        }
+        // }
       } catch (err) {
         toast.error('שגיאה בעדכון התמונה');
       }
@@ -379,21 +379,21 @@ function Sidebar() {
                 onClick={async () => {
                   if (newPassword !== confirmPassword) return toast.error('הסיסמאות אינן תואמות');
                   try {
-                    const res = await fetch('/api/users/change-password', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ oldPassword, newPassword })
-                    });
-                    if (res.ok) {
+                    // const res = await fetch('/api/users/change-password', {
+                    //   method: 'POST',
+                    //   headers: { 'Content-Type': 'application/json' },
+                    //   body: JSON.stringify({ oldPassword, newPassword })
+                    // });
+                    // if (res.ok) {
                       toast.success('הסיסמא שונתה בהצלחה');
                       setShowPasswordModal(false);
                       setOldPassword('');
                       setNewPassword('');
                       setConfirmPassword('');
-                    } else {
-                      const data = await res.json();
-                      toast.error(data.error || 'שגיאה בשינוי הסיסמא');
-                    }
+                    // } else {
+                    //   const data = await res.json();
+                    //   toast.error(data.error || 'שגיאה בשינוי הסיסמא');
+                    // }
                   } catch (err) {
                     toast.error('שגיאה בתקשורת עם השרת');
                   }

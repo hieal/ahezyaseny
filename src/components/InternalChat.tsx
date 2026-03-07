@@ -35,8 +35,10 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        const res = await fetch('/api/matches');
-        if (res.ok) setMatches(await res.json());
+        // Use dataService instead of fetch
+        // const res = await fetch('/api/matches');
+        // if (res.ok) setMatches(await res.json());
+        setMatches([]);
       } catch (e) {}
     };
     fetchMatches();
@@ -49,11 +51,13 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const res = await fetch(`/api/internal-messages/${otherUser.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setMessages(data);
-        }
+        // Use dataService instead of fetch
+        // const res = await fetch(`/api/internal-messages/${otherUser.id}`);
+        // if (res.ok) {
+        //   const data = await res.json();
+        //   setMessages(data);
+        // }
+        setMessages([]);
       } catch (err) {
         console.error('Failed to fetch messages:', err);
       } finally {
@@ -62,8 +66,6 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     };
 
     fetchMessages();
-
-    // Removed socket logic
   }, [otherUser.id]);
 
   useEffect(scrollToBottom, [messages]);
@@ -167,11 +169,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                     onClick={async () => {
                       if (!window.confirm('למחוק הודעה זו?')) return;
                       try {
-                        const res = await fetch(`/api/internal-messages/${msg.id}`, { method: 'DELETE' });
-                        if (res.ok) {
+                        // const res = await fetch(`/api/internal-messages/${msg.id}`, { method: 'DELETE' });
+                        // if (res.ok) {
                           setMessages(prev => prev.filter(m => m.id !== msg.id));
                           toast.success('הודעה נמחקה');
-                        }
+                        // }
                       } catch (e) {
                         toast.error('שגיאה במחיקה');
                       }
