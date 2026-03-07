@@ -4,9 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 import { History, Search, Filter, Calendar, RefreshCw, User as UserIcon, Info, Send, CheckCircle, MessageSquare, Phone } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useSupabase } from '../contexts/SupabaseContext';
 
 export default function TrackingPage() {
   const { user } = useAuth();
+  const { client } = useSupabase();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [publishLogs, setPublishLogs] = useState<PublishLog[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -53,15 +55,24 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const queryParams = new URLSearchParams();
-      if (filters.userId) queryParams.append('userId', filters.userId);
-      if (filters.dateFrom) queryParams.append('dateFrom', filters.dateFrom);
-      if (filters.dateTo) queryParams.append('dateTo', filters.dateTo);
+      let query = client
+        .from('activity_logs')
+        .select(`
+          *,
+          user:admins(name)
+        `)
+        .order('created_at', { ascending: false });
 
-      const res = await fetch(`/api/activity-logs?${queryParams.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
+      if (filters.userId) query = query.eq('user_id', filters.userId);
+      if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom);
+      if (filters.dateTo) query = query.lte('created_at', filters.dateTo);
+
+      const { data, error } = await query;
+      if (data) {
+        setLogs(data.map(log => ({
+          ...log,
+          user_name: log.user?.name
+        })));
       }
     } catch (err) {
       toast.error('שגיאה בטעינת מעקב פעולות');
@@ -73,10 +84,12 @@ export default function TrackingPage() {
   const fetchUsers = async () => {
     if (user?.role !== 'super_admin') return;
     try {
-      const res = await fetch('/api/users');
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
+      const { data, error } = await client
+        .from('admins')
+        .select('*')
+        .is('deleted_at', null);
+      if (data) {
+        setUsers(data as User[]);
       }
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -85,8 +98,22 @@ export default function TrackingPage() {
 
   const fetchPublishLogs = async () => {
     try {
-      const res = await fetch('/api/publish-logs');
-      if (res.ok) setPublishLogs(await res.json());
+      const { data, error } = await client
+        .from('publish_logs')
+        .select(`
+          *,
+          match:matches(name),
+          user:admins(name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setPublishLogs(data.map(log => ({
+          ...log,
+          match_name: log.match?.name,
+          user_name: log.user?.name
+        })));
+      }
     } catch (err) {
       console.error('Error fetching publish logs:', err);
     }
@@ -94,8 +121,12 @@ export default function TrackingPage() {
 
   const fetchMatches = async () => {
     try {
-      const res = await fetch('/api/matches');
-      if (res.ok) setMatches(await res.json());
+      const { data, error } = await client
+        .from('matches')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+      if (data) setMatches(data as Match[]);
     } catch (err) {
       console.error('Error fetching matches:', err);
     }
@@ -110,12 +141,12 @@ export default function TrackingPage() {
 
   const handleConfirmPublish = async (matchId: number, confirmed: boolean) => {
     try {
-      const res = await fetch(`/api/matches/${matchId}/confirm-publish`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmed })
-      });
-      if (res.ok) {
+      const { error } = await client
+        .from('matches')
+        .update({ is_published_confirmed: confirmed ? 1 : 0 })
+        .eq('id', matchId);
+
+      if (!error) {
         toast.success(confirmed ? 'הפרסום אושר' : 'האישור בוטל');
         fetchMatches();
       }
@@ -126,12 +157,12 @@ export default function TrackingPage() {
 
   const handleUpdatePhone = async (matchId: number, phone: string) => {
     try {
-      const res = await fetch(`/api/matches/${matchId}/phone`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone })
-      });
-      if (res.ok) {
+      const { error } = await client
+        .from('matches')
+        .update({ phone })
+        .eq('id', matchId);
+
+      if (!error) {
         toast.success('מספר הטלפון עודכן');
         fetchMatches();
       }
@@ -147,21 +178,20 @@ export default function TrackingPage() {
     if (!confirm(`האם אתה בטוח שברצונך לשחזר את ${entityName} שנמחק?`)) return;
 
     try {
-      const endpoint = log.entity_type === 'match' 
-        ? `/api/matches/${log.entity_id}/restore` 
-        : `/api/users/${log.entity_id}/restore`;
-        
-      const res = await fetch(endpoint, {
-        method: 'POST'
-      });
-      if (res.ok) {
+      const table = log.entity_type === 'match' ? 'matches' : 'admins';
+      const { error } = await client
+        .from(table)
+        .update({ deleted_at: null })
+        .eq('id', log.entity_id);
+
+      if (!error) {
         toast.success(`${entityName} שוחזר בהצלחה`);
         fetchLogs();
       } else {
         toast.error(`שגיאה בשחזור ${entityName}`);
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת עם השרת');
+      toast.error('שגיאה בתקשורת');
     }
   };
 

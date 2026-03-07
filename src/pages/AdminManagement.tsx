@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 
+import { dataService } from '../services/dataService';
+
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -49,13 +51,13 @@ export default function AdminManagement() {
 
   const fetchUsers = async () => {
     try {
-      const [usersRes, groupsRes] = await Promise.all([
-        fetch('/api/users'),
-        fetch('/api/whatsapp/groups')
+      const [usersData, groupsData] = await Promise.all([
+        dataService.getUsers(),
+        dataService.getWhatsAppGroups()
       ]);
       
-      if (usersRes.ok) setUsers(await usersRes.json());
-      if (groupsRes.ok) setWhatsappGroups(await groupsRes.json());
+      setUsers(usersData);
+      setWhatsappGroups(groupsData);
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -70,39 +72,34 @@ export default function AdminManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
-      const method = editingUser ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (res.ok) {
-        toast.success(editingUser ? 'המנהל עודכן' : 'מנהל חדש נוצר');
-        setShowModal(false);
-        setEditingUser(null);
-        setFormData({ 
-          name: '', 
-          username: '', 
-          email: '', 
-          password: '', 
-          role: 'admin', 
-          status: 'active', 
-          category: '', 
-          secondary_category: '',
-          gender: '', 
-          phone: '', 
-          google_login_allowed: 'true', 
-          avatar_url: '',
-          is_shaham_manager: 0
-        });
-        fetchUsers();
+      if (editingUser && editingUser.id) {
+        await dataService.updateUser(editingUser.id, formData);
+        toast.success('המנהל עודכן');
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בשמירה');
+        await dataService.createUser(formData);
+        toast.success('מנהל חדש נוצר');
       }
+      
+      setShowModal(false);
+      setEditingUser(null);
+      setFormData({ 
+        name: '', 
+        username: '', 
+        email: '', 
+        password: '', 
+        role: 'admin', 
+        status: 'active', 
+        category: '', 
+        secondary_category: '',
+        gender: '', 
+        phone: '', 
+        google_login_allowed: 'true', 
+        avatar_url: '',
+        is_shaham_manager: 0
+      });
+      fetchUsers();
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בשמירה');
     }
   };
 
@@ -196,12 +193,8 @@ export default function AdminManagement() {
     
     for (const admin of scannedAdmins) {
       try {
-        const res = await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(admin),
-        });
-        if (res.ok) successCount++;
+        await dataService.createUser(admin);
+        successCount++;
       } catch (err) {
         console.error('Failed to import admin', admin);
       }
@@ -219,11 +212,9 @@ export default function AdminManagement() {
   const handleDelete = async (user: User) => {
     if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${user.name}?`)) return;
     try {
-      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('המנהל נמחק');
-        fetchUsers();
-      }
+      await dataService.deleteUser(user.id);
+      toast.success('המנהל נמחק');
+      fetchUsers();
     } catch (err) {
       toast.error('שגיאה במחיקה');
     }
@@ -249,13 +240,11 @@ export default function AdminManagement() {
     setShowModal(true);
   };
 
-  const handleApprove = async (userId: number) => {
+  const handleApprove = async (userId: string) => {
     try {
-      const res = await fetch(`/api/users/approve/${userId}`, { method: 'POST' });
-      if (res.ok) {
-        toast.success('המנהל אושר בהצלחה');
-        fetchUsers();
-      }
+      await dataService.updateUser(userId, { is_approved: 1 });
+      toast.success('המנהל אושר בהצלחה');
+      fetchUsers();
     } catch (err) {
       toast.error('שגיאה באישור המנהל');
     }
@@ -309,16 +298,10 @@ export default function AdminManagement() {
 
   const handleUpdateGender = async (user: User, gender: 'male' | 'female') => {
     try {
-      const res = await fetch(`/api/users/${user.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...user, gender })
-      });
-      if (res.ok) {
-        toast.success('מין עודכן בהצלחה');
-        setGenderModalUser(null);
-        fetchUsers();
-      }
+      await dataService.updateUser(user.id, { gender });
+      toast.success('מין עודכן בהצלחה');
+      setGenderModalUser(null);
+      fetchUsers();
     } catch (e) {
       toast.error('שגיאה בעדכון המין');
     }
@@ -327,20 +310,13 @@ export default function AdminManagement() {
   const handleUpdatePhone = async () => {
     if (!phoneModalUser) return;
     try {
-      const res = await fetch(`/api/users/${phoneModalUser.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          ...phoneModalUser, 
-          phone: tempPhone,
-          username: tempPhone // Update username to match phone as requested
-        })
+      await dataService.updateUser(phoneModalUser.id, { 
+        phone: tempPhone,
+        username: tempPhone // Update username to match phone as requested
       });
-      if (res.ok) {
-        toast.success('מספר טלפון ושם משתמש עודכנו');
-        setPhoneModalUser(null);
-        fetchUsers();
-      }
+      toast.success('מספר טלפון ושם משתמש עודכנו');
+      setPhoneModalUser(null);
+      fetchUsers();
     } catch (e) {
       toast.error('שגיאה בעדכון');
     }

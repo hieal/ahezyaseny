@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
+import { dataService } from '../services/dataService';
 
 interface AuthContextType {
   user: User | null;
@@ -17,13 +18,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     try {
-      const res = await fetch('/api/auth/me');
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data);
-      } else {
-        setUser(null);
-      }
+      const currentUser = await dataService.getCurrentUser();
+      setUser(currentUser);
     } catch (err) {
       setUser(null);
     } finally {
@@ -40,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await dataService.logout();
     setUser(null);
   };
 

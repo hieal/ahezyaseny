@@ -1,76 +1,106 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useBackend } from '../contexts/BackendContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, ClipboardList, UserCheck } from 'lucide-react';
+import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
 import { Logo } from '../components/Logo';
+import { dataService } from '../services/dataService';
 
 export default function LoginPage() {
+  const { mode, setMode } = useBackend();
   const [loginType, setLoginType] = useState<'selection' | 'super' | 'admin'>('selection');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [googleEnabled, setGoogleEnabled] = useState(true);
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        setGoogleEnabled(data.google_login_enabled !== 'false');
-      });
-
-    const handleMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) return;
-      
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        login(event.data.user);
-        toast.success('ברוך הבא!');
-        navigate('/');
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [login, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        login(data);
+      const user = await dataService.login(username, password);
+      if (user) {
+        login(user);
         toast.success('ברוך הבא!');
         navigate('/');
       } else {
-        toast.error(data.error || 'שגיאה בהתחברות');
+        toast.error('שגיאה בהתחברות - בדוק שם משתמש וסיסמה');
       }
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בחיבור למסד הנתונים');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-      const response = await fetch('/api/auth/google/url');
-      const { url } = await response.json();
-      window.open(url, 'google_login', 'width=500,height=600');
-    } catch (err) {
-      toast.error('שגיאה בהתחברות עם גוגל');
-    }
-  };
+  if (!mode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-bg-gray">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-2xl text-center"
+        >
+          <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-8 border border-slate-100">
+            <Logo size={80} showText={false} />
+          </div>
+          <h1 className="text-4xl font-black text-text-main mb-4">בחירת סביבת עבודה</h1>
+          <p className="text-lg text-text-secondary mb-12 max-w-md mx-auto font-medium">
+            בחר את השרת אליו תרצה להתחבר כדי להתחיל לעבוד במערכת
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            <button 
+              onClick={() => setMode('temporary')}
+              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-luxury-blue text-right"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-luxury-blue flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Database size={32} />
+              </div>
+              <h3 className="text-2xl font-black text-text-main mb-2">שרת זמני</h3>
+              <p className="text-slate-500 font-medium leading-relaxed">
+                Offline / Studio Mode
+                <br />
+                שמירת נתונים ב-LocalStorage של הדפדפן בלבד.
+              </p>
+              <div className="mt-6 flex items-center text-luxury-blue font-bold gap-2">
+                <span>בחר במצב זה</span>
+                <LogIn size={18} />
+              </div>
+            </button>
+
+            <button 
+              onClick={() => setMode('production')}
+              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-emerald-500 text-right"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Cloud size={32} />
+              </div>
+              <h3 className="text-2xl font-black text-text-main mb-2">שרת קבוע</h3>
+              <p className="text-slate-500 font-medium leading-relaxed">
+                Production / Vercel
+                <br />
+                חיבור ישיר ל-Supabase לשמירה קבועה בענן.
+              </p>
+              <div className="mt-6 flex items-center text-emerald-600 font-bold gap-2">
+                <span>בחר במצב זה</span>
+                <LogIn size={18} />
+              </div>
+            </button>
+          </div>
+          
+          <p className="mt-12 text-slate-400 text-sm font-medium">
+            &copy; 2026 {APP_NAME} | Dual-Backend System
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-bg-gray">
@@ -80,6 +110,16 @@ export default function LoginPage() {
         className="w-full max-w-2xl"
       >
         <div className="text-center mb-8 flex flex-col items-center">
+          <button 
+            onClick={() => {
+              localStorage.removeItem('backend_mode');
+              window.location.reload();
+            }}
+            className="mb-4 text-xs font-bold text-slate-400 hover:text-luxury-blue flex items-center gap-1"
+          >
+            <Database size={12} />
+            החלף שרת ({mode === 'temporary' ? 'זמני' : 'קבוע'})
+          </button>
           <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-6 border border-slate-100">
             <Logo size={80} showText={false} />
           </div>
@@ -164,24 +204,6 @@ export default function LoginPage() {
                 <h2 className="text-xl font-bold mb-6">
                   {loginType === 'super' ? 'התחברות ניהול ראשי' : 'התחברות מנהלים'}
                 </h2>
-
-                {loginType === 'admin' && googleEnabled && (
-                  <button 
-                    onClick={handleGoogleLogin}
-                    className="w-full flex items-center justify-center gap-3 p-3 border border-slate-200 rounded-xl mb-6 hover:bg-slate-50 transition-all font-bold"
-                  >
-                    <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-                    התחברות עם גוגל
-                  </button>
-                )}
-
-                {loginType === 'admin' && googleEnabled && (
-                  <div className="relative flex items-center gap-4 mb-6">
-                    <div className="flex-1 h-px bg-slate-100"></div>
-                    <span className="text-xs text-slate-400 font-bold uppercase">או</span>
-                    <div className="flex-1 h-px bg-slate-100"></div>
-                  </div>
-                )}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div>

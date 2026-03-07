@@ -9,6 +9,8 @@ import { Match } from '../types';
 import { APP_NAME } from '../constants';
 import { GoogleGenAI, Type } from '@google/genai';
 
+import { dataService } from '../services/dataService';
+
 export default function MatchForm() {
   const { user } = useAuth();
   const { id } = useParams();
@@ -58,11 +60,10 @@ export default function MatchForm() {
   const [importing, setImporting] = useState(false);
 
   useEffect(() => {
-    if (isEdit) {
-      fetch(`/api/matches`)
-        .then(res => res.json())
+    if (isEdit && id) {
+      dataService.getMatches()
         .then(data => {
-          const match = data.find((m: Match) => m.id === parseInt(id));
+          const match = data.find((m: Match) => m.id === id);
           if (match) {
             setFormData(match);
             try {
@@ -168,25 +169,21 @@ export default function MatchForm() {
     e.preventDefault();
     setSaving(true);
     try {
-      const url = isEdit ? `/api/matches/${id}` : '/api/matches';
-      const method = isEdit ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          additional_images: JSON.stringify(additionalImages)
-        }),
-      });
-      if (res.ok) {
-        toast.success(isEdit ? 'הכרטיס עודכן' : 'הכרטיס נוצר בהצלחה');
-        navigate('/');
+      const matchData = {
+        ...formData,
+        additional_images: JSON.stringify(additionalImages)
+      } as Omit<Match, 'id' | 'created_at'>;
+
+      if (isEdit && id) {
+        await dataService.updateMatch(id, matchData);
+        toast.success('הכרטיס עודכן');
       } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בשמירה');
+        await dataService.createMatch(matchData);
+        toast.success('הכרטיס נוצר בהצלחה');
       }
+      navigate('/');
     } catch (err) {
-      toast.error('שגיאה בחיבור לשרת');
+      toast.error('שגיאה בשמירה');
     } finally {
       setSaving(false);
     }
@@ -370,12 +367,8 @@ export default function MatchForm() {
     let successCount = 0;
     for (const match of scannedMatches) {
       try {
-        const res = await fetch('/api/matches', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...match, creation_source: 'csv' }),
-        });
-        if (res.ok) successCount++;
+        await dataService.createMatch({ ...match, creation_source: 'csv' });
+        successCount++;
       } catch (err) {
         console.error('Error importing match:', err);
       }
@@ -402,11 +395,33 @@ export default function MatchForm() {
           <button 
             onClick={async () => {
               try {
-                const res = await fetch('/api/matches/demo', { method: 'POST' });
-                if (res.ok) {
-                  toast.success('נוצר משודך דמו בהצלחה');
-                  navigate('/');
-                }
+                await dataService.createMatch({
+                  type: 'male',
+                  name: 'ישראל ישראלי (דמו)',
+                  age: 25,
+                  height: '1.80',
+                  ethnicity: 'ספרדי',
+                  marital_status: 'רווק/ה',
+                  city: 'ירושלים',
+                  religious_level: 'דתי',
+                  service: 'צבאי',
+                  occupation: 'סטודנט',
+                  about: 'בחור טוב ושמח',
+                  looking_for: 'בחורה טובה',
+                  smoking: 'לא',
+                  negiah: 'כן',
+                  age_range: '20-25',
+                  phone: '0501234567',
+                  image_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400&h=400',
+                  additional_images: '[]',
+                  creation_source: 'manual',
+                  publish_count: 0,
+                  last_published_at: null,
+                  deleted_at: null,
+                  is_published_confirmed: 0
+                });
+                toast.success('נוצר משודך דמו בהצלחה');
+                navigate('/');
               } catch (err) {
                 toast.error('שגיאה ביצירת דמו');
               }

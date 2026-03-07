@@ -9,6 +9,8 @@ import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../co
 import MatchCard from '../components/MatchCard';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 
+import { dataService } from '../services/dataService';
+
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
   const { type } = useParams();
@@ -436,31 +438,23 @@ export default function Dashboard() {
       const dbField = fieldMap[editingField];
       if (!dbField) return;
 
-      const updatedMatch = { ...validationMatch, [dbField]: editValue };
-      const res = await fetch(`/api/matches/${validationMatch.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedMatch)
-      });
+      const updates = { [dbField]: editValue };
+      const updatedMatch = await dataService.updateMatch(validationMatch.id, updates);
 
-      if (res.ok) {
-        toast.success('הפרט עודכן בהצלחה');
-        const newMissing = getMissingFields(updatedMatch);
-        setValidationErrors(newMissing);
-        setValidationMatch(updatedMatch);
-        setEditingField(null);
-        setEditValue('');
-        fetchData(); // Refresh list
-        
-        if (newMissing.length === 0) {
-          setShowValidationModal(false);
-          handlePublish(updatedMatch);
-        }
-      } else {
-        toast.error('שגיאה בעדכון הפרט');
+      toast.success('הפרט עודכן בהצלחה');
+      const newMissing = getMissingFields(updatedMatch);
+      setValidationErrors(newMissing);
+      setValidationMatch(updatedMatch);
+      setEditingField(null);
+      setEditValue('');
+      fetchData(); // Refresh list
+      
+      if (newMissing.length === 0) {
+        setShowValidationModal(false);
+        handlePublish(updatedMatch);
       }
     } catch (err) {
-      toast.error('שגיאה בתקשורת עם השרת');
+      toast.error('שגיאה בעדכון הפרט');
     } finally {
       setIsSavingField(false);
     }
@@ -471,10 +465,8 @@ export default function Dashboard() {
     setHistoryMatch(match);
     setShowHistoryModal(true);
     try {
-      const res = await fetch(`/api/matches/${match.id}/publish-logs`);
-      if (res.ok) {
-        setPublishHistory(await res.json());
-      }
+      const logs = await dataService.getPublishLogs(match.id);
+      setPublishHistory(logs);
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית פרסומים');
     } finally {
@@ -484,27 +476,20 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const [statsRes, matchesRes, settingsRes, groupsRes, usersRes] = await Promise.all([
-        fetch('/api/stats'),
-        fetch('/api/matches'),
-        fetch('/api/settings'),
-        fetch('/api/whatsapp/groups'),
-        fetch('/api/users')
+      const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
+        dataService.getStats(),
+        dataService.getMatches(),
+        dataService.getSettings(),
+        dataService.getWhatsAppGroups(),
+        dataService.getUsers()
       ]);
       
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (matchesRes.ok) setMatches(await matchesRes.json());
-      if (settingsRes.ok) {
-        const settings = await settingsRes.json();
-        setTemplate(settings.whatsapp_template || '');
-        setInitialMessage(settings.whatsapp_initial_message || '');
-      }
-      if (groupsRes.ok) {
-        setWhatsappGroups(await groupsRes.json());
-      }
-      if (usersRes.ok) {
-        setAllUsers(await usersRes.json());
-      }
+      setStats(statsData);
+      setMatches(matchesData);
+      setTemplate(settingsData.whatsapp_template || '');
+      setInitialMessage(settingsData.whatsapp_initial_message || '');
+      setWhatsappGroups(groupsData);
+      setAllUsers(usersData);
     } catch (err) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -526,14 +511,9 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     try {
-      const res = await fetch(`/api/matches/${deleteConfirmId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('הכרטיס נמחק');
-        fetchData();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה במחיקה');
-      }
+      await dataService.deleteMatch(deleteConfirmId.toString());
+      toast.success('הכרטיס נמחק');
+      fetchData();
     } catch (err) {
       toast.error('שגיאה בתקשורת עם השרת');
     } finally {
@@ -632,24 +612,17 @@ export default function Dashboard() {
   };
 
   const handleManualConfirm = async () => {
-    if (!selectedMatch || !selectedGroupId) return;
+    if (!selectedMatch || !selectedGroupId || !user) return;
     
     const group = whatsappGroups.find(g => g.id === selectedGroupId);
     if (!group) return;
 
     try {
-      const res = await fetch(`/api/matches/${selectedMatch.id}/publish`, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupName: group.name })
-      });
-
-      if (res.ok) {
-        toast.success('הפרסום אושר ונרשם במערכת');
-        setManualPublishConfirmed(true);
-        setShowPublishModal(false);
-        fetchData();
-      }
+      await dataService.recordPublish(selectedMatch.id, group.name, user.id, user.name);
+      toast.success('הפרסום אושר ונרשם במערכת');
+      setManualPublishConfirmed(true);
+      setShowPublishModal(false);
+      fetchData();
     } catch (err) {
       toast.error('שגיאה באישור הפרסום');
     }
@@ -668,11 +641,7 @@ export default function Dashboard() {
       toast.error('שגיאה בהעתקה ללוח');
     }
 
-    await fetch(`/api/whatsapp/initial-sent`, { 
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupId: selectedGroupId })
-    });
+    await dataService.markInitialSent(selectedGroupId.toString());
     
     // Open WhatsApp
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(effectiveInitialMessage)}`;
@@ -690,11 +659,7 @@ export default function Dashboard() {
   const markInitialAsSent = async () => {
     if (!selectedGroupId) return;
     try {
-      await fetch(`/api/whatsapp/initial-sent`, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: selectedGroupId })
-      });
+      await dataService.markInitialSent(selectedGroupId.toString());
       setIsInitialMarkedSent(true);
       fetchData();
       toast.success('סומן כנשלח');
@@ -704,21 +669,16 @@ export default function Dashboard() {
   };
 
   const savePersonalTemplate = async () => {
+    if (!user) return;
     try {
-      const res = await fetch('/api/users/me/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          daily_message_template_male: personalTemplateMale,
-          daily_message_template_female: personalTemplateFemale
-        })
+      await dataService.updateUser(user.id, { 
+        daily_message_template_male: personalTemplateMale,
+        daily_message_template_female: personalTemplateFemale
       });
-      if (res.ok) {
-        toast.success('הודעות הפתיחה האישיות עודכנו');
-        setShowPersonalTemplateModal(false);
-        await refreshUser();
-        fetchData();
-      }
+      toast.success('הודעות הפתיחה האישיות עודכנו');
+      setShowPersonalTemplateModal(false);
+      await refreshUser();
+      fetchData();
     } catch (err) {
       toast.error('שגיאה בעדכון ההודעה');
     }
@@ -744,17 +704,11 @@ export default function Dashboard() {
 
   const confirmBulkDelete = async () => {
     try {
-      const results = await Promise.all(
-        selectedMatchIds.map(id => fetch(`/api/matches/${id}`, { method: 'DELETE' }))
+      await Promise.all(
+        selectedMatchIds.map(id => dataService.deleteMatch(id.toString()))
       );
       
-      const allOk = results.every(r => r.ok);
-      if (allOk) {
-        toast.success('הכרטיסים נמחקו בהצלחה');
-      } else {
-        toast.error('חלק מהכרטיסים לא נמחקו. ייתכן שאין לך הרשאות מתאימות.');
-      }
-      
+      toast.success('הכרטיסים נמחקו בהצלחה');
       setSelectedMatchIds([]);
       fetchData();
     } catch (err) {
@@ -764,25 +718,11 @@ export default function Dashboard() {
     }
   };
 
-  const handleQuickUpdate = async (id: number, updates: Partial<Match>) => {
+  const handleQuickUpdate = async (id: string, updates: Partial<Match>) => {
     try {
-      const match = matches.find(m => m.id === id);
-      if (!match) return;
-
-      const updatedMatch = { ...match, ...updates };
-      const res = await fetch(`/api/matches/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedMatch)
-      });
-
-      if (res.ok) {
-        toast.success('הכרטיס עודכן בהצלחה');
-        fetchData();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || 'שגיאה בעדכון');
-      }
+      await dataService.updateMatch(id, updates);
+      toast.success('הכרטיס עודכן בהצלחה');
+      fetchData();
     } catch (err) {
       toast.error('שגיאה בתקשורת עם השרת');
     }

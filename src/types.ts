@@ -1,5 +1,5 @@
 export interface User {
-  id: number;
+  id: string;
   name: string;
   username: string;
   email: string;
@@ -27,7 +27,7 @@ export interface User {
 }
 
 export interface WhatsAppGroup {
-  id: number;
+  id: string;
   category: string;
   type: 'male' | 'female';
   name: string;
@@ -38,7 +38,7 @@ export interface WhatsAppGroup {
 }
 
 export interface Match {
-  id: number;
+  id: string;
   type: 'male' | 'female';
   name: string;
   age: number;
@@ -56,7 +56,7 @@ export interface Match {
   age_range: string;
   image_url: string | null;
   additional_images: string | null; // JSON string of array
-  created_by: number;
+  created_by: string;
   creator_name?: string;
   creator_category?: string;
   creator_gender?: 'male' | 'female' | null;
@@ -82,21 +82,21 @@ export interface Stats {
 }
 
 export interface ActivityLog {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   user_name: string;
   action: string;
   details: string;
   entity_type: string | null;
-  entity_id: number | null;
+  entity_id: string | null;
   created_at: string;
 }
 
 export interface PublishLog {
-  id: number;
-  match_id: number;
+  id: string;
+  match_id: string;
   match_name: string;
-  user_id: number;
+  user_id: string;
   user_name: string;
   group_name: string;
   created_at: string;

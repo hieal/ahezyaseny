@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { BackendProvider, useBackend } from './contexts/BackendContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import MatchForm from './pages/MatchForm';
@@ -10,25 +11,24 @@ import RoleManagement from './pages/RoleManagement';
 import SettingsPage from './pages/SettingsPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
+import { dataService } from './services/dataService';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
+  const { mode } = useBackend();
   
+  if (!mode) return <Navigate to="/login" />;
   if (loading) return <div className="min-h-screen flex items-center justify-center">טוען...</div>;
   if (!user) return <Navigate to="/login" />;
   if (adminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
   
   return <>{children}</>;
 }
-
-import { io } from 'socket.io-client';
-
-const socket = io();
 
 function Sidebar() {
   const { user, logout, refreshUser } = useAuth();
@@ -40,42 +40,19 @@ function Sidebar() {
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [onlineUsers, setOnlineUsers] = React.useState<number[]>([]);
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
-  const [showChat, setShowChat] = React.useState<any>(null); // { id, name }
 
   React.useEffect(() => {
     if (user) {
-      socket.emit('user_login', user.id);
-      
       const fetchAdmins = async () => {
         try {
-          const res = await fetch('/api/users');
-          if (res.ok) {
-            const data = await res.json();
-            setAllAdmins(data);
-          }
+          const data = await dataService.getUsers();
+          setAllAdmins(data);
         } catch (err) {
           console.error('Failed to fetch admins:', err);
         }
       };
       fetchAdmins();
-
-      const handleOnlineUsers = (users: number[]) => {
-        setOnlineUsers(users);
-      };
-
-      const handleNewNotification = (notif: any) => {
-        toast(notif.text, { icon: '🔔' });
-      };
-
-      socket.on('online_users', handleOnlineUsers);
-      socket.on('new_notification', handleNewNotification);
-
-      return () => {
-        socket.off('online_users', handleOnlineUsers);
-        socket.off('new_notification', handleNewNotification);
-      };
     }
   }, [user]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -511,25 +488,27 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Toaster position="top-center" />
-        <MainLayout>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-            <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
-            <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
-            <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
-            <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
-            <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </MainLayout>
-      </BrowserRouter>
-    </AuthProvider>
+    <BackendProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Toaster position="top-center" />
+          <MainLayout>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+              <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
+              <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
+              <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
+              <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
+              <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </MainLayout>
+        </BrowserRouter>
+      </AuthProvider>
+    </BackendProvider>
   );
 }
