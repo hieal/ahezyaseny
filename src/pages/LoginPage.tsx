@@ -31,8 +31,8 @@ export default function LoginPage() {
       } else {
         toast.error('שגיאה בהתחברות - בדוק שם משתמש וסיסמה');
       }
-    } catch (err) {
-      toast.error('שגיאה בחיבור למסד הנתונים');
+    } catch (err: any) {
+      toast.error(err.message || 'שגיאה בחיבור למסד הנתונים');
     } finally {
       setLoading(false);
     }

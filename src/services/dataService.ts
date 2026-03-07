@@ -26,20 +26,45 @@ class DataService {
 
   // Auth
   async getCurrentUser(): Promise<User | null> {
+    const userJson = localStorage.getItem('current_user');
+    if (!userJson) return null;
+    
+    const user: User = JSON.parse(userJson);
+    
     if (this.mode === 'temporary') {
-      const userJson = localStorage.getItem('current_user');
-      return userJson ? JSON.parse(userJson) : null;
+      return user;
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      return profile;
+      // In production mode, verify the user still exists in the admins table
+      try {
+        const { data, error } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('username', user.username)
+          .limit(1)
+          .single();
+          
+        if (error || !data) {
+          localStorage.removeItem('current_user');
+          return null;
+        }
+        
+        // Return updated user data
+        const updatedUser: User = {
+          id: data.id,
+          name: data.display_name || 'מנהל ראשי',
+          username: data.username,
+          email: data.email || '',
+          password_plain: data.password_plain,
+          role: data.role || 'super_admin',
+          status: data.status || 'active',
+          created_at: data.created_at || new Date().toISOString()
+        };
+        
+        localStorage.setItem('current_user', JSON.stringify(updatedUser));
+        return updatedUser;
+      } catch (err) {
+        return user; // Fallback to cached user if network fails
+      }
     }
   }
 
@@ -70,29 +95,41 @@ class DataService {
       }
       return null;
     } else {
-      // For production, we'd use Supabase Auth
-      // This is a simplified version for the demo
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: `${username}@example.com`,
-        password: password_plain,
-      });
-      
-      if (error || !data.user) return null;
-      
-      const { data: profile } = await supabase
-        .from('profiles')
+      // Production mode - query admins table
+      const { data, error } = await supabase
+        .from('admins')
         .select('*')
-        .eq('id', data.user.id)
+        .eq('username', username)
+        .limit(1)
         .single();
         
-      return profile;
+      if (error || !data) {
+        throw new Error('משתמש לא קיים בסופאבייס');
+      }
+      
+      if (data.password_plain !== password_plain) {
+        throw new Error('סיסמה שגויה');
+      }
+      
+      const user: User = {
+        id: data.id,
+        name: data.display_name || 'מנהל ראשי',
+        username: data.username,
+        email: data.email || '',
+        password_plain: data.password_plain,
+        role: data.role || 'super_admin',
+        status: data.status || 'active',
+        created_at: data.created_at || new Date().toISOString()
+      };
+      
+      localStorage.setItem('current_user', JSON.stringify(user));
+      return user;
     }
   }
 
   async logout(): Promise<void> {
-    if (this.mode === 'temporary') {
-      localStorage.removeItem('current_user');
-    } else {
+    localStorage.removeItem('current_user');
+    if (this.mode === 'production') {
       await supabase.auth.signOut();
     }
   }
