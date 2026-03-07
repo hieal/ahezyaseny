@@ -18,12 +18,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [customUrl, setCustomUrl] = useState(localStorage.getItem('supabase_url') || '');
-  const [customKey, setCustomKey] = useState(localStorage.getItem('supabase_key') || '');
+  
+  const envUrl = import.meta.env.VITE_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const hasEnvVars = !!(envUrl && envKey && envUrl !== 'YOUR_SUPABASE_URL');
+
+  const [customUrl, setCustomUrl] = useState(localStorage.getItem('supabase_url') || (hasEnvVars ? envUrl : ''));
+  const [customKey, setCustomKey] = useState(localStorage.getItem('supabase_key') || (hasEnvVars ? envKey : ''));
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [sqlScript, setSqlScript] = useState('');
   const [showQuickConnect, setShowQuickConnect] = useState(false);
   const [quickConnectText, setQuickConnectText] = useState('');
+  
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -260,8 +266,14 @@ CREATE TABLE IF NOT EXISTS publish_logs (
 
             <button 
               onClick={() => setMode('production')}
-              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-emerald-500 text-right"
+              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-emerald-500 text-right overflow-hidden"
             >
+              {hasEnvVars && (
+                <div className="absolute top-0 left-0 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-br-xl text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                  <ShieldCheck size={12} />
+                  מזוהה סביבה
+                </div>
+              )}
               <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Cloud size={32} />
               </div>
@@ -285,6 +297,30 @@ CREATE TABLE IF NOT EXISTS publish_logs (
                 הגדרות חיבור (Connection Settings)
               </h3>
               <div className="space-y-4">
+                {hasEnvVars && (
+                  <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-700 text-xs font-bold">
+                      <ShieldCheck size={16} />
+                      <span>מזוהים משתני סביבה (Environment Variables)</span>
+                    </div>
+                    {(localStorage.getItem('supabase_url') || localStorage.getItem('supabase_key')) && (
+                      <button 
+                        onClick={() => {
+                          localStorage.removeItem('supabase_url');
+                          localStorage.removeItem('supabase_key');
+                          setCustomUrl(envUrl || '');
+                          setCustomKey(envKey || '');
+                          toast.success('הגדרות מקומיות נמחקו, חוזר למשתני סביבה');
+                          setTimeout(() => window.location.reload(), 1000);
+                        }}
+                        className="text-[10px] bg-white border border-emerald-200 px-2 py-1 rounded-lg hover:bg-emerald-100 transition-colors text-emerald-600 font-bold shadow-sm"
+                      >
+                        נקה דריסה מקומית
+                      </button>
+                    )}
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1">Supabase URL</label>
                   <input
