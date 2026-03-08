@@ -83,9 +83,17 @@ export default function AdminManagement() {
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone
         });
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.name || 'System',
+          action: 'עדכון מנהל',
+          details: `עדכון פרטי מנהל: ${formData.name}`,
+          entity_type: 'user',
+          entity_id: editingUser.id
+        });
         toast.success('המנהל עודכן');
       } else {
-        await dataService.createUser({
+        const newUser = await dataService.createUser({
           ...formData,
           password_plain: formData.password || '12345678',
           role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
@@ -99,6 +107,14 @@ export default function AdminManagement() {
           daily_message_template_female: null,
           is_approved: 1,
           is_from_file: 0
+        });
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.name || 'System',
+          action: 'יצירת מנהל',
+          details: `יצירת מנהל חדש: ${formData.name}`,
+          entity_type: 'user',
+          entity_id: newUser.id
         });
         toast.success('מנהל חדש נוצר');
       }
@@ -238,10 +254,18 @@ export default function AdminManagement() {
     toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
   };
 
-  const handleDelete = async (user: User) => {
-    if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${user.name}?`)) return;
+  const handleDelete = async (userToDelete: User) => {
+    if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${userToDelete.name}?`)) return;
     try {
-      await dataService.deleteUser(user.id);
+      await dataService.deleteUser(userToDelete.id);
+      await dataService.logActivity({
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+        user_name: user?.name || 'System',
+        action: 'מחיקת מנהל',
+        details: `מחיקת מנהל: ${userToDelete.name}`,
+        entity_type: 'user',
+        entity_id: userToDelete.id
+      });
       toast.success('המנהל נמחק');
       fetchUsers();
     } catch (err) {

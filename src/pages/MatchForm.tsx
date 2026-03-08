@@ -176,9 +176,25 @@ export default function MatchForm() {
 
       if (isEdit && id) {
         await dataService.updateMatch(id, matchData);
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.name || 'System',
+          action: 'עדכון כרטיס',
+          details: `עדכון כרטיס משודך: ${formData.name}`,
+          entity_type: 'match',
+          entity_id: id
+        });
         toast.success('הכרטיס עודכן');
       } else {
-        await dataService.createMatch(matchData);
+        const newMatch = await dataService.createMatch(matchData);
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.name || 'System',
+          action: 'יצירת כרטיס',
+          details: `יצירת כרטיס משודך: ${formData.name}`,
+          entity_type: 'match',
+          entity_id: newMatch.id
+        });
         toast.success('הכרטיס נוצר בהצלחה');
       }
       navigate('/');

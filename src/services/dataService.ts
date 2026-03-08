@@ -512,8 +512,21 @@ class DataService {
   }
 
   private sanitizeAdmin(user: any): any {
-    const { is_online, last_seen, ...sanitized } = user;
-    // Remove any other non-db fields if necessary
+    const allowedFields = [
+      'id', 'name', 'username', 'email', 'password', 'password_plain', 'role', 
+      'status', 'category', 'secondary_category', 'gender', 'phone', 
+      'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 
+      'daily_message_template_male', 'daily_message_template_female', 
+      'is_from_file', 'is_approved', 'is_shaham_manager', 'password_updated_at', 
+      'assigned_group_id', 'created_by', 'creator_name', 'created_at'
+    ];
+    
+    const sanitized: any = {};
+    allowedFields.forEach(field => {
+      if (user[field] !== undefined) {
+        sanitized[field] = user[field];
+      }
+    });
     return sanitized;
   }
 
@@ -746,6 +759,27 @@ class DataService {
   }
 
   // Activity Logs
+  async getActivityLogs(filters?: { userId?: string, dateFrom?: string, dateTo?: string }): Promise<ActivityLog[]> {
+    if (this.mode === 'temporary') {
+      let logs = await this.localGet<ActivityLog>('activity_logs');
+      if (filters) {
+        if (filters.userId) logs = logs.filter(l => l.user_id === filters.userId);
+        if (filters.dateFrom) logs = logs.filter(l => l.created_at >= filters.dateFrom!);
+        if (filters.dateTo) logs = logs.filter(l => l.created_at <= filters.dateTo! + 'T23:59:59.999Z');
+      }
+      return logs;
+    } else {
+      let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false });
+      if (filters) {
+        if (filters.userId) query = query.eq('user_id', filters.userId);
+        if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom);
+        if (filters.dateTo) query = query.lte('created_at', filters.dateTo + 'T23:59:59.999Z');
+      }
+      const { data } = await query;
+      return data || [];
+    }
+  }
+
   async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
     const newLog: ActivityLog = {
       ...log,
@@ -871,6 +905,15 @@ class DataService {
       return logs.filter(l => l.match_id === matchId);
     } else {
       const { data } = await supabase.from('publish_logs').select('*').eq('match_id', matchId).order('created_at', { ascending: false });
+      return data || [];
+    }
+  }
+
+  async getAllPublishLogs(): Promise<PublishLog[]> {
+    if (this.mode === 'temporary') {
+      return await this.localGet<PublishLog>('publish_logs');
+    } else {
+      const { data } = await supabase.from('publish_logs').select('*').order('created_at', { ascending: false });
       return data || [];
     }
   }

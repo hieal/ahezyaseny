@@ -512,7 +512,18 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     try {
+      const matchToDelete = matches.find(m => m.id === deleteConfirmId);
       await dataService.deleteMatch(deleteConfirmId);
+      if (matchToDelete) {
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.name || 'System',
+          action: 'מחיקת כרטיס',
+          details: `מחיקת כרטיס משודך: ${matchToDelete.name}`,
+          entity_type: 'match',
+          entity_id: deleteConfirmId
+        });
+      }
       toast.success('הכרטיס נמחק');
       fetchData();
     } catch (err) {
@@ -706,7 +717,20 @@ export default function Dashboard() {
   const confirmBulkDelete = async () => {
     try {
       await Promise.all(
-        selectedMatchIds.map(id => dataService.deleteMatch(id))
+        selectedMatchIds.map(async id => {
+          const matchToDelete = matches.find(m => m.id === id);
+          await dataService.deleteMatch(id);
+          if (matchToDelete) {
+            await dataService.logActivity({
+              user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+              user_name: user?.name || 'System',
+              action: 'מחיקת כרטיס',
+              details: `מחיקת כרטיס משודך: ${matchToDelete.name}`,
+              entity_type: 'match',
+              entity_id: id
+            });
+          }
+        })
       );
       
       toast.success('הכרטיסים נמחקו בהצלחה');
