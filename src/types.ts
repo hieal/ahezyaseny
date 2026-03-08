@@ -24,6 +24,8 @@ export interface User {
   created_by?: number;
   creator_name?: string;
   created_at: string;
+  last_seen?: string;
+  is_online?: boolean;
 }
 
 export interface WhatsAppGroup {

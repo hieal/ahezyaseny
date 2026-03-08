@@ -75,19 +75,23 @@ export default function AdminManagement() {
       if (editingUser && editingUser.id) {
         await dataService.updateUser(editingUser.id, {
           ...formData,
+          password_plain: formData.password || undefined, // Only update if provided
           role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
-          google_login_allowed: formData.google_login_allowed as "true" | "false"
+          google_login_allowed: formData.google_login_allowed as "true" | "false",
+          phone: formData.phone.replace(/\D/g, '')
         });
         toast.success('המנהל עודכן');
       } else {
         await dataService.createUser({
           ...formData,
+          password_plain: formData.password || '12345678',
           role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
+          phone: formData.phone.replace(/\D/g, ''),
           deleted_at: null,
           daily_message_template: null,
           daily_message_template_male: null,
@@ -146,7 +150,7 @@ export default function AdminManagement() {
           const values = line.split(',').map(v => v.trim());
           const admin: any = {
             category: csvCategory,
-            password: '12345678',
+            password_plain: '12345678',
             is_from_file: 1,
             role: 'admin',
             status: 'active',
@@ -174,7 +178,7 @@ export default function AdminManagement() {
             }
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-            if (header === 'טלפון' || header === 'phone') admin.phone = val;
+            if (header === 'טלפון' || header === 'phone') admin.phone = val.replace(/\D/g, '');
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
             if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
@@ -335,8 +339,8 @@ export default function AdminManagement() {
     if (!phoneModalUser) return;
     try {
       await dataService.updateUser(phoneModalUser.id, { 
-        phone: tempPhone,
-        username: tempPhone // Update username to match phone as requested
+        phone: tempPhone.replace(/\D/g, ''),
+        username: tempPhone.replace(/\D/g, '') // Update username to match phone as requested
       });
       toast.success('מספר טלפון ושם משתמש עודכנו');
       setPhoneModalUser(null);
@@ -637,7 +641,7 @@ export default function AdminManagement() {
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono text-slate-600">
-                          {showPassword === u.id ? (u.password_plain || '******') : '******'}
+                          {showPassword === u.id ? (u.password_plain || '12345678') : '******'}
                         </span>
                         {currentUser?.role === 'super_admin' && (
                           <button 
@@ -950,7 +954,7 @@ export default function AdminManagement() {
                               }
                               if (header === 'שם משתמש' || header === 'username') admin.username = val;
                               if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-                              if (header === 'טלפון' || header === 'phone') admin.phone = val;
+                              if (header === 'טלפון' || header === 'phone') admin.phone = val.replace(/\D/g, '');
                               if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
                               if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
                                 const match = val.match(/\((https?:\/\/[^\)]+)\)/);

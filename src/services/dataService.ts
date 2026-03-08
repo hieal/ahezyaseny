@@ -135,18 +135,37 @@ class DataService {
         await this.localSet('users', users);
       }
 
-      const user = users.find(u => u.username === username && u.password_plain === password_plain);
-      if (user) {
-        localStorage.setItem('current_user', JSON.stringify(user));
-        return user;
+      const cleanInput = username.replace(/\D/g, '');
+      const userIndex = users.findIndex(u => {
+        const matchUsername = u.username === username;
+        const matchPhone = u.phone === username;
+        const matchCleanPhone = cleanInput.length >= 9 && u.phone === cleanInput;
+        return (matchUsername || matchPhone || matchCleanPhone) && u.password_plain === password_plain;
+      });
+
+      if (userIndex !== -1) {
+        // Update last_seen and is_online
+        users[userIndex].last_seen = new Date().toISOString();
+        users[userIndex].is_online = true;
+        await this.localSet('users', users);
+        
+        localStorage.setItem('current_user', JSON.stringify(users[userIndex]));
+        return users[userIndex];
       }
       return null;
     } else {
       // Production mode - query admins table
+      const cleanInput = username.replace(/\D/g, '');
+      let queryStr = `username.eq.${username},phone.eq.${username}`;
+      
+      if (cleanInput.length >= 9) {
+        queryStr += `,phone.eq.${cleanInput}`;
+      }
+
       const { data, error } = await supabase
         .from('admins')
         .select('*')
-        .eq('username', username)
+        .or(queryStr)
         .limit(1)
         .single();
         
@@ -158,6 +177,12 @@ class DataService {
         throw new Error('סיסמה שגויה');
       }
       
+      // Update last_seen
+      await supabase.from('admins').update({ 
+        last_seen: new Date().toISOString(),
+        is_online: true 
+      }).eq('id', data.id);
+
       const user: User = {
         id: data.id,
         name: data.display_name || data.name || 'מנהל ראשי',
@@ -179,7 +204,9 @@ class DataService {
         daily_message_template_female: data.daily_message_template_female || null,
         is_from_file: data.is_from_file || 0,
         is_approved: data.is_approved || 0,
-        is_shaham_manager: data.is_shaham_manager || 0
+        is_shaham_manager: data.is_shaham_manager || 0,
+        last_seen: new Date().toISOString(),
+        is_online: true
       };
       
       localStorage.setItem('current_user', JSON.stringify(user));
@@ -188,6 +215,21 @@ class DataService {
   }
 
   async logout(): Promise<void> {
+    const userJson = localStorage.getItem('current_user');
+    if (userJson) {
+      const user: User = JSON.parse(userJson);
+      if (this.mode === 'temporary') {
+        const users = await this.localGet<User>('users');
+        const index = users.findIndex(u => u.id === user.id);
+        if (index !== -1) {
+          users[index].is_online = false;
+          users[index].last_seen = new Date().toISOString();
+          await this.localSet('users', users);
+        }
+      } else {
+        await supabase.from('admins').update({ is_online: false, last_seen: new Date().toISOString() }).eq('id', user.id);
+      }
+    }
     localStorage.removeItem('current_user');
     if (this.mode === 'production') {
       await supabase.auth.signOut();
@@ -307,7 +349,7 @@ class DataService {
     if (this.mode === 'temporary') {
       return this.localGet<User>('users');
     } else {
-      const data = await this.handleSupabase(supabase.from('profiles').select('*'));
+      const data = await this.handleSupabase(supabase.from('admins').select('*'));
       return data || [];
     }
   }
@@ -316,7 +358,8 @@ class DataService {
     const newUser: User = {
       ...user,
       id: this.generateUUID(),
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      password_plain: user.password_plain || '12345678' // Default password if not provided
     };
 
     if (this.mode === 'temporary') {
@@ -325,7 +368,7 @@ class DataService {
       await this.localSet('users', users);
       return newUser;
     } else {
-      const data = await this.handleSupabase(supabase.from('profiles').insert(newUser).select().single());
+      const data = await this.handleSupabase(supabase.from('admins').insert(newUser).select().single());
       return data as User;
     }
   }
@@ -335,6 +378,12 @@ class DataService {
       const users = await this.localGet<User>('users');
       const index = users.findIndex(u => u.id === id);
       if (index === -1) throw new Error('User not found');
+      
+      // If password is being updated, update password_plain as well
+      if (updates.password_plain) {
+        updates.password_updated_at = new Date().toISOString();
+      }
+
       users[index] = { ...users[index], ...updates };
       await this.localSet('users', users);
       
@@ -349,7 +398,10 @@ class DataService {
       
       return users[index];
     } else {
-      const data = await this.handleSupabase(supabase.from('profiles').update(updates).eq('id', id).select().single());
+      if (updates.password_plain) {
+        updates.password_updated_at = new Date().toISOString();
+      }
+      const data = await this.handleSupabase(supabase.from('admins').update(updates).eq('id', id).select().single());
       return data as User;
     }
   }
@@ -360,7 +412,7 @@ class DataService {
       const filtered = users.filter(u => u.id !== id);
       await this.localSet('users', filtered);
     } else {
-      await supabase.from('profiles').delete().eq('id', id);
+      await supabase.from('admins').delete().eq('id', id);
     }
   }
 

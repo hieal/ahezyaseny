@@ -268,65 +268,62 @@ function Sidebar() {
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).map(admin => (
-                  <div key={admin.id} className="flex flex-col p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all gap-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          {admin.avatar_url ? (
-                            <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                              <User size={20} />
+                <table className="w-full text-sm text-right">
+                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 rounded-tr-lg">שם</th>
+                      <th className="px-3 py-2">סטטוס</th>
+                      <th className="px-3 py-2 rounded-tl-lg">נראה לאחרונה</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {allAdmins.filter(a => a.id !== user?.id).sort((a, b) => {
+                      const aOnline = onlineUsers.includes(a.id);
+                      const bOnline = onlineUsers.includes(b.id);
+                      if (aOnline && !bOnline) return -1;
+                      if (!aOnline && bOnline) return 1;
+                      return 0;
+                    }).map(admin => {
+                      const isOnline = onlineUsers.includes(admin.id);
+                      return (
+                        <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-3 py-3 font-medium text-slate-900 flex items-center gap-2">
+                            <div className="relative">
+                              {admin.avatar_url ? (
+                                <img src={admin.avatar_url} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                                  <User size={16} />
+                                </div>
+                              )}
+                              {isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>}
                             </div>
-                          )}
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{admin.name}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-slate-500 font-medium">{admin.category || 'כללי'}</span>
-                            <span className={`w-1.5 h-1.5 rounded-full ${admin.gender === 'male' ? 'bg-blue-400' : 'bg-pink-400'}`}></span>
-                            <span className="text-[9px] text-slate-400 uppercase font-bold">
-                              {admin.role === 'super_admin' ? 'מנהל ראשי' : 
-                               admin.role === 'team_leader' ? 'ראש צוות' :
-                               admin.role === 'viewer' ? 'צופה' : 'מנהל'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {admin.phone && (
-                          <a 
-                            href={`https://wa.me/${admin.phone.replace(/\D/g, '')}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all"
-                          >
-                            <MessageSquare size={16} />
-                          </a>
-                        )}
-                        <button 
-                          onClick={() => {
-                            setShowChat({ id: admin.id, name: admin.name });
-                            setShowConnectedAdmins(false);
-                          }}
-                          className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all"
-                        >
-                          <Send size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    {admin.category && (
-                      <div className="text-[9px] text-slate-400 font-medium px-1">
-                        מנהל את: <span className="text-luxury-blue">{admin.category}</span>
-                        {admin.secondary_category && <span>, {admin.secondary_category}</span>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {allAdmins.filter(a => onlineUsers.includes(a.id) && a.id !== user?.id).length === 0 && (
-                  <p className="text-center text-slate-400 text-sm py-8">אין מנהלים אחרים מחוברים כרגע</p>
+                            <div>
+                              <div className="font-bold">{admin.name}</div>
+                              <div className="text-[10px] text-slate-400">{admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}</div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            {isOnline ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                מחובר
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
+                                לא מחובר
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-slate-500 text-xs">
+                            {isOnline ? 'עכשיו' : (admin.last_seen ? new Date(admin.last_seen).toLocaleString('he-IL') : 'לא ידוע')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {allAdmins.length <= 1 && (
+                  <p className="text-center text-slate-400 text-sm py-8">אין מנהלים אחרים במערכת</p>
                 )}
               </div>
             </motion.div>

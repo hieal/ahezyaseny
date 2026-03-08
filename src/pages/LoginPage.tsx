@@ -61,13 +61,7 @@ export default function LoginPage() {
       setLoading(true);
 
       try {
-        const tempClient = createClient(url, key, {
-          global: {
-            fetch: (url, options) => {
-              return window.fetch(url, options);
-            },
-          },
-        });
+        const tempClient = createClient(url, key);
         const { error } = await tempClient.from('admins').select('id').limit(1);
 
         if (!error) {
