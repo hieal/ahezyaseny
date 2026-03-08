@@ -5,6 +5,7 @@ import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 
 import { WhatsAppGroup } from '../types';
+import { dataService } from '../services/dataService';
 
 export default function SettingsPage() {
   const [template, setTemplate] = useState('');
@@ -16,35 +17,21 @@ export default function SettingsPage() {
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
 
   useEffect(() => {
-    // fetch('/api/settings')
-    //   .then(res => res.json())
-    //   .then(data => {
-    //     setTemplate(data.whatsapp_template || '');
-    //     setInitialMessage(data.whatsapp_initial_message || '');
-    //     setGoogleLoginEnabled(data.google_login_enabled === 'true');
-    //   });
+    dataService.getSettings().then(data => {
+      setTemplate(data.whatsapp_template || '');
+      setInitialMessage(data.whatsapp_initial_message || '');
+      setGoogleLoginEnabled(data.google_login_enabled === 'true');
+    });
 
-    // fetch('/api/whatsapp/groups')
-    //   .then(res => res.json())
-    //   .then(data => setWhatsappGroups(data));
+    dataService.getWhatsAppGroups().then(setWhatsappGroups);
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const settings = [
-        { key: 'whatsapp_template', value: template },
-        { key: 'whatsapp_initial_message', value: initialMessage },
-        { key: 'google_login_enabled', value: googleLoginEnabled.toString() }
-      ];
-
-      // for (const s of settings) {
-      //   await fetch('/api/settings', {
-      //     method: 'POST',
-      //     headers: { 'Content-Type': 'application/json' },
-      //     body: JSON.stringify(s),
-      //   });
-      // }
+      await dataService.updateSetting('whatsapp_template', template);
+      await dataService.updateSetting('whatsapp_initial_message', initialMessage);
+      await dataService.updateSetting('google_login_enabled', googleLoginEnabled.toString());
 
       toast.success('ההגדרות נשמרו בהצלחה');
     } catch (err) {
@@ -60,35 +47,25 @@ export default function SettingsPage() {
       link: '',
       whapi_id: '',
       category: CATEGORIES[0],
-      type: 'male' as const
+      type: 'male' as const,
+      last_initial_sent: null
     };
     
     try {
-      // const res = await fetch('/api/whatsapp/groups', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(newGroup),
-      // });
-      // if (res.ok) {
-      //   const data = await res.json();
-      //   setWhatsappGroups(prev => [...prev, { ...newGroup, id: data.id, last_initial_sent: null }]);
-      //   toast.success('קבוצה נוספה');
-      // }
-      setWhatsappGroups(prev => [...prev, { ...newGroup, id: Date.now(), last_initial_sent: null }]);
+      const createdGroup = await dataService.createWhatsAppGroup(newGroup);
+      setWhatsappGroups(prev => [...prev, createdGroup]);
       toast.success('קבוצה נוספה');
     } catch (err) {
       toast.error('שגיאה בהוספת קבוצה');
     }
   };
 
-  const deleteGroup = async (id: number) => {
+  const deleteGroup = async (id: string) => {
     if (!confirm('האם למחוק קבוצה זו?')) return;
     try {
-      // const res = await fetch(`/api/whatsapp/groups/${id}`, { method: 'DELETE' });
-      // if (res.ok) {
-        setWhatsappGroups(prev => prev.filter(g => g.id !== id));
-        toast.success('קבוצה נמחקה');
-      // }
+      await dataService.deleteWhatsAppGroup(id);
+      setWhatsappGroups(prev => prev.filter(g => g.id !== id));
+      toast.success('קבוצה נמחקה');
     } catch (err) {
       toast.error('שגיאה במחיקה');
     }
@@ -96,20 +73,14 @@ export default function SettingsPage() {
 
   const saveGroup = async (group: WhatsAppGroup) => {
     try {
-      // const res = await fetch(`/api/whatsapp/groups/${group.id}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(group),
-      // });
-      // if (res.ok) {
-        toast.success(`הקבוצה ${group.name} נשמרה`);
-      // }
+      await dataService.updateWhatsAppGroup(group.id, group);
+      toast.success(`הקבוצה ${group.name} נשמרה`);
     } catch (err) {
       toast.error('שגיאה בשמירה');
     }
   };
 
-  const updateGroup = (id: number, field: keyof WhatsAppGroup, value: string) => {
+  const updateGroup = (id: string, field: keyof WhatsAppGroup, value: string) => {
     setWhatsappGroups(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g));
   };
 

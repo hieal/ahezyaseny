@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 import { Match } from '../types';
 
 interface Message {
-  id: number | string;
+  id: string;
   text: string;
   sender: string;
   timestamp: string;
@@ -17,7 +17,7 @@ interface Message {
 interface WhatsAppWidgetProps {
   groupId?: string;
   groupName?: string;
-  groupIdNum?: number;
+  groupIdNum?: string;
   groupLink?: string;
   currentMatch?: Match | null;
   matchMessage?: string;
@@ -84,7 +84,7 @@ export function WhatsAppWidget({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async (text: string, matchId?: number, options?: { isOpeningOnly?: boolean }) => {
+  const handleSend = async (text: string, matchId?: string, options?: { isOpeningOnly?: boolean }) => {
     if (!text.trim() && !matchId) return;
     
     setLoading(true);
@@ -95,7 +95,7 @@ export function WhatsAppWidget({
       
       // Simulate successful send locally
       const newMsg: Message = {
-        id: Date.now(),
+        id: Date.now().toString(),
         text: text,
         sender: senderName || 'אני',
         timestamp: new Date().toISOString(),
@@ -133,7 +133,7 @@ export function WhatsAppWidget({
     }
   };
 
-  const handleDeleteMessage = async (messageId: string | number) => {
+  const handleDeleteMessage = async (messageId: string) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק את ההודעה?')) return;
 
     setMessages(prev => prev.filter(m => m.id !== messageId));

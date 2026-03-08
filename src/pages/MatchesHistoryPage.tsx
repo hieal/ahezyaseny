@@ -35,7 +35,7 @@ export default function MatchesHistoryPage() {
     }
   };
 
-  const fetchMatchHistory = async (matchId: number) => {
+  const fetchMatchHistory = async (matchId: string) => {
     try {
       setHistoryLoading(true);
       // const res = await fetch(`/api/matches/${matchId}/publications`);

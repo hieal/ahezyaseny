@@ -8,16 +8,16 @@ interface MatchCardProps {
    match: Match;
    onPublish?: (match: Match) => void;
    onView?: (match: Match) => void;
-   onEdit?: (id: number) => void;
-   onDelete?: (id: number) => void;
+   onEdit?: (id: string) => void;
+   onDelete?: (id: string) => void;
    onHistory?: (match: Match) => void;
    onImageClick?: (match: Match) => void;
-   onQuickUpdate?: (id: number, updates: Partial<Match>) => void;
+   onQuickUpdate?: (id: string, updates: Partial<Match>) => void;
    onSuggest?: (match: Match) => void;
    showCreator?: boolean;
    minimal?: boolean;
    selected?: boolean;
-   onSelect?: (id: number, selected: boolean) => void;
+   onSelect?: (id: string, selected: boolean) => void;
  }
 
 export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, showCreator, minimal, selected, onSelect }: MatchCardProps) {

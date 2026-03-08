@@ -15,14 +15,14 @@ export default function AdminManagement() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
-  const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<number | null>(null);
+  const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
   const [genderModalUser, setGenderModalUser] = useState<User | null>(null);
   const [phoneModalUser, setPhoneModalUser] = useState<User | null>(null);
   const [tempPhone, setTempPhone] = useState('');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<string[]>([]);
-  const [showPassword, setShowPassword] = useState<number | null>(null);
+  const [showPassword, setShowPassword] = useState<string | null>(null);
   const [csvFiles, setCsvFiles] = useState<File[]>([]);
   const [currentCsvIndex, setCurrentCsvIndex] = useState(0);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -73,10 +73,26 @@ export default function AdminManagement() {
     e.preventDefault();
     try {
       if (editingUser && editingUser.id) {
-        await dataService.updateUser(editingUser.id, formData);
+        await dataService.updateUser(editingUser.id, {
+          ...formData,
+          role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
+          status: formData.status as "active" | "inactive",
+          gender: (formData.gender || undefined) as "male" | "female" | undefined
+        });
         toast.success('המנהל עודכן');
       } else {
-        await dataService.createUser(formData);
+        await dataService.createUser({
+          ...formData,
+          role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
+          status: formData.status as "active" | "inactive",
+          gender: (formData.gender || undefined) as "male" | "female" | undefined,
+          deleted_at: null,
+          daily_message_template: null,
+          daily_message_template_male: null,
+          daily_message_template_female: null,
+          is_approved: 1,
+          is_from_file: 0
+        });
         toast.success('מנהל חדש נוצר');
       }
       
@@ -132,7 +148,13 @@ export default function AdminManagement() {
             is_from_file: 1,
             role: 'admin',
             status: 'active',
-            google_login_allowed: 'true'
+            google_login_allowed: 'true',
+            deleted_at: null,
+            daily_message_template: null,
+            daily_message_template_male: null,
+            daily_message_template_female: null,
+            is_approved: 1,
+            is_shaham_manager: 0
           };
           headers.forEach((header, j) => {
             const val = values[j];

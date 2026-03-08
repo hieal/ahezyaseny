@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [customMessage, setCustomMessage] = useState('');
   const [customGroup, setCustomGroup] = useState('');
   const [customGroupLink, setCustomGroupLink] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [showAdminBreakdown, setShowAdminBreakdown] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [showPersonalTemplateModal, setShowPersonalTemplateModal] = useState(false);
@@ -48,14 +48,14 @@ export default function Dashboard() {
   const [isInitialMarkedSent, setIsInitialMarkedSent] = useState(false);
   const [displaySize, setDisplaySize] = useState<'small' | 'medium' | 'large'>('medium');
   const [showMinimal, setShowMinimal] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [manualPublishConfirmed, setManualPublishConfirmed] = useState(false);
   const [viewingMatch, setViewingMatch] = useState<Match | null>(null);
-  const [selectedMatchIds, setSelectedMatchIds] = useState<number[]>([]);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [selectedGroupType, setSelectedGroupType] = useState<string>('all');
-  const [selectedManagerIds, setSelectedManagerIds] = useState<number[]>([]);
+  const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [showWhatsAppFloating, setShowWhatsAppFloating] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -505,14 +505,14 @@ export default function Dashboard() {
     }
   }, [user]);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     setDeleteConfirmId(id);
   };
 
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     try {
-      await dataService.deleteMatch(deleteConfirmId.toString());
+      await dataService.deleteMatch(deleteConfirmId);
       toast.success('הכרטיס נמחק');
       fetchData();
     } catch (err) {
@@ -706,7 +706,7 @@ export default function Dashboard() {
   const confirmBulkDelete = async () => {
     try {
       await Promise.all(
-        selectedMatchIds.map(id => dataService.deleteMatch(id.toString()))
+        selectedMatchIds.map(id => dataService.deleteMatch(id))
       );
       
       toast.success('הכרטיסים נמחקו בהצלחה');
@@ -744,12 +744,12 @@ export default function Dashboard() {
     
     // Multi-filtering
     const matchesGroupType = filterGroup === 'all' || m.creator_category === filterGroup;
-    const matchesManager = filterManager === 'all' || m.created_by === parseInt(filterManager);
+    const matchesManager = filterManager === 'all' || m.created_by === filterManager;
     
     return matchesSearch && matchesType && matchesGroupType && matchesManager;
   });
 
-  const handleSelectMatch = (id: number, selected: boolean) => {
+  const handleSelectMatch = (id: string, selected: boolean) => {
     if (selected) {
       setSelectedMatchIds(prev => [...prev, id]);
     } else {

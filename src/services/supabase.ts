@@ -24,7 +24,9 @@ export const supabase = createClient(
       autoRefreshToken: true,
     },
     global: {
-      fetch: (...args) => fetch(...args),
+      fetch: (url, options) => {
+        return window.fetch(url, options);
+      },
     },
   }
 );

@@ -35,6 +35,16 @@ class DataService {
     }
   }
 
+  private generateUUID(): string {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   // Auth
   async getCurrentUser(): Promise<User | null> {
     const userJson = localStorage.getItem('current_user');
@@ -62,13 +72,26 @@ class DataService {
         // Return updated user data
         const updatedUser: User = {
           id: data.id,
-          name: data.display_name || 'מנהל ראשי',
+          name: data.display_name || data.name || 'מנהל ראשי',
           username: data.username,
           email: data.email || '',
           password_plain: data.password_plain,
           role: data.role || 'super_admin',
           status: data.status || 'active',
-          created_at: data.created_at || new Date().toISOString()
+          created_at: data.created_at || new Date().toISOString(),
+          category: data.category || null,
+          secondary_category: data.secondary_category || null,
+          gender: data.gender || null,
+          phone: data.phone || null,
+          google_login_allowed: data.google_login_allowed || 'false',
+          avatar_url: data.avatar_url || null,
+          deleted_at: data.deleted_at || null,
+          daily_message_template: data.daily_message_template || null,
+          daily_message_template_male: data.daily_message_template_male || null,
+          daily_message_template_female: data.daily_message_template_female || null,
+          is_from_file: data.is_from_file || 0,
+          is_approved: data.is_approved || 0,
+          is_shaham_manager: data.is_shaham_manager || 0
         };
         
         localStorage.setItem('current_user', JSON.stringify(updatedUser));
@@ -86,14 +109,27 @@ class DataService {
       // Ensure 'good' user exists
       if (!users.find(u => u.username === 'good')) {
         const goodUser: User = {
-          id: crypto.randomUUID(),
+          id: this.generateUUID(),
           name: 'Good User',
           username: 'good',
           email: 'good@example.com',
           password_plain: 'good',
           role: 'super_admin',
           status: 'active',
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          category: null,
+          secondary_category: null,
+          gender: null,
+          phone: null,
+          google_login_allowed: 'false',
+          avatar_url: null,
+          deleted_at: null,
+          daily_message_template: null,
+          daily_message_template_male: null,
+          daily_message_template_female: null,
+          is_from_file: 0,
+          is_approved: 1,
+          is_shaham_manager: 0
         };
         users.push(goodUser);
         await this.localSet('users', users);
@@ -124,13 +160,26 @@ class DataService {
       
       const user: User = {
         id: data.id,
-        name: data.display_name || 'מנהל ראשי',
+        name: data.display_name || data.name || 'מנהל ראשי',
         username: data.username,
         email: data.email || '',
         password_plain: data.password_plain,
         role: data.role || 'super_admin',
         status: data.status || 'active',
-        created_at: data.created_at || new Date().toISOString()
+        created_at: data.created_at || new Date().toISOString(),
+        category: data.category || null,
+        secondary_category: data.secondary_category || null,
+        gender: data.gender || null,
+        phone: data.phone || null,
+        google_login_allowed: data.google_login_allowed || 'false',
+        avatar_url: data.avatar_url || null,
+        deleted_at: data.deleted_at || null,
+        daily_message_template: data.daily_message_template || null,
+        daily_message_template_male: data.daily_message_template_male || null,
+        daily_message_template_female: data.daily_message_template_female || null,
+        is_from_file: data.is_from_file || 0,
+        is_approved: data.is_approved || 0,
+        is_shaham_manager: data.is_shaham_manager || 0
       };
       
       localStorage.setItem('current_user', JSON.stringify(user));
@@ -167,7 +216,7 @@ class DataService {
   async createMatch(match: Omit<Match, 'id' | 'created_at'>): Promise<Match> {
     const newMatch: Match = {
       ...match,
-      id: crypto.randomUUID(),
+      id: this.generateUUID(),
       created_at: new Date().toISOString(),
       publish_count: 0,
       last_published_at: null,
@@ -254,7 +303,7 @@ class DataService {
   async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
     const newUser: User = {
       ...user,
-      id: crypto.randomUUID(),
+      id: this.generateUUID(),
       created_at: new Date().toISOString()
     };
 
@@ -307,7 +356,7 @@ class DataService {
   async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
     const newLog: ActivityLog = {
       ...log,
-      id: crypto.randomUUID(),
+      id: this.generateUUID(),
       created_at: new Date().toISOString()
     };
 
@@ -330,6 +379,48 @@ class DataService {
     }
   }
 
+  async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
+    const newGroup: WhatsAppGroup = {
+      ...group,
+      id: this.generateUUID(),
+      last_initial_sent: null
+    };
+
+    if (this.mode === 'temporary') {
+      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
+      groups.push(newGroup);
+      await this.localSet('whatsapp_groups', groups);
+      return newGroup;
+    } else {
+      const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
+      return data as WhatsAppGroup;
+    }
+  }
+
+  async updateWhatsAppGroup(id: string, updates: Partial<WhatsAppGroup>): Promise<WhatsAppGroup> {
+    if (this.mode === 'temporary') {
+      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
+      const index = groups.findIndex(g => g.id === id);
+      if (index === -1) throw new Error('Group not found');
+      groups[index] = { ...groups[index], ...updates };
+      await this.localSet('whatsapp_groups', groups);
+      return groups[index];
+    } else {
+      const data = await this.handleSupabase(supabase.from('whatsapp_groups').update(updates).eq('id', id).select().single());
+      return data as WhatsAppGroup;
+    }
+  }
+
+  async deleteWhatsAppGroup(id: string): Promise<void> {
+    if (this.mode === 'temporary') {
+      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
+      const filtered = groups.filter(g => g.id !== id);
+      await this.localSet('whatsapp_groups', filtered);
+    } else {
+      await supabase.from('whatsapp_groups').delete().eq('id', id);
+    }
+  }
+
   async markInitialSent(groupId: string): Promise<void> {
     const today = new Date().toISOString();
     if (this.mode === 'temporary') {
@@ -348,7 +439,7 @@ class DataService {
   async recordPublish(matchId: string, groupName: string, userId: string, userName: string): Promise<void> {
     const now = new Date().toISOString();
     const newLog: PublishLog = {
-      id: crypto.randomUUID(),
+      id: this.generateUUID(),
       match_id: matchId,
       match_name: '', // Will be filled if needed or handled by DB
       user_id: userId,
@@ -391,26 +482,41 @@ class DataService {
     }
   }
 
-  // Settings (Simplified for frontend only)
+  // Settings
   async getSettings(): Promise<any> {
     if (this.mode === 'temporary') {
       const settings = localStorage.getItem('app_settings');
-      return settings ? JSON.parse(settings) : { whatsapp_template: '', whatsapp_initial_message: '' };
+      return settings ? JSON.parse(settings) : {};
     } else {
       try {
-        const data = await this.handleSupabase(supabase.from('settings').select('*').single());
-        return data || {};
+        const { data } = await supabase.from('settings').select('*');
+        const settings: any = {};
+        data?.forEach((item: any) => {
+          settings[item.key] = item.value;
+        });
+        return settings;
       } catch (e) {
-        return { whatsapp_template: '', whatsapp_initial_message: '' };
+        return {};
       }
     }
   }
 
-  async updateSettings(settings: any): Promise<void> {
+  async updateSetting(key: string, value: string): Promise<void> {
     if (this.mode === 'temporary') {
+      const settings = await this.getSettings();
+      settings[key] = value;
       localStorage.setItem('app_settings', JSON.stringify(settings));
     } else {
-      await supabase.from('settings').upsert(settings);
+      // Upsert logic
+      const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
+      if (error) throw error;
+    }
+  }
+
+  async updateSettings(settings: any): Promise<void> {
+    // Deprecated, use updateSetting loop instead
+    for (const key in settings) {
+      await this.updateSetting(key, settings[key]);
     }
   }
 }

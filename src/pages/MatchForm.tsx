@@ -418,7 +418,11 @@ export default function MatchForm() {
                   publish_count: 0,
                   last_published_at: null,
                   deleted_at: null,
-                  is_published_confirmed: 0
+                  created_by: user?.id || 'system',
+                  creator_name: user?.name || 'System',
+                  creator_category: user?.category || 'general',
+                  is_published_confirmed: 0,
+                  crop_config: null
                 });
                 toast.success('נוצר משודך דמו בהצלחה');
                 navigate('/');
