@@ -7,6 +7,7 @@ import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 
 import { dataService } from '../services/dataService';
+import { supabase } from '../services/supabase';
 
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
@@ -81,7 +82,8 @@ export default function AdminManagement() {
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone
+          phone: formData.phone,
+          avatar_url: formData.avatar_url
         });
         await dataService.logActivity({
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
@@ -335,16 +337,29 @@ export default function AdminManagement() {
     return colors[user.category] || '';
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) return toast.error('התמונה גדולה מדי (מקסימום 2MB)');
     
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
-    };
-    reader.readAsDataURL(file);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random()}.${fileExt}`;
+    const filePath = `avatars/${fileName}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('images').getPublicUrl(filePath);
+      setFormData(prev => ({ ...prev, avatar_url: data.publicUrl }));
+      toast.success('התמונה הועלתה בהצלחה');
+    } catch (err) {
+      console.error('Error uploading avatar:', err);
+      toast.error('שגיאה בהעלאת התמונה');
+    }
   };
 
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
@@ -698,7 +713,7 @@ export default function AdminManagement() {
                         <div className="relative">
                           {u.avatar_url ? (
                             <img 
-                              src={u.avatar_url} 
+                              src={dataService.getPublicImageUrl(u.avatar_url)} 
                               alt={u.name} 
                               referrerPolicy="no-referrer"
                               className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
@@ -1113,7 +1128,7 @@ export default function AdminManagement() {
                     <div className="relative group">
                       <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
                         {formData.avatar_url ? (
-                          <img src={formData.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                          <img src={formData.avatar_url} alt="Avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                           <UserCheck size={32} className="text-slate-300" />
                         )}
