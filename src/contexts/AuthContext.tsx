@@ -18,6 +18,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     try {
+      // Artificial delay to prevent flickering
+      await new Promise(resolve => setTimeout(resolve, 500));
       const currentUser = await dataService.getCurrentUser();
       setUser(currentUser);
     } catch (err) {

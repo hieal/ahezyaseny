@@ -488,6 +488,38 @@ class DataService {
     return data.publicUrl;
   }
 
+  async uploadImage(file: File, bucket: string = 'images'): Promise<string | null> {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  }
+
+  async updateCandidateImage(candidateId: string, imageUrl: string) {
+    const { error } = await supabase
+      .from('candidates')
+      .update({ image_url: imageUrl })
+      .eq('id', candidateId);
+    
+    if (error) throw error;
+  }
+
   // Activity Logs
   async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
     try {
@@ -524,10 +556,10 @@ class DataService {
     }
   }
 
-  async getPublishLogs(): Promise<PublishLog[]> {
-    const data = await this.handleSupabase(
-      supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(100)
-    );
+  async getPublishLogs(matchId?: string): Promise<PublishLog[]> {
+    let query = supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(100);
+    if (matchId) query = query.eq('match_id', matchId);
+    const data = await this.handleSupabase(query);
     return data || [];
   }
 
@@ -549,6 +581,23 @@ class DataService {
   async updateWhatsAppGroup(id: string, updates: Partial<WhatsAppGroup>): Promise<WhatsAppGroup> {
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').update(updates).eq('id', id).select().single());
     return data as WhatsAppGroup;
+  }
+
+  async recordPublish(matchId: string, groupName: string, userId: string, userName: string) {
+    await this.logPublish({
+      match_id: matchId,
+      match_name: '', // Should be fetched if needed
+      user_id: userId,
+      user_name: userName,
+      group_name: groupName
+    });
+  }
+
+  async markInitialSent(groupId: string) {
+    await this.updateWhatsAppGroup(groupId, {
+      last_initial_sent: new Date().toISOString(),
+      last_initial_sent_method: 'manual'
+    });
   }
 
   async deleteWhatsAppGroup(id: string): Promise<void> {
@@ -605,6 +654,12 @@ class DataService {
 
   async updateSettings(settings: any): Promise<void> {
     localStorage.setItem('app_settings', JSON.stringify(settings));
+  }
+
+  async updateSetting(key: string, value: any): Promise<void> {
+    const settings = await this.getSettings();
+    settings[key] = value;
+    await this.updateSettings(settings);
   }
 }
 

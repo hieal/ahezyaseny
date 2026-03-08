@@ -86,8 +86,8 @@ export default function AdminManagement() {
           avatar_url: formData.avatar_url
         });
         await dataService.logActivity({
-          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: user?.name || 'System',
+          user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: currentUser?.name || 'System',
           action: 'עדכון מנהל',
           details: `עדכון פרטי מנהל: ${formData.name}`,
           entity_type: 'user',
@@ -103,6 +103,7 @@ export default function AdminManagement() {
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
+          avatar_url: formData.avatar_url,
           deleted_at: null,
           daily_message_template: null,
           daily_message_template_male: null,
@@ -111,8 +112,8 @@ export default function AdminManagement() {
           is_from_file: 0
         });
         await dataService.logActivity({
-          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: user?.name || 'System',
+          user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: currentUser?.name || 'System',
           action: 'יצירת מנהל',
           details: `יצירת מנהל חדש: ${formData.name}`,
           entity_type: 'user',
@@ -261,8 +262,8 @@ export default function AdminManagement() {
     try {
       await dataService.deleteUser(userToDelete.id);
       await dataService.logActivity({
-        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-        user_name: user?.name || 'System',
+        user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
+        user_name: currentUser?.name || 'System',
         action: 'מחיקת מנהל',
         details: `מחיקת מנהל: ${userToDelete.name}`,
         entity_type: 'user',
@@ -713,6 +714,7 @@ export default function AdminManagement() {
                         <div className="relative">
                           {u.avatar_url ? (
                             <img 
+                              key={u.avatar_url}
                               src={dataService.getPublicImageUrl(u.avatar_url)} 
                               alt={u.name} 
                               referrerPolicy="no-referrer"

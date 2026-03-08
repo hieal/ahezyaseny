@@ -24,7 +24,11 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
   const { mode } = useBackend();
   
   if (!mode) return <Navigate to="/login" />;
-  if (loading) return <div className="min-h-screen flex items-center justify-center">טוען...</div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-bg-gray">
+      <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  );
   if (!user) return <Navigate to="/login" />;
   
   if (superAdminOnly && user.role !== 'super_admin') return <Navigate to="/" />;

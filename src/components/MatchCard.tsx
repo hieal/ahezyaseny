@@ -3,6 +3,7 @@ import { Match } from '../types';
 import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { dataService } from '../services/dataService';
 
 interface MatchCardProps {
    match: Match;

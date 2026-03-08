@@ -54,11 +54,7 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const data = await dataService.getActivityLogs({
-        userId: filters.userId || undefined,
-        dateFrom: filters.dateFrom || undefined,
-        dateTo: filters.dateTo || undefined
-      });
+      const data = await dataService.getActivityLogs();
       setLogs(data);
     } catch (err) {
       toast.error('שגיאה בטעינת מעקב פעולות');
@@ -82,7 +78,7 @@ export default function TrackingPage() {
       // In a real app we'd need a general getPublishLogs, but for now we can just get all matches and their publish logs
       // Wait, dataService doesn't have getAllPublishLogs. Let's add it if needed, or just skip for now.
       // Let's add getAllPublishLogs to dataService
-      const data = await dataService.getAllPublishLogs?.() || [];
+      const data = await dataService.getPublishLogs() || [];
       setPublishLogs(data);
     } catch (err) {
       console.error('Error fetching publish logs:', err);
