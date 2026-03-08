@@ -27,11 +27,20 @@ class DataService {
   private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
     try {
       const { data, error } = await promise;
-      if (error) throw error;
+      if (error) {
+        // PostgREST error codes: 42P01 = relation does not exist (table missing)
+        if (error.code === '42P01' || (error.message && error.message.includes('does not exist'))) {
+          throw new Error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+        }
+        throw error;
+      }
       return data;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Supabase error:', err);
-      throw new Error('שגיאה בחיבור לשרת. אנא עבור לשרת זמני בהגדרות.');
+      if (err.message && err.message.includes('סנכרון')) {
+        throw err;
+      }
+      throw new Error('שגיאה בחיבור לשרת. אנא וודא שהמפתחות תקינים או עבור לשרת זמני.');
     }
   }
 
@@ -68,7 +77,20 @@ class DataService {
           .limit(1)
           .single();
           
-        if (error || !data) {
+        if (error) {
+          // If table doesn't exist, don't crash, just return the cached user for now
+          // or return null if we want to force login
+          if (error.code === '42P01' || error.message?.includes('does not exist')) {
+            console.warn('Admins table missing in Supabase');
+            return user; 
+          }
+          
+          if (sessionUserJson) sessionStorage.removeItem('current_user');
+          else localStorage.removeItem('current_user');
+          return null;
+        }
+        
+        if (!data) {
           if (sessionUserJson) sessionStorage.removeItem('current_user');
           else localStorage.removeItem('current_user');
           return null;
@@ -176,6 +198,10 @@ class DataService {
         .or(queryStr)
         .limit(1)
         .single();
+        
+      if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
+        throw new Error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+      }
         
       // Special handling for 'good' user: Auto-create or Auto-fix password
       if (username === 'good' && password_plain === 'good') {
@@ -398,8 +424,8 @@ class DataService {
       const activeMatches = matches || [];
       const today = new Date().toISOString().split('T')[0];
 
-      const { data: users } = await supabase.from('admins').select('gender, status').eq('status', 'active');
-      const activeAdmins = users || [];
+      const adminsData = await this.handleSupabase(supabase.from('admins').select('gender, status').eq('status', 'active'));
+      const activeAdmins = adminsData || [];
 
       return {
         males: activeMatches.filter((m: any) => m.type === 'male').length,
@@ -428,8 +454,9 @@ class DataService {
       const users = await this.localGet<User>('mock_admins');
       return users.find(u => u.id === id) || null;
     } else {
-      const { data, error } = await supabase.from('admins').select('*').eq('id', id).single();
-      if (error) return null;
+      const data = await this.handleSupabase(
+        supabase.from('admins').select('*').eq('id', id).single()
+      );
       return data as User;
     }
   }
@@ -561,7 +588,7 @@ class DataService {
       const filtered = groups.filter(g => g.id !== id);
       await this.localSet('whatsapp_groups', filtered);
     } else {
-      await supabase.from('whatsapp_groups').delete().eq('id', id);
+      await this.handleSupabase(supabase.from('whatsapp_groups').delete().eq('id', id));
     }
   }
 
@@ -575,7 +602,7 @@ class DataService {
         await this.localSet('whatsapp_groups', groups);
       }
     } else {
-      await supabase.from('whatsapp_groups').update({ last_initial_sent: today }).eq('id', groupId);
+      await this.handleSupabase(supabase.from('whatsapp_groups').update({ last_initial_sent: today }).eq('id', groupId));
     }
   }
 

@@ -242,6 +242,15 @@ ON CONFLICT DO NOTHING;`;
   const handleBypassLogin = async () => {
     setLoading(true);
     try {
+      // First check if admins table exists
+      const { error: checkError } = await supabase.from('admins').select('id').limit(1);
+      
+      if (checkError && (checkError.code === '42P01' || checkError.message?.includes('does not exist'))) {
+        toast.error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) למטה.');
+        setLoading(false);
+        return;
+      }
+
       const user = await dataService.login('good', 'good');
       if (user) {
         login(user);
@@ -251,6 +260,7 @@ ON CONFLICT DO NOTHING;`;
         toast.error('שגיאה בכניסה מהירה');
       }
     } catch (err: any) {
+      console.error(err);
       toast.error('שגיאה: ' + (err.message || 'Unknown error'));
     } finally {
       setLoading(false);
@@ -389,10 +399,11 @@ ON CONFLICT DO NOTHING;`;
                   <button
                     onClick={handleSyncSchema}
                     disabled={loading}
-                    className="px-4 py-3 bg-blue-50 text-luxury-blue rounded-xl font-bold hover:bg-blue-100 transition-colors shadow-sm active:scale-95 flex items-center justify-center"
+                    className="px-4 py-3 bg-blue-50 text-luxury-blue rounded-xl font-bold hover:bg-blue-100 transition-colors shadow-sm active:scale-95 flex items-center justify-center gap-2"
                     title="סנכרון מבנה נתונים"
                   >
                     <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                    <span className="text-xs">סנכרון מבנה</span>
                   </button>
                 </div>
               </div>
