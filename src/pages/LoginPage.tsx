@@ -179,267 +179,6 @@ export default function LoginPage() {
     }
   };
 
-  if (!mode) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-bg-gray">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-2xl text-center"
-        >
-          <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-8 border border-slate-100">
-            <Logo size={80} showText={false} />
-          </div>
-          <h1 className="text-4xl font-black text-text-main mb-4">בחירת סביבת עבודה</h1>
-          <p className="text-lg text-text-secondary mb-12 max-w-md mx-auto font-medium">
-            בחר את השרת אליו תרצה להתחבר כדי להתחיל לעבוד במערכת
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-            <button 
-              onClick={() => setMode('temporary')}
-              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-luxury-blue text-right"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-luxury-blue flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                <Database size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-text-main mb-2">שרת זמני</h3>
-              <p className="text-slate-500 font-medium leading-relaxed">
-                Offline / Studio Mode
-                <br />
-                שמירת נתונים ב-LocalStorage של הדפדפן בלבד.
-              </p>
-              <div className="mt-6 flex items-center text-luxury-blue font-bold gap-2">
-                <span>בחר במצב זה</span>
-                <LogIn size={18} />
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setMode('production')}
-              className="group relative p-8 bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all border-2 border-transparent hover:border-emerald-500 text-right overflow-hidden"
-            >
-              {hasEnvVars && (
-                <div className="absolute top-0 left-0 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-br-xl text-[10px] font-bold flex items-center gap-1 shadow-sm">
-                  <ShieldCheck size={12} />
-                  מזוהה סביבה
-                </div>
-              )}
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                <Cloud size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-text-main mb-2">שרת קבוע</h3>
-              <p className="text-slate-500 font-medium leading-relaxed">
-                Production / Vercel
-                <br />
-                חיבור ישיר ל-Supabase לשמירה קבועה בענן.
-              </p>
-              <div className="mt-6 flex items-center text-emerald-600 font-bold gap-2">
-                <span>בחר במצב זה</span>
-                <LogIn size={18} />
-              </div>
-            </button>
-          </div>
-
-          <div className="mt-12 max-w-2xl mx-auto text-right" dir="rtl">
-            <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700">
-                <Settings size={20} className="text-slate-400" />
-                הגדרות חיבור (Connection Settings)
-              </h3>
-              <div className="space-y-4">
-                {hasEnvVars && (
-                  <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-emerald-700 text-xs font-bold">
-                      <ShieldCheck size={16} />
-                      <span>מזוהים משתני סביבה (Environment Variables)</span>
-                    </div>
-                    {(localStorage.getItem('supabase_url') || localStorage.getItem('supabase_key')) && (
-                      <button 
-                        onClick={() => {
-                          localStorage.removeItem('supabase_url');
-                          localStorage.removeItem('supabase_key');
-                          setCustomUrl(envUrl || '');
-                          setCustomKey(envKey || '');
-                          toast.success('הגדרות מקומיות נמחקו, חוזר למשתני סביבה');
-                          setTimeout(() => window.location.reload(), 1000);
-                        }}
-                        className="text-[10px] bg-white border border-emerald-200 px-2 py-1 rounded-lg hover:bg-emerald-100 transition-colors text-emerald-600 font-bold shadow-sm"
-                      >
-                        נקה דריסה מקומית
-                      </button>
-                    )}
-                  </div>
-                )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Supabase URL</label>
-                  <input
-                    type="text"
-                    value={customUrl}
-                    onChange={(e) => setCustomUrl(e.target.value)}
-                    className="w-full p-3 border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-luxury-blue focus:border-transparent outline-none transition-all"
-                    placeholder="https://..."
-                    dir="ltr"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Supabase Key</label>
-                  <input
-                    type="password"
-                    value={customKey}
-                    onChange={(e) => setCustomKey(e.target.value)}
-                    className="w-full p-3 border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-luxury-blue focus:border-transparent outline-none transition-all"
-                    placeholder="eyJ..."
-                    dir="ltr"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveKeys}
-                    className="flex-1 py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors shadow-md active:scale-95"
-                  >
-                    שמור מפתחות
-                  </button>
-                  <button
-                    onClick={() => setShowQuickConnect(true)}
-                    className="px-4 py-3 bg-yellow-50 text-yellow-600 rounded-xl font-bold hover:bg-yellow-100 transition-colors shadow-sm active:scale-95 flex items-center justify-center"
-                    title="חיבור מהיר"
-                  >
-                    <Zap size={20} />
-                  </button>
-                  <button
-                    onClick={handleSyncSchema}
-                    disabled={loading}
-                    className="px-4 py-3 bg-blue-50 text-luxury-blue rounded-xl font-bold hover:bg-blue-100 transition-colors shadow-sm active:scale-95 flex items-center justify-center gap-2"
-                    title="סנכרון מבנה נתונים"
-                  >
-                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-                    <span className="text-xs">סנכרון מבנה</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {showSqlModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
-                dir="rtl"
-              >
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <Database size={24} className="text-luxury-blue" />
-                    נדרש עדכון מסד נתונים
-                  </h3>
-                  <button onClick={() => setShowSqlModal(false)} className="text-slate-400 hover:text-slate-600">
-                    <X size={24} />
-                  </button>
-                </div>
-                
-                <div className="p-6 overflow-y-auto flex-1">
-                  <p className="text-slate-600 mb-4">
-                    המערכת זיהתה שחסרות טבלאות ב-Supabase. אנא העתק את ה-SQL הבא והרץ אותו ב-SQL Editor בלוח הבקרה של Supabase:
-                  </p>
-                  
-                  <div className="relative">
-                    <pre className="bg-slate-900 text-slate-50 p-4 rounded-xl text-xs font-mono overflow-x-auto whitespace-pre-wrap h-64" dir="ltr">
-                      {sqlScript}
-                    </pre>
-                    <button 
-                      onClick={copyToClipboard}
-                      className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-                      title="העתק ללוח"
-                    >
-                      <Copy size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                  <button 
-                    onClick={() => setShowSqlModal(false)}
-                    className="px-6 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors"
-                  >
-                    סגור
-                  </button>
-                  <button 
-                    onClick={() => {
-                      copyToClipboard();
-                      window.open('https://supabase.com/dashboard/project/_/sql/new', '_blank');
-                    }}
-                    className="px-6 py-2 bg-luxury-blue text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-md flex items-center gap-2"
-                  >
-                    <Copy size={18} />
-                    העתק ופתח Supabase
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {showQuickConnect && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden"
-                dir="rtl"
-              >
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <Zap size={24} className="text-yellow-500" />
-                    חיבור מהיר ל-Supabase
-                  </h3>
-                  <button onClick={() => setShowQuickConnect(false)} className="text-slate-400 hover:text-slate-600">
-                    <X size={24} />
-                  </button>
-                </div>
-                
-                <div className="p-6">
-                  <p className="text-slate-600 mb-4">
-                    הדבק כאן את הטקסט מ-Supabase (או את ה-URL וה-Key), והמערכת תזהה אותם אוטומטית.
-                  </p>
-                  <textarea
-                    value={quickConnectText}
-                    onChange={(e) => setQuickConnectText(e.target.value)}
-                    className="w-full h-48 p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:ring-2 focus:ring-luxury-blue outline-none resize-none"
-                    placeholder="הדבק כאן..."
-                    dir="ltr"
-                  />
-                </div>
-
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                  <button 
-                    onClick={() => setShowQuickConnect(false)}
-                    className="px-6 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors"
-                  >
-                    ביטול
-                  </button>
-                  <button 
-                    onClick={handleQuickConnect}
-                    disabled={loading}
-                    className="px-6 py-2 bg-luxury-blue text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-md flex items-center gap-2"
-                  >
-                    {loading ? <RefreshCw size={18} className="animate-spin" /> : <Zap size={18} />}
-                    חבר אותי
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          <p className="mt-12 text-slate-400 text-sm font-medium">
-            &copy; 2026 {APP_NAME} | Dual-Backend System
-          </p>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-bg-gray">
       <motion.div 
@@ -449,14 +188,29 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8 flex flex-col items-center">
           <button 
-            onClick={() => {
-              localStorage.removeItem('backend_mode');
-              window.location.reload();
+            onClick={async () => {
+              setLoading(true);
+              try {
+                const syncResult = await dataService.syncSchema();
+                if (syncResult.success) {
+                  toast.success(syncResult.message);
+                  setTimeout(() => window.location.reload(), 1000);
+                } else {
+                  setSqlScript(dataService.getSchemaSQL());
+                  setShowSqlModal(true);
+                  toast.error(syncResult.message);
+                }
+              } catch (err) {
+                toast.error('שגיאה בסנכרון');
+              } finally {
+                setLoading(false);
+              }
             }}
+            disabled={loading}
             className="mb-4 text-xs font-bold text-slate-400 hover:text-luxury-blue flex items-center gap-1"
           >
-            <Database size={12} />
-            החלף שרת ({mode === 'temporary' ? 'זמני' : 'קבוע'})
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            סנכרון מסד נתונים (SQL)
           </button>
           <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-6 border border-slate-100">
             <Logo size={80} showText={false} />

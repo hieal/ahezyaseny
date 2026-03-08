@@ -921,17 +921,9 @@ export default function Dashboard() {
                     smoking: 'לא',
                     negiah: 'כן',
                     age_range: '20-30',
-                    image_url: null,
-                    additional_images: null,
                     created_by: user?.id || 'system',
                     creator_name: user?.name || 'System',
                     creator_category: user?.category || 'General',
-                    created_at: new Date().toISOString(),
-                    publish_count: 0,
-                    last_published_at: null,
-                    deleted_at: null,
-                    is_published_confirmed: 0,
-                    crop_config: null,
                     creation_source: 'manual'
                   };
                   

@@ -69,7 +69,7 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
           onClick={() => onImageClick?.(match)}
         >
           <img 
-            src={match.image_url} 
+            src={dataService.getPublicImageUrl(match.image_url)} 
             alt={match.name} 
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover transition-transform group-hover:scale-105" 

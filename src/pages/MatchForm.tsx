@@ -199,6 +199,7 @@ export default function MatchForm() {
       }
       navigate('/');
     } catch (err) {
+      console.error('Error saving match:', err);
       toast.error('שגיאה בשמירה');
     } finally {
       setSaving(false);

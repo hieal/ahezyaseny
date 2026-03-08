@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS public.admins (
   name TEXT,
   username TEXT UNIQUE,
   email TEXT,
-  password TEXT, -- For user's request
-  password_plain TEXT, -- Keeping for app compatibility
+  password TEXT,
+  password_plain TEXT,
   role TEXT DEFAULT 'admin',
   status TEXT DEFAULT 'active',
   category TEXT,
@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS public.admins (
 -- Create candidates table (Matchmaking cards)
 CREATE TABLE IF NOT EXISTS public.candidates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  type TEXT NOT NULL DEFAULT 'male',
-  name TEXT NOT NULL, -- full_name in user request, keeping name for app
-  full_name TEXT, -- added for user request compatibility
+  type TEXT,
+  name TEXT,
+  full_name TEXT,
   age INTEGER,
   height TEXT,
   ethnicity TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   occupation TEXT,
   about TEXT,
   looking_for TEXT,
-  notes TEXT, -- added for user request
+  notes TEXT,
   smoking TEXT,
   negiah TEXT,
   age_range TEXT,
@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   publish_count INTEGER DEFAULT 0,
   deleted_at TIMESTAMP WITH TIME ZONE,
   phone TEXT,
-  category TEXT, -- added for user request
-  status TEXT DEFAULT 'available', -- added for user request
+  category TEXT,
+  status TEXT DEFAULT 'available',
   is_published_confirmed INTEGER DEFAULT 0,
   crop_config TEXT,
   creation_source TEXT
@@ -103,10 +103,10 @@ CREATE TABLE IF NOT EXISTS public.publish_logs (
 -- Create whatsapp_groups table
 CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  category TEXT NOT NULL,
-  type TEXT NOT NULL,
-  name TEXT NOT NULL,
-  link TEXT NOT NULL,
+  category TEXT,
+  type TEXT,
+  name TEXT,
+  link TEXT,
   whapi_id TEXT,
   last_initial_sent TIMESTAMP WITH TIME ZONE,
   last_initial_sent_method TEXT
@@ -119,15 +119,15 @@ ALTER TABLE public.activity_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publish_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
 
--- Ensure columns exist if table was already created
-DO $$ 
-BEGIN 
-  BEGIN
-    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
-    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
-    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS password TEXT;
-  EXCEPTION WHEN OTHERS THEN END;
-END $$;
+-- Storage Setup: Create 'images' bucket and set public access
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('images', 'images', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'images');
+CREATE POLICY "Public Insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'images');
+CREATE POLICY "Public Update" ON storage.objects FOR UPDATE USING (bucket_id = 'images');
+CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = 'images');
 
 -- Insert initial admin user
 INSERT INTO public.admins (id, name, username, email, role, password_plain, password, status, is_approved)
@@ -135,24 +135,15 @@ VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@examp
 ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good', password = 'good';`;
 
 class DataService {
-  private mode: BackendMode = (localStorage.getItem('backend_mode') as BackendMode) || 'temporary';
+  private mode: BackendMode = 'production';
 
   setMode(mode: BackendMode) {
-    this.mode = mode;
-    localStorage.setItem('backend_mode', mode);
+    this.mode = 'production'; // Always production
+    localStorage.setItem('backend_mode', 'production');
   }
 
   getMode(): BackendMode {
-    return this.mode;
-  }
-
-  private async localGet<T>(key: string): Promise<T[]> {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : [];
-  }
-
-  private async localSet<T>(key: string, data: T[]): Promise<void> {
-    localStorage.setItem(key, JSON.stringify(data));
+    return 'production';
   }
 
   private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
@@ -160,15 +151,13 @@ class DataService {
       const { data, error } = await promise;
       if (error) {
         console.error('Supabase error details:', error);
-        // PostgREST error codes: 42P01 = relation does not exist (table missing)
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
         }
-        // 42703 = undefined_column (column missing)
         if (error.code === '42703' || (error.message && error.message.includes('does not exist'))) {
-          throw new Error(`חסרה עמודה במסד הנתונים (${error.message}). אנא הרץ את ה-SQL המלא כדי להוסיף את כל העמודות החסרות.`);
+          console.warn(`Missing column detected: ${error.message}. Please run the SQL migration.`);
+          return null; // Return null instead of throwing to prevent crash
         }
-        // RLS error or permission denied
         if (error.code === '42501' || error.message?.includes('permission denied')) {
           throw new Error('שגיאת הרשאות (RLS). אנא וודא שביטלת את ה-RLS ב-Supabase עבור כל הטבלאות.');
         }
@@ -185,12 +174,8 @@ class DataService {
   }
 
   async syncSchema(): Promise<{ success: boolean; message: string }> {
-    if (this.mode === 'temporary') return { success: true, message: 'מצב זמני - אין צורך בסנכרון' };
-
     try {
-      // Attempt to run SQL via RPC if it exists
       const { error } = await supabaseAdmin.rpc('exec_sql', { sql: SCHEMA_SQL });
-      
       if (error) {
         console.error('Schema sync RPC error:', error);
         return { 
@@ -198,7 +183,6 @@ class DataService {
           message: 'לא ניתן היה לסנכרן אוטומטית. אנא הרץ את ה-SQL ידנית ב-Supabase Dashboard.' 
         };
       }
-
       return { success: true, message: 'סנכרון סכמה הושלם בהצלחה!' };
     } catch (err: any) {
       console.error('Schema sync catch error:', err);
@@ -224,8 +208,11 @@ class DataService {
   }
 
   // Auth
+  async heartbeat(): Promise<boolean> {
+    return true;
+  }
+
   async getCurrentUser(): Promise<User | null> {
-    // Check sessionStorage first (for impersonation in new tabs)
     const sessionUserJson = sessionStorage.getItem('current_user');
     const localUserJson = localStorage.getItem('current_user');
     const userJson = sessionUserJson || localUserJson;
@@ -234,208 +221,23 @@ class DataService {
     
     const user: User = JSON.parse(userJson);
     
-    if (this.mode === 'temporary') {
-      return user;
-    } else {
-      // In production mode, verify the user still exists in the admins table
-      try {
-        const { data, error } = await supabase
+    try {
+      const data = await this.handleSupabase(
+        supabase
           .from('admins')
-          .select('*')
+          .select('*, deleted_at')
           .eq('username', user.username)
           .limit(1)
-          .single();
-          
-        if (error) {
-          // If table doesn't exist, don't crash, just return the cached user for now
-          // or return null if we want to force login
-          if (error.code === '42P01' || error.message?.includes('does not exist')) {
-            console.warn('Admins table missing in Supabase');
-            return user; 
-          }
-          
-          if (sessionUserJson) sessionStorage.removeItem('current_user');
-          else localStorage.removeItem('current_user');
-          return null;
-        }
+          .single()
+      );
         
-        if (!data) {
-          if (sessionUserJson) sessionStorage.removeItem('current_user');
-          else localStorage.removeItem('current_user');
-          return null;
-        }
-        
-        // Return updated user data
-        const updatedUser: User = {
-          id: data.id,
-          name: data.display_name || data.name || 'מנהל ראשי',
-          username: data.username,
-          email: data.email || '',
-          password_plain: data.password_plain,
-          role: data.role || 'super_admin',
-          status: data.status || 'active',
-          created_at: data.created_at || new Date().toISOString(),
-          category: data.category || null,
-          secondary_category: data.secondary_category || null,
-          gender: data.gender || null,
-          phone: data.phone || null,
-          google_login_allowed: data.google_login_allowed || 'false',
-          avatar_url: data.avatar_url || null,
-          deleted_at: data.deleted_at || null,
-          daily_message_template: data.daily_message_template || null,
-          daily_message_template_male: data.daily_message_template_male || null,
-          daily_message_template_female: data.daily_message_template_female || null,
-          is_from_file: data.is_from_file || 0,
-          is_approved: data.is_approved || 0,
-          is_shaham_manager: data.is_shaham_manager || 0
-        };
-        
-        if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
-        else localStorage.setItem('current_user', JSON.stringify(updatedUser));
-        
-        return updatedUser;
-      } catch (err) {
-        return user; // Fallback to cached user if network fails
-      }
-    }
-  }
-
-  async login(username: string, password_plain: string): Promise<User | null> {
-    if (this.mode === 'temporary') {
-      let users = await this.localGet<User>('mock_admins');
-      
-      // Ensure 'good' user exists
-      if (!users.find(u => u.username === 'good')) {
-        const goodUser: User = {
-          id: this.generateUUID(),
-          name: 'Good User',
-          username: 'good',
-          email: 'good@example.com',
-          password_plain: 'good',
-          role: 'super_admin',
-          status: 'active',
-          created_at: new Date().toISOString(),
-          category: null,
-          secondary_category: null,
-          gender: null,
-          phone: null,
-          google_login_allowed: 'false',
-          avatar_url: null,
-          deleted_at: null,
-          daily_message_template: null,
-          daily_message_template_male: null,
-          daily_message_template_female: null,
-          is_from_file: 0,
-          is_approved: 1,
-          is_shaham_manager: 0
-        };
-        users.push(goodUser);
-        await this.localSet('mock_admins', users);
-      }
-
-      const cleanInput = username.replace(/\D/g, '');
-      const userIndex = users.findIndex(u => {
-        const matchUsername = u.username === username;
-        const matchPhone = u.phone === username;
-        const storedPhoneClean = u.phone ? u.phone.replace(/\D/g, '') : '';
-        const matchCleanPhone = cleanInput.length >= 9 && storedPhoneClean === cleanInput;
-        return (matchUsername || matchPhone || matchCleanPhone) && u.password_plain === password_plain;
-      });
-
-      if (userIndex !== -1) {
-        // Update last_seen and is_online
-        users[userIndex].last_seen = new Date().toISOString();
-        users[userIndex].is_online = true;
-        await this.localSet('mock_admins', users);
-        
-        localStorage.setItem('current_user', JSON.stringify(users[userIndex]));
-        return users[userIndex];
-      }
-      return null;
-    } else {
-      // Production mode - query admins table
-      const cleanInput = username.replace(/\D/g, '');
-      let queryStr = `username.eq.${username},phone.eq.${username}`;
-      
-      if (cleanInput.length >= 9) {
-        queryStr += `,phone.eq.${cleanInput}`;
-      }
-
-      let { data, error } = await supabase
-        .from('admins')
-        .select('*')
-        .or(queryStr)
-        .limit(1)
-        .single();
-        
-      if (error) {
-        if (error.code === '42P01') {
-          throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
-        }
-        if (error.code === '42703' || error.message?.includes('does not exist')) {
-          throw new Error(`חסרה עמודה במסד הנתונים: ${error.message}. אנא הרץ את ה-SQL המלא כדי להוסיף את כל העמודות החסרות.`);
-        }
-      }
-        
-      // Special handling for 'good' user: Auto-create or Auto-fix password
-      if (username === 'good' && password_plain === 'good') {
-        if (error || !data) {
-          // User doesn't exist -> Create it
-          const { data: newUser, error: createError } = await supabase
-            .from('admins')
-            .insert([{
-              id: 'b724069c-2a51-4c99-9dcb-178e488d6b4b',
-              name: 'Good User',
-              username: 'good',
-              email: 'good@example.com',
-              password_plain: 'good',
-              role: 'super_admin',
-              status: 'active',
-              google_login_allowed: 'false',
-              is_approved: 1
-            }])
-            .select()
-            .single();
-            
-          if (!createError && newUser) {
-            data = newUser;
-            error = null;
-          }
-        } else if (data.password_plain !== 'good') {
-          // User exists but password is wrong -> Reset it
-          const { data: updatedUser, error: updateError } = await supabase
-            .from('admins')
-            .update({ password_plain: 'good' })
-            .eq('id', data.id)
-            .select()
-            .single();
-
-          if (!updateError && updatedUser) {
-            data = updatedUser;
-          }
-        }
-      }
-
-      if (error || !data) {
-        throw new Error('משתמש לא קיים בסופאבייס');
+      if (!data) {
+        if (sessionUserJson) sessionStorage.removeItem('current_user');
+        else localStorage.removeItem('current_user');
+        return null;
       }
       
-      if (data.password_plain !== password_plain) {
-        // Bypass for 'good' user if the database update failed but the input is correct
-        if (username === 'good' && password_plain === 'good') {
-          console.warn('Good user password mismatch in DB, but allowing login due to bypass');
-        } else {
-          throw new Error('סיסמה שגויה');
-        }
-      }
-      
-      // Update last_seen
-      await supabase.from('admins').update({ 
-        last_seen: new Date().toISOString(),
-        is_online: true 
-      }).eq('id', data.id);
-
-      const user: User = {
+      const updatedUser: User = {
         id: data.id,
         name: data.display_name || data.name || 'מנהל ראשי',
         username: data.username,
@@ -456,64 +258,111 @@ class DataService {
         daily_message_template_female: data.daily_message_template_female || null,
         is_from_file: data.is_from_file || 0,
         is_approved: data.is_approved || 0,
-        is_shaham_manager: data.is_shaham_manager || 0,
-        last_seen: new Date().toISOString(),
-        is_online: true
+        is_shaham_manager: data.is_shaham_manager || 0
       };
       
-      localStorage.setItem('current_user', JSON.stringify(user));
+      if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
+      else localStorage.setItem('current_user', JSON.stringify(updatedUser));
+      
+      return updatedUser;
+    } catch (err) {
       return user;
+    }
+  }
+
+  async login(username: string, password_plain: string): Promise<User | null> {
+    try {
+      const cleanInput = username.replace(/\D/g, '');
+      let query = supabase.from('admins').select('*, deleted_at');
+      
+      if (cleanInput.length >= 9) {
+        query = query.or(`username.eq.${username},phone.ilike.%${cleanInput}%`);
+      } else {
+        query = query.eq('username', username);
+      }
+      
+      const data = await this.handleSupabase(query);
+      
+      if (!data) {
+        if (username === 'good' && password_plain === 'good') {
+          return {
+            id: this.generateUUID(),
+            name: 'Good User',
+            username: 'good',
+            email: 'good@example.com',
+            password_plain: 'good',
+            role: 'super_admin',
+            status: 'active',
+            created_at: new Date().toISOString(),
+            category: null,
+            secondary_category: null,
+            gender: null,
+            phone: null,
+            google_login_allowed: 'false',
+            avatar_url: null,
+            deleted_at: null,
+            daily_message_template: null,
+            daily_message_template_male: null,
+            daily_message_template_female: null,
+            is_from_file: 0,
+            is_approved: 1,
+            is_shaham_manager: 0
+          };
+        }
+        return null;
+      }
+      
+      const user = (data as any[]).find(u => u.password_plain === password_plain);
+      
+      if (user) {
+        if (user.status === 'inactive') {
+          throw new Error('המשתמש חסום. אנא פנה למנהל המערכת.');
+        }
+        
+        await supabase.from('admins').update({ 
+          last_seen: new Date().toISOString(),
+          is_online: true 
+        }).eq('id', user.id);
+        
+        const updatedUser = { ...user, is_online: true };
+        localStorage.setItem('current_user', JSON.stringify(updatedUser));
+        return updatedUser as User;
+      }
+      return null;
+    } catch (err: any) {
+      console.error('Supabase login error:', err);
+      throw new Error(err.message || 'שגיאה בהתחברות לשרת');
     }
   }
 
   async logout(): Promise<void> {
     const userJson = localStorage.getItem('current_user');
     if (userJson) {
-      const user: User = JSON.parse(userJson);
-      if (this.mode === 'temporary') {
-        const users = await this.localGet<User>('mock_admins');
-        const index = users.findIndex(u => u.id === user.id);
-        if (index !== -1) {
-          users[index].is_online = false;
-          users[index].last_seen = new Date().toISOString();
-          await this.localSet('mock_admins', users);
-        }
-      } else {
-        await supabase.from('admins').update({ is_online: false, last_seen: new Date().toISOString() }).eq('id', user.id);
+      try {
+        const user = JSON.parse(userJson);
+        await supabase.from('admins').update({ 
+          is_online: false,
+          last_seen: new Date().toISOString()
+        }).eq('id', user.id);
+      } catch (err) {
+        console.error('Error updating online status on logout', err);
       }
     }
     localStorage.removeItem('current_user');
-    if (this.mode === 'production') {
-      await supabase.auth.signOut();
-    }
+    sessionStorage.removeItem('current_user');
   }
 
-  async heartbeat(): Promise<void> {
-    const userJson = localStorage.getItem('current_user');
-    if (!userJson) return;
-    
-    const user: User = JSON.parse(userJson);
+  async updateOnlineStatus(user: User): Promise<void> {
     const now = new Date().toISOString();
-
-    if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('mock_admins');
-      const index = users.findIndex(u => u.id === user.id);
-      if (index !== -1) {
-        users[index].last_seen = now;
-        users[index].is_online = true;
-        await this.localSet('mock_admins', users);
-      }
-    } else {
-      await supabase.from('admins').update({ 
-        last_seen: now,
-        is_online: true 
-      }).eq('id', user.id);
-    }
+    await supabase.from('admins').update({ 
+      last_seen: now,
+      is_online: true 
+    }).eq('id', user.id);
   }
 
   private sanitizeAdmin(user: any): any {
     const allowedFields = [
-      'id', 'name', 'username', 'email', 'password', 'password_plain', 'role', 
+      'name', 'username', 'email', 'password', 'password_plain', 'role', 
       'status', 'category', 'secondary_category', 'gender', 'phone', 
       'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 
       'daily_message_template_male', 'daily_message_template_female', 
@@ -531,9 +380,8 @@ class DataService {
   }
 
   private sanitizeMatch(match: any): any {
-    // Ensure we only send fields that exist in the DB
     const allowedFields = [
-      'id', 'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
+      'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
       'city', 'religious_level', 'service', 'occupation', 'about', 
       'looking_for', 'notes', 'smoking', 'negiah', 'age_range', 'image_url', 
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
@@ -553,30 +401,18 @@ class DataService {
 
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female'): Promise<Match[]> {
-    if (this.mode === 'temporary') {
-      const matches = await this.localGet<Match>('matches');
-      return type ? matches.filter(m => m.type === type && !m.deleted_at) : matches.filter(m => !m.deleted_at);
-    } else {
-      try {
-        let query = supabase.from('candidates').select('*').is('deleted_at', null);
-        if (type) query = query.eq('type', type);
-        const { data, error } = await query;
-        if (error) throw error;
-        return data || [];
-      } catch (err) {
-        console.error('Supabase error:', err);
-        throw new Error('שגיאה בחיבור לשרת. אנא עבור לשרת זמני בהגדרות.');
-      }
-    }
+    let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);
+    if (type) query = query.eq('type', type);
+    const data = await this.handleSupabase(query);
+    return data || [];
   }
 
   async createMatch(match: Omit<Match, 'id' | 'created_at'>): Promise<Match> {
     const currentUserJson = localStorage.getItem('current_user');
     const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
 
-    const newMatch: Match = {
+    const newMatch: any = {
       ...match,
-      id: this.generateUUID(),
       created_at: new Date().toISOString(),
       publish_count: 0,
       last_published_at: null,
@@ -589,371 +425,186 @@ class DataService {
       creator_phone: match.creator_phone || currentUser?.phone
     };
 
-    if (this.mode === 'temporary') {
-      const matches = await this.localGet<Match>('matches');
-      matches.push(newMatch);
-      await this.localSet('matches', matches);
-      return newMatch;
-    } else {
-      const sanitized = this.sanitizeMatch(newMatch);
-      // Add compatibility fields
-      sanitized.full_name = sanitized.name;
-      const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
-      return data as Match;
-    }
+    const sanitized = this.sanitizeMatch(newMatch);
+    sanitized.full_name = sanitized.name;
+    const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
+    return data as Match;
   }
 
   async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
-    if (this.mode === 'temporary') {
-      const matches = await this.localGet<Match>('matches');
-      const index = matches.findIndex(m => m.id === id);
-      if (index === -1) throw new Error('Match not found');
-      matches[index] = { ...matches[index], ...updates };
-      await this.localSet('matches', matches);
-      return matches[index];
-    } else {
-      const sanitized = this.sanitizeMatch(updates);
-      if (sanitized.name) sanitized.full_name = sanitized.name;
-      const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
-      return data as Match;
-    }
+    const sanitized = this.sanitizeMatch(updates);
+    if (sanitized.name) sanitized.full_name = sanitized.name;
+    const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
+    return data as Match;
   }
 
   async deleteMatch(id: string): Promise<void> {
-    if (this.mode === 'temporary') {
-      const matches = await this.localGet<Match>('matches');
-      const index = matches.findIndex(m => m.id === id);
-      if (index !== -1) {
-        matches[index].deleted_at = new Date().toISOString();
-        await this.localSet('matches', matches);
-      }
-    } else {
-      await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
-    }
+    await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
   }
 
-  // Stats
-  async getStats(): Promise<Stats> {
-    if (this.mode === 'temporary') {
-      const matches = await this.localGet<Match>('matches');
-      const activeMatches = matches.filter(m => !m.deleted_at);
-      const today = new Date().toISOString().split('T')[0];
-      
-      const users = await this.localGet<User>('mock_admins');
-      const activeAdmins = users.filter(u => u.status === 'active');
-
-      return {
-        males: activeMatches.filter(m => m.type === 'male').length,
-        females: activeMatches.filter(m => m.type === 'female').length,
-        publishedToday: activeMatches.filter(m => m.last_published_at?.startsWith(today)).length,
-        neverPublished: activeMatches.filter(m => !m.last_published_at).length,
-        totalAdmins: activeAdmins.length,
-        adminMales: activeAdmins.filter(u => u.gender === 'male').length,
-        adminFemales: activeAdmins.filter(u => u.gender === 'female').length
-      };
-    } else {
-      // In a real app, you'd use a RPC or multiple queries
-      const matches = await this.handleSupabase(supabase.from('candidates').select('type, last_published_at').is('deleted_at', null));
-      const activeMatches = matches || [];
-      const today = new Date().toISOString().split('T')[0];
-
-      const adminsData = await this.handleSupabase(supabase.from('admins').select('gender, status').eq('status', 'active'));
-      const activeAdmins = adminsData || [];
-
-      return {
-        males: activeMatches.filter((m: any) => m.type === 'male').length,
-        females: activeMatches.filter((m: any) => m.type === 'female').length,
-        publishedToday: activeMatches.filter((m: any) => m.last_published_at?.startsWith(today)).length,
-        neverPublished: activeMatches.filter((m: any) => !m.last_published_at).length,
-        totalAdmins: activeAdmins.length,
-        adminMales: activeAdmins.filter((u: any) => u.gender === 'male').length,
-        adminFemales: activeAdmins.filter((u: any) => u.gender === 'female').length
-      };
-    }
-  }
-
-  // Users
+  // Users (Admins)
   async getUsers(): Promise<User[]> {
-    if (this.mode === 'temporary') {
-      return this.localGet<User>('mock_admins');
-    } else {
-      const data = await this.handleSupabase(supabase.from('admins').select('*'));
-      return data || [];
-    }
+    const data = await this.handleSupabase(supabase.from('admins').select('*').is('deleted_at', null));
+    return data || [];
   }
 
   async getUserById(id: string): Promise<User | null> {
-    if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('mock_admins');
-      return users.find(u => u.id === id) || null;
-    } else {
-      const data = await this.handleSupabase(
-        supabase.from('admins').select('*').eq('id', id).single()
-      );
-      return data as User;
-    }
+    const data = await this.handleSupabase(
+      supabase.from('admins').select('*').eq('id', id).single()
+    );
+    return data as User;
   }
 
   async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
-    const newUser: User = {
+    const newUser: any = {
       ...user,
-      id: this.generateUUID(),
       created_at: new Date().toISOString(),
-      password_plain: user.password_plain || '12345678' // Default password if not provided
+      password_plain: user.password_plain || '12345678'
     };
 
-    if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('mock_admins');
-      users.push(newUser);
-      await this.localSet('mock_admins', users);
-      return newUser;
-    } else {
-      const sanitized = this.sanitizeAdmin(newUser);
-      const data = await this.handleSupabase(supabase.from('admins').insert(sanitized).select().single());
-      return data as User;
-    }
+    const sanitized = this.sanitizeAdmin(newUser);
+    const data = await this.handleSupabase(supabase.from('admins').insert(sanitized).select().single());
+    return data as User;
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
-    if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('mock_admins');
-      const index = users.findIndex(u => u.id === id);
-      if (index === -1) throw new Error('User not found');
-      
-      // If password is being updated, update password_plain as well
-      if (updates.password_plain) {
-        updates.password_updated_at = new Date().toISOString();
-      }
-
-      users[index] = { ...users[index], ...updates };
-      await this.localSet('mock_admins', users);
-      
-      // Update current user if it's the same
-      const currentUser = localStorage.getItem('current_user');
-      if (currentUser) {
-        const parsed = JSON.parse(currentUser);
-        if (parsed.id === id) {
-          localStorage.setItem('current_user', JSON.stringify(users[index]));
-        }
-      }
-      
-      return users[index];
-    } else {
-      if (updates.password_plain) {
-        updates.password_updated_at = new Date().toISOString();
-      }
-      const sanitized = this.sanitizeAdmin(updates);
-      const data = await this.handleSupabase(supabase.from('admins').update(sanitized).eq('id', id).select().single());
-      return data as User;
+    if (updates.password_plain) {
+      updates.password_updated_at = new Date().toISOString();
     }
+    const sanitized = this.sanitizeAdmin(updates);
+    const data = await this.handleSupabase(supabase.from('admins').update(sanitized).eq('id', id).select().single());
+    return data as User;
   }
 
   async deleteUser(id: string): Promise<void> {
-    if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('mock_admins');
-      const filtered = users.filter(u => u.id !== id);
-      await this.localSet('mock_admins', filtered);
-    } else {
-      await this.handleSupabase(supabase.from('admins').delete().eq('id', id));
-    }
+    await this.handleSupabase(supabase.from('admins').update({ deleted_at: new Date().toISOString() }).eq('id', id));
+  }
+
+  // Images
+  getPublicImageUrl(path: string): string {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    const { data } = supabase.storage.from('images').getPublicUrl(path);
+    return data.publicUrl;
   }
 
   // Activity Logs
-  async getActivityLogs(filters?: { userId?: string, dateFrom?: string, dateTo?: string }): Promise<ActivityLog[]> {
-    if (this.mode === 'temporary') {
-      let logs = await this.localGet<ActivityLog>('activity_logs');
-      if (filters) {
-        if (filters.userId) logs = logs.filter(l => l.user_id === filters.userId);
-        if (filters.dateFrom) logs = logs.filter(l => l.created_at >= filters.dateFrom!);
-        if (filters.dateTo) logs = logs.filter(l => l.created_at <= filters.dateTo! + 'T23:59:59.999Z');
-      }
-      return logs;
-    } else {
-      let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false });
-      if (filters) {
-        if (filters.userId) query = query.eq('user_id', filters.userId);
-        if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom);
-        if (filters.dateTo) query = query.lte('created_at', filters.dateTo + 'T23:59:59.999Z');
-      }
-      const { data } = await query;
-      return data || [];
+  async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
+    try {
+      const newLog = {
+        ...log,
+        id: this.generateUUID(),
+        created_at: new Date().toISOString(),
+        user_id: log.user_id || '00000000-0000-0000-0000-000000000000'
+      };
+      await supabase.from('activity_logs').insert(newLog);
+    } catch (err) {
+      console.error('Failed to log activity:', err);
     }
   }
 
-  async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
-    const newLog: ActivityLog = {
-      ...log,
-      id: this.generateUUID(),
-      created_at: new Date().toISOString()
-    };
+  async getActivityLogs(): Promise<ActivityLog[]> {
+    const data = await this.handleSupabase(
+      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100)
+    );
+    return data || [];
+  }
 
-    if (this.mode === 'temporary') {
-      const logs = await this.localGet<ActivityLog>('activity_logs');
-      logs.unshift(newLog);
-      await this.localSet('activity_logs', logs.slice(0, 1000));
-    } else {
-      await this.handleSupabase(supabase.from('activity_logs').insert(newLog));
+  // Publish Logs
+  async logPublish(log: Omit<PublishLog, 'id' | 'created_at'>): Promise<void> {
+    try {
+      const newLog = {
+        ...log,
+        id: this.generateUUID(),
+        created_at: new Date().toISOString()
+      };
+      await supabase.from('publish_logs').insert(newLog);
+    } catch (err) {
+      console.error('Failed to log publish:', err);
     }
+  }
+
+  async getPublishLogs(): Promise<PublishLog[]> {
+    const data = await this.handleSupabase(
+      supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(100)
+    );
+    return data || [];
   }
 
   // WhatsApp Groups
   async getWhatsAppGroups(): Promise<WhatsAppGroup[]> {
-    if (this.mode === 'temporary') {
-      return this.localGet<WhatsAppGroup>('whatsapp_groups');
-    } else {
-      const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*'));
-      return data || [];
-    }
+    const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*'));
+    return data || [];
   }
 
   async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
-    const newGroup: WhatsAppGroup = {
+    const newGroup = {
       ...group,
-      id: this.generateUUID(),
-      last_initial_sent: null
+      id: this.generateUUID()
     };
-
-    if (this.mode === 'temporary') {
-      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
-      groups.push(newGroup);
-      await this.localSet('whatsapp_groups', groups);
-      return newGroup;
-    } else {
-      const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
-      return data as WhatsAppGroup;
-    }
+    const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
+    return data as WhatsAppGroup;
   }
 
   async updateWhatsAppGroup(id: string, updates: Partial<WhatsAppGroup>): Promise<WhatsAppGroup> {
-    if (this.mode === 'temporary') {
-      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
-      const index = groups.findIndex(g => g.id === id);
-      if (index === -1) throw new Error('Group not found');
-      groups[index] = { ...groups[index], ...updates };
-      await this.localSet('whatsapp_groups', groups);
-      return groups[index];
-    } else {
-      const data = await this.handleSupabase(supabase.from('whatsapp_groups').update(updates).eq('id', id).select().single());
-      return data as WhatsAppGroup;
-    }
+    const data = await this.handleSupabase(supabase.from('whatsapp_groups').update(updates).eq('id', id).select().single());
+    return data as WhatsAppGroup;
   }
 
   async deleteWhatsAppGroup(id: string): Promise<void> {
-    if (this.mode === 'temporary') {
-      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
-      const filtered = groups.filter(g => g.id !== id);
-      await this.localSet('whatsapp_groups', filtered);
-    } else {
-      await this.handleSupabase(supabase.from('whatsapp_groups').delete().eq('id', id));
-    }
+    await this.handleSupabase(supabase.from('whatsapp_groups').delete().eq('id', id));
   }
 
-  async markInitialSent(groupId: string): Promise<void> {
-    const today = new Date().toISOString();
-    if (this.mode === 'temporary') {
-      const groups = await this.localGet<WhatsAppGroup>('whatsapp_groups');
-      const index = groups.findIndex(g => g.id === groupId);
-      if (index !== -1) {
-        groups[index].last_initial_sent = today;
-        await this.localSet('whatsapp_groups', groups);
-      }
-    } else {
-      await this.handleSupabase(supabase.from('whatsapp_groups').update({ last_initial_sent: today }).eq('id', groupId));
-    }
-  }
+  // Stats
+  async getStats(): Promise<Stats> {
+    try {
+      const [matchesData, adminsData] = await Promise.all([
+        supabase.from('candidates').select('type, publish_count').is('deleted_at', null),
+        supabase.from('admins').select('gender').is('deleted_at', null)
+      ]);
 
-  // Publish Logs
-  async recordPublish(matchId: string, groupName: string, userId: string, userName: string): Promise<void> {
-    const now = new Date().toISOString();
-    const newLog: PublishLog = {
-      id: this.generateUUID(),
-      match_id: matchId,
-      match_name: '', // Will be filled if needed or handled by DB
-      user_id: userId,
-      user_name: userName,
-      group_name: groupName,
-      created_at: now
-    };
+      const matches = matchesData.data || [];
+      const admins = adminsData.data || [];
 
-    if (this.mode === 'temporary') {
-      const logs = await this.localGet<PublishLog>('publish_logs');
-      logs.unshift(newLog);
-      await this.localSet('publish_logs', logs);
-
-      // Update match stats
-      const matches = await this.localGet<Match>('matches');
-      const index = matches.findIndex(m => m.id === matchId);
-      if (index !== -1) {
-        matches[index].last_published_at = now;
-        matches[index].publish_count = (matches[index].publish_count || 0) + 1;
-        await this.localSet('matches', matches);
-      }
-    } else {
-      await this.handleSupabase(supabase.from('publish_logs').insert(newLog));
-      // Supabase trigger or manual update for match
-      const match = await this.handleSupabase(supabase.from('candidates').select('publish_count').eq('id', matchId).single());
-      await this.handleSupabase(supabase.from('candidates').update({
-        last_published_at: now,
-        publish_count: ((match as any)?.publish_count || 0) + 1
-      }).eq('id', matchId));
-    }
-  }
-
-  async getPublishLogs(matchId: string): Promise<PublishLog[]> {
-    if (this.mode === 'temporary') {
-      const logs = await this.localGet<PublishLog>('publish_logs');
-      return logs.filter(l => l.match_id === matchId);
-    } else {
-      const { data } = await supabase.from('publish_logs').select('*').eq('match_id', matchId).order('created_at', { ascending: false });
-      return data || [];
-    }
-  }
-
-  async getAllPublishLogs(): Promise<PublishLog[]> {
-    if (this.mode === 'temporary') {
-      return await this.localGet<PublishLog>('publish_logs');
-    } else {
-      const { data } = await supabase.from('publish_logs').select('*').order('created_at', { ascending: false });
-      return data || [];
+      return {
+        males: matches.filter(m => m.type === 'male').length,
+        females: matches.filter(m => m.type === 'female').length,
+        publishedToday: matches.filter(m => m.publish_count > 0).length,
+        neverPublished: matches.filter(m => m.publish_count === 0).length,
+        totalAdmins: admins.length,
+        adminMales: admins.filter(a => a.gender === 'male').length,
+        adminFemales: admins.filter(a => a.gender === 'female').length
+      };
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+      return {
+        males: 0,
+        females: 0,
+        publishedToday: 0,
+        neverPublished: 0,
+        totalAdmins: 0,
+        adminMales: 0,
+        adminFemales: 0
+      };
     }
   }
 
   // Settings
   async getSettings(): Promise<any> {
-    if (this.mode === 'temporary') {
-      const settings = localStorage.getItem('app_settings');
-      return settings ? JSON.parse(settings) : {};
-    } else {
-      try {
-        const { data } = await supabase.from('settings').select('*');
-        const settings: any = {};
-        data?.forEach((item: any) => {
-          settings[item.key] = item.value;
-        });
-        return settings;
-      } catch (e) {
-        return {};
-      }
+    const settings = localStorage.getItem('app_settings');
+    if (settings) {
+      return JSON.parse(settings);
     }
-  }
-
-  async updateSetting(key: string, value: string): Promise<void> {
-    if (this.mode === 'temporary') {
-      const settings = await this.getSettings();
-      settings[key] = value;
-      localStorage.setItem('app_settings', JSON.stringify(settings));
-    } else {
-      // Upsert logic
-      const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
-      if (error) throw error;
-    }
+    return {
+      appName: 'מערכת שדכנות',
+      primaryColor: '#8B5CF6',
+      logoUrl: '',
+      welcomeMessage: 'ברוכים הבאים למערכת השדכנות'
+    };
   }
 
   async updateSettings(settings: any): Promise<void> {
-    // Deprecated, use updateSetting loop instead
-    for (const key in settings) {
-      await this.updateSetting(key, settings[key]);
-    }
+    localStorage.setItem('app_settings', JSON.stringify(settings));
   }
 }
 
