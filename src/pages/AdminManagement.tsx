@@ -80,7 +80,7 @@ export default function AdminManagement() {
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone.replace(/\D/g, '')
+          phone: formData.phone
         });
         toast.success('המנהל עודכן');
       } else {
@@ -91,7 +91,7 @@ export default function AdminManagement() {
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone.replace(/\D/g, ''),
+          phone: formData.phone,
           deleted_at: null,
           daily_message_template: null,
           daily_message_template_male: null,
@@ -178,7 +178,7 @@ export default function AdminManagement() {
             }
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-            if (header === 'טלפון' || header === 'phone') admin.phone = val.replace(/\D/g, '');
+            if (header === 'טלפון' || header === 'phone') admin.phone = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
             if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
@@ -339,8 +339,8 @@ export default function AdminManagement() {
     if (!phoneModalUser) return;
     try {
       await dataService.updateUser(phoneModalUser.id, { 
-        phone: tempPhone.replace(/\D/g, ''),
-        username: tempPhone.replace(/\D/g, '') // Update username to match phone as requested
+        phone: tempPhone,
+        username: tempPhone // Update username to match phone as requested
       });
       toast.success('מספר טלפון ושם משתמש עודכנו');
       setPhoneModalUser(null);
@@ -954,7 +954,7 @@ export default function AdminManagement() {
                               }
                               if (header === 'שם משתמש' || header === 'username') admin.username = val;
                               if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) admin.email = val;
-                              if (header === 'טלפון' || header === 'phone') admin.phone = val.replace(/\D/g, '');
+                              if (header === 'טלפון' || header === 'phone') admin.phone = val;
                               if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
                               if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
                                 const match = val.match(/\((https?:\/\/[^\)]+)\)/);

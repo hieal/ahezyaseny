@@ -104,7 +104,7 @@ class DataService {
 
   async login(username: string, password_plain: string): Promise<User | null> {
     if (this.mode === 'temporary') {
-      let users = await this.localGet<User>('users');
+      let users = await this.localGet<User>('mock_admins');
       
       // Ensure 'good' user exists
       if (!users.find(u => u.username === 'good')) {
@@ -132,14 +132,15 @@ class DataService {
           is_shaham_manager: 0
         };
         users.push(goodUser);
-        await this.localSet('users', users);
+        await this.localSet('mock_admins', users);
       }
 
       const cleanInput = username.replace(/\D/g, '');
       const userIndex = users.findIndex(u => {
         const matchUsername = u.username === username;
         const matchPhone = u.phone === username;
-        const matchCleanPhone = cleanInput.length >= 9 && u.phone === cleanInput;
+        const storedPhoneClean = u.phone ? u.phone.replace(/\D/g, '') : '';
+        const matchCleanPhone = cleanInput.length >= 9 && storedPhoneClean === cleanInput;
         return (matchUsername || matchPhone || matchCleanPhone) && u.password_plain === password_plain;
       });
 
@@ -147,7 +148,7 @@ class DataService {
         // Update last_seen and is_online
         users[userIndex].last_seen = new Date().toISOString();
         users[userIndex].is_online = true;
-        await this.localSet('users', users);
+        await this.localSet('mock_admins', users);
         
         localStorage.setItem('current_user', JSON.stringify(users[userIndex]));
         return users[userIndex];
@@ -219,12 +220,12 @@ class DataService {
     if (userJson) {
       const user: User = JSON.parse(userJson);
       if (this.mode === 'temporary') {
-        const users = await this.localGet<User>('users');
+        const users = await this.localGet<User>('mock_admins');
         const index = users.findIndex(u => u.id === user.id);
         if (index !== -1) {
           users[index].is_online = false;
           users[index].last_seen = new Date().toISOString();
-          await this.localSet('users', users);
+          await this.localSet('mock_admins', users);
         }
       } else {
         await supabase.from('admins').update({ is_online: false, last_seen: new Date().toISOString() }).eq('id', user.id);
@@ -311,7 +312,7 @@ class DataService {
       const activeMatches = matches.filter(m => !m.deleted_at);
       const today = new Date().toISOString().split('T')[0];
       
-      const users = await this.localGet<User>('users');
+      const users = await this.localGet<User>('mock_admins');
       const activeAdmins = users.filter(u => u.status === 'active');
 
       return {
@@ -347,7 +348,7 @@ class DataService {
   // Users
   async getUsers(): Promise<User[]> {
     if (this.mode === 'temporary') {
-      return this.localGet<User>('users');
+      return this.localGet<User>('mock_admins');
     } else {
       const data = await this.handleSupabase(supabase.from('admins').select('*'));
       return data || [];
@@ -363,9 +364,9 @@ class DataService {
     };
 
     if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('users');
+      const users = await this.localGet<User>('mock_admins');
       users.push(newUser);
-      await this.localSet('users', users);
+      await this.localSet('mock_admins', users);
       return newUser;
     } else {
       const data = await this.handleSupabase(supabase.from('admins').insert(newUser).select().single());
@@ -375,7 +376,7 @@ class DataService {
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
     if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('users');
+      const users = await this.localGet<User>('mock_admins');
       const index = users.findIndex(u => u.id === id);
       if (index === -1) throw new Error('User not found');
       
@@ -385,7 +386,7 @@ class DataService {
       }
 
       users[index] = { ...users[index], ...updates };
-      await this.localSet('users', users);
+      await this.localSet('mock_admins', users);
       
       // Update current user if it's the same
       const currentUser = localStorage.getItem('current_user');
@@ -408,9 +409,9 @@ class DataService {
 
   async deleteUser(id: string): Promise<void> {
     if (this.mode === 'temporary') {
-      const users = await this.localGet<User>('users');
+      const users = await this.localGet<User>('mock_admins');
       const filtered = users.filter(u => u.id !== id);
-      await this.localSet('users', filtered);
+      await this.localSet('mock_admins', filtered);
     } else {
       await supabase.from('admins').delete().eq('id', id);
     }
