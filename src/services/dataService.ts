@@ -47,7 +47,11 @@ class DataService {
 
   // Auth
   async getCurrentUser(): Promise<User | null> {
-    const userJson = localStorage.getItem('current_user');
+    // Check sessionStorage first (for impersonation in new tabs)
+    const sessionUserJson = sessionStorage.getItem('current_user');
+    const localUserJson = localStorage.getItem('current_user');
+    const userJson = sessionUserJson || localUserJson;
+
     if (!userJson) return null;
     
     const user: User = JSON.parse(userJson);
@@ -65,7 +69,8 @@ class DataService {
           .single();
           
         if (error || !data) {
-          localStorage.removeItem('current_user');
+          if (sessionUserJson) sessionStorage.removeItem('current_user');
+          else localStorage.removeItem('current_user');
           return null;
         }
         
@@ -94,7 +99,9 @@ class DataService {
           is_shaham_manager: data.is_shaham_manager || 0
         };
         
-        localStorage.setItem('current_user', JSON.stringify(updatedUser));
+        if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
+        else localStorage.setItem('current_user', JSON.stringify(updatedUser));
+        
         return updatedUser;
       } catch (err) {
         return user; // Fallback to cached user if network fails
@@ -237,6 +244,29 @@ class DataService {
     }
   }
 
+  async heartbeat(): Promise<void> {
+    const userJson = localStorage.getItem('current_user');
+    if (!userJson) return;
+    
+    const user: User = JSON.parse(userJson);
+    const now = new Date().toISOString();
+
+    if (this.mode === 'temporary') {
+      const users = await this.localGet<User>('mock_admins');
+      const index = users.findIndex(u => u.id === user.id);
+      if (index !== -1) {
+        users[index].last_seen = now;
+        users[index].is_online = true;
+        await this.localSet('mock_admins', users);
+      }
+    } else {
+      await supabase.from('admins').update({ 
+        last_seen: now,
+        is_online: true 
+      }).eq('id', user.id);
+    }
+  }
+
   // Matches
   async getMatches(type?: 'male' | 'female'): Promise<Match[]> {
     if (this.mode === 'temporary') {
@@ -352,6 +382,17 @@ class DataService {
     } else {
       const data = await this.handleSupabase(supabase.from('admins').select('*'));
       return data || [];
+    }
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    if (this.mode === 'temporary') {
+      const users = await this.localGet<User>('mock_admins');
+      return users.find(u => u.id === id) || null;
+    } else {
+      const { data, error } = await supabase.from('admins').select('*').eq('id', id).single();
+      if (error) return null;
+      return data as User;
     }
   }
 

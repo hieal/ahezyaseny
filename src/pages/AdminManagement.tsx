@@ -19,6 +19,7 @@ export default function AdminManagement() {
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
   const [genderModalUser, setGenderModalUser] = useState<User | null>(null);
   const [phoneModalUser, setPhoneModalUser] = useState<User | null>(null);
+  const [impersonateUser, setImpersonateUser] = useState<User | null>(null);
   const [tempPhone, setTempPhone] = useState('');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<string[]>([]);
@@ -559,6 +560,78 @@ export default function AdminManagement() {
           </div>
         )}
       </AnimatePresence>
+      {/* Impersonation Modal */}
+      <AnimatePresence>
+        {impersonateUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-20 h-20 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 border-4 border-white shadow-lg relative">
+                  {impersonateUser.avatar_url ? (
+                    <img 
+                      src={impersonateUser.avatar_url} 
+                      alt={impersonateUser.name} 
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <UserIcon size={40} className="text-slate-400" />
+                  )}
+                  <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-2 rounded-full border-4 border-white shadow-sm">
+                    <ExternalLink size={16} />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900">כניסה כמנהל</h3>
+                <p className="text-slate-500 font-medium">אתה עומד להיכנס למערכת בשם <span className="font-bold text-slate-900">{impersonateUser.name}</span></p>
+              </div>
+
+              <div className="bg-slate-50 rounded-2xl p-4 space-y-3 border border-slate-100">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase">שם משתמש</span>
+                  <span className="font-mono font-bold text-slate-700">{impersonateUser.username}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase">טלפון</span>
+                  <span className="font-mono font-bold text-slate-700">{impersonateUser.phone || '---'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase">דרכי כניסה</span>
+                  <div className="flex gap-2">
+                    {impersonateUser.google_login_allowed === 'true' && (
+                      <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-600 shadow-sm">Google</span>
+                    )}
+                    <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-600 shadow-sm">סיסמא</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setImpersonateUser(null)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={() => {
+                    window.open(`${window.location.origin}?impersonate=${impersonateUser.id}`, '_blank');
+                    setImpersonateUser(null);
+                  }}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all flex items-center justify-center gap-2"
+                >
+                  <ExternalLink size={18} />
+                  הכנס למערכת
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap gap-4 items-center">
         <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
         <div className="flex items-center gap-2">
@@ -788,6 +861,15 @@ export default function AdminManagement() {
                   </td>
                   <td className="px-6 py-5 text-left">
                     <div className="flex items-center justify-end gap-2">
+                      {currentUser?.role === 'super_admin' && u.id !== currentUser.id && (
+                        <button 
+                          onClick={() => setImpersonateUser(u)} 
+                          className="p-2.5 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                          title="התחבר כמנהל זה"
+                        >
+                          <ExternalLink size={18} />
+                        </button>
+                      )}
                       <button onClick={() => handleEdit(u)} className="p-2.5 text-luxury-blue hover:bg-blue-50 rounded-xl transition-all">
                         <Edit2 size={18} />
                       </button>

@@ -47,7 +47,16 @@ function Sidebar() {
 
   React.useEffect(() => {
     if (allAdmins.length > 0) {
-      setOnlineUsers(allAdmins.map(a => a.id));
+      const now = new Date().getTime();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      const online = allAdmins.filter(a => {
+        if (!a.last_seen) return false;
+        const lastSeen = new Date(a.last_seen).getTime();
+        return (now - lastSeen) < fiveMinutes;
+      }).map(a => a.id);
+      
+      setOnlineUsers(online);
     }
   }, [allAdmins]);
 
@@ -486,7 +495,78 @@ function Header() {
 }
 
 function MainLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [isImpersonating, setIsImpersonating] = React.useState(false);
+
+  // Heartbeat effect
+  React.useEffect(() => {
+    if (!user) return;
+    
+    const interval = setInterval(() => {
+      dataService.heartbeat();
+    }, 60000); // Every minute
+    
+    // Initial heartbeat
+    dataService.heartbeat();
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const impersonateId = params.get('impersonate');
+
+    if (impersonateId) {
+      setIsImpersonating(true);
+      const handleImpersonation = async () => {
+        try {
+          // Wait a bit for data service to be ready
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const userToImpersonate = await dataService.getUserById(impersonateId);
+          if (userToImpersonate) {
+            sessionStorage.setItem('current_user', JSON.stringify(userToImpersonate));
+            await refreshUser();
+            toast.success(`התחברת בהצלחה כ-${userToImpersonate.name}`);
+            // Remove query param
+            navigate(location.pathname, { replace: true });
+          } else {
+            // If not found, try to force refresh users first
+            await dataService.getUsers();
+            const retryUser = await dataService.getUserById(impersonateId);
+            if (retryUser) {
+              sessionStorage.setItem('current_user', JSON.stringify(retryUser));
+              await refreshUser();
+              toast.success(`התחברת בהצלחה כ-${retryUser.name}`);
+              navigate(location.pathname, { replace: true });
+            } else {
+              toast.error('מנהל לא נמצא - נסה שוב');
+            }
+          }
+        } catch (err) {
+          console.error('Impersonation error:', err);
+          toast.error('שגיאה בהתחברות כמנהל');
+        } finally {
+          setIsImpersonating(false);
+        }
+      };
+      handleImpersonation();
+    }
+  }, [location.search, refreshUser, navigate]);
+
+  if (isImpersonating) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-gray">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-lg font-bold text-luxury-blue">מתחבר למערכת...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) return <>{children}</>;
 
   return (
