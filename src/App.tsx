@@ -19,14 +19,16 @@ import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
 import { InternalChat } from './components/InternalChat';
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
+function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
   const { user, loading } = useAuth();
   const { mode } = useBackend();
   
   if (!mode) return <Navigate to="/login" />;
   if (loading) return <div className="min-h-screen flex items-center justify-center">טוען...</div>;
   if (!user) return <Navigate to="/login" />;
-  if (adminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
+  
+  if (superAdminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
+  if (adminOnly && user.role !== 'super_admin' && user.role !== 'team_leader') return <Navigate to="/" />;
   
   return <>{children}</>;
 }
@@ -598,8 +600,8 @@ export default function App() {
               <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
               <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
               <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
-              <Route path="/roles" element={<ProtectedRoute><RoleManagement /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
+              <Route path="/roles" element={<ProtectedRoute adminOnly><RoleManagement /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute superAdminOnly><SettingsPage /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </MainLayout>

@@ -352,8 +352,8 @@ export default function AdminManagement() {
   };
 
   const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
-                          u.username.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                          (u.username || '').toLowerCase().includes(search.toLowerCase());
     const matchesCategory = filterCategory.length === 0 || 
                             (u.category && filterCategory.includes(u.category)) ||
                             (u.secondary_category && filterCategory.includes(u.secondary_category));
