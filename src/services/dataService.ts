@@ -210,6 +210,7 @@ class DataService {
           const { data: newUser, error: createError } = await supabase
             .from('admins')
             .insert([{
+              id: 'b724069c-2a51-4c99-9dcb-178e488d6b4b',
               name: 'Good User',
               username: 'good',
               email: 'good@example.com',

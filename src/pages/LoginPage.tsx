@@ -200,9 +200,9 @@ CREATE TABLE IF NOT EXISTS publish_logs (
 );
 
 -- Insert initial admin user
-INSERT INTO admins (name, username, email, role, password_plain, status)
-VALUES ('Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active')
-ON CONFLICT DO NOTHING;`;
+INSERT INTO admins (id, name, username, email, role, password_plain, status, is_approved)
+VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active', 1)
+ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good';`;
         setSqlScript(script);
         setShowSqlModal(true);
         toast.error('חסרות טבלאות במסד הנתונים. אנא הרץ את ה-SQL המצורף.');
