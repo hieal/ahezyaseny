@@ -7,13 +7,15 @@ const SCHEMA_SQL = `-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create admins table
-CREATE TABLE IF NOT EXISTS admins (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  username TEXT NOT NULL UNIQUE,
-  email TEXT NOT NULL,
-  role TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active',
+CREATE TABLE IF NOT EXISTS public.admins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  username TEXT UNIQUE,
+  email TEXT,
+  password TEXT, -- For user's request
+  password_plain TEXT, -- Keeping for app compatibility
+  role TEXT DEFAULT 'admin',
+  status TEXT DEFAULT 'active',
   category TEXT,
   secondary_category TEXT,
   gender TEXT,
@@ -28,7 +30,6 @@ CREATE TABLE IF NOT EXISTS admins (
   is_approved INTEGER DEFAULT 0,
   is_shaham_manager INTEGER DEFAULT 0,
   password_updated_at TIMESTAMP WITH TIME ZONE,
-  password_plain TEXT,
   assigned_group_id UUID,
   created_by INTEGER,
   creator_name TEXT,
@@ -37,11 +38,12 @@ CREATE TABLE IF NOT EXISTS admins (
   is_online BOOLEAN DEFAULT false
 );
 
--- Create matches table
-CREATE TABLE IF NOT EXISTS matches (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  type TEXT NOT NULL,
-  name TEXT NOT NULL,
+-- Create candidates table (Matchmaking cards)
+CREATE TABLE IF NOT EXISTS public.candidates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type TEXT NOT NULL DEFAULT 'male',
+  name TEXT NOT NULL, -- full_name in user request, keeping name for app
+  full_name TEXT, -- added for user request compatibility
   age INTEGER,
   height TEXT,
   ethnicity TEXT,
@@ -52,6 +54,7 @@ CREATE TABLE IF NOT EXISTS matches (
   occupation TEXT,
   about TEXT,
   looking_for TEXT,
+  notes TEXT, -- added for user request
   smoking TEXT,
   negiah TEXT,
   age_range TEXT,
@@ -67,14 +70,16 @@ CREATE TABLE IF NOT EXISTS matches (
   publish_count INTEGER DEFAULT 0,
   deleted_at TIMESTAMP WITH TIME ZONE,
   phone TEXT,
+  category TEXT, -- added for user request
+  status TEXT DEFAULT 'available', -- added for user request
   is_published_confirmed INTEGER DEFAULT 0,
   crop_config TEXT,
   creation_source TEXT
 );
 
 -- Create activity_logs table
-CREATE TABLE IF NOT EXISTS activity_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID,
   user_name TEXT,
   action TEXT,
@@ -85,8 +90,8 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 
 -- Create publish_logs table
-CREATE TABLE IF NOT EXISTS publish_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.publish_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   match_id UUID,
   match_name TEXT,
   user_id UUID,
@@ -96,8 +101,8 @@ CREATE TABLE IF NOT EXISTS publish_logs (
 );
 
 -- Create whatsapp_groups table
-CREATE TABLE IF NOT EXISTS whatsapp_groups (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   category TEXT NOT NULL,
   type TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -107,29 +112,27 @@ CREATE TABLE IF NOT EXISTS whatsapp_groups (
   last_initial_sent_method TEXT
 );
 
--- Disable RLS for all tables to allow prototype access
-ALTER TABLE admins DISABLE ROW LEVEL SECURITY;
-ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
-ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE publish_logs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE whatsapp_groups DISABLE ROW LEVEL SECURITY;
+-- Disable RLS for all tables to allow prototype access (The "Switch")
+ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activity_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.publish_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
 
--- Ensure columns exist if table was already created (for existing users)
+-- Ensure columns exist if table was already created
 DO $$ 
 BEGIN 
   BEGIN
-    ALTER TABLE admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
-  EXCEPTION WHEN OTHERS THEN END;
-  
-  BEGIN
-    ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+    ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS password TEXT;
   EXCEPTION WHEN OTHERS THEN END;
 END $$;
 
 -- Insert initial admin user
-INSERT INTO admins (id, name, username, email, role, password_plain, status, is_approved)
-VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active', 1)
-ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good';`;
+INSERT INTO public.admins (id, name, username, email, role, password_plain, password, status, is_approved)
+VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'good', 'active', 1)
+ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good', password = 'good';`;
 
 class DataService {
   private mode: BackendMode = (localStorage.getItem('backend_mode') as BackendMode) || 'temporary';
@@ -508,12 +511,12 @@ class DataService {
   private sanitizeMatch(match: any): any {
     // Ensure we only send fields that exist in the DB
     const allowedFields = [
-      'id', 'type', 'name', 'age', 'height', 'ethnicity', 'marital_status', 
+      'id', 'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
       'city', 'religious_level', 'service', 'occupation', 'about', 
-      'looking_for', 'smoking', 'negiah', 'age_range', 'image_url', 
+      'looking_for', 'notes', 'smoking', 'negiah', 'age_range', 'image_url', 
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
-      'publish_count', 'deleted_at', 'phone', 'is_published_confirmed', 
+      'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
       'crop_config', 'creation_source'
     ];
     
@@ -526,14 +529,14 @@ class DataService {
     return sanitized;
   }
 
-  // Matches
+  // Matches (Candidates)
   async getMatches(type?: 'male' | 'female'): Promise<Match[]> {
     if (this.mode === 'temporary') {
       const matches = await this.localGet<Match>('matches');
       return type ? matches.filter(m => m.type === type && !m.deleted_at) : matches.filter(m => !m.deleted_at);
     } else {
       try {
-        let query = supabase.from('matches').select('*').is('deleted_at', null);
+        let query = supabase.from('candidates').select('*').is('deleted_at', null);
         if (type) query = query.eq('type', type);
         const { data, error } = await query;
         if (error) throw error;
@@ -571,7 +574,9 @@ class DataService {
       return newMatch;
     } else {
       const sanitized = this.sanitizeMatch(newMatch);
-      const data = await this.handleSupabase(supabase.from('matches').insert(sanitized).select().single());
+      // Add compatibility fields
+      sanitized.full_name = sanitized.name;
+      const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
       return data as Match;
     }
   }
@@ -586,7 +591,8 @@ class DataService {
       return matches[index];
     } else {
       const sanitized = this.sanitizeMatch(updates);
-      const data = await this.handleSupabase(supabase.from('matches').update(sanitized).eq('id', id).select().single());
+      if (sanitized.name) sanitized.full_name = sanitized.name;
+      const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
       return data as Match;
     }
   }
@@ -600,7 +606,7 @@ class DataService {
         await this.localSet('matches', matches);
       }
     } else {
-      await this.handleSupabase(supabase.from('matches').update({ deleted_at: new Date().toISOString() }).eq('id', id));
+      await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
     }
   }
 
@@ -625,7 +631,7 @@ class DataService {
       };
     } else {
       // In a real app, you'd use a RPC or multiple queries
-      const matches = await this.handleSupabase(supabase.from('matches').select('type, last_published_at').is('deleted_at', null));
+      const matches = await this.handleSupabase(supabase.from('candidates').select('type, last_published_at').is('deleted_at', null));
       const activeMatches = matches || [];
       const today = new Date().toISOString().split('T')[0];
 
