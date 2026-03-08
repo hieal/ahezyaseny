@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS admins (
   assigned_group_id UUID,
   created_by INTEGER,
   creator_name TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_seen TIMESTAMP WITH TIME ZONE,
+  is_online BOOLEAN DEFAULT false
 );
 
 -- Create matches table
@@ -111,6 +113,18 @@ ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE publish_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_groups DISABLE ROW LEVEL SECURITY;
+
+-- Ensure columns exist if table was already created (for existing users)
+DO $$ 
+BEGIN 
+  BEGIN
+    ALTER TABLE admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
+  EXCEPTION WHEN OTHERS THEN END;
+  
+  BEGIN
+    ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+  EXCEPTION WHEN OTHERS THEN END;
+END $$;
 
 -- Insert initial admin user
 INSERT INTO admins (id, name, username, email, role, password_plain, status, is_approved)
@@ -485,6 +499,33 @@ class DataService {
     }
   }
 
+  private sanitizeAdmin(user: any): any {
+    const { is_online, last_seen, ...sanitized } = user;
+    // Remove any other non-db fields if necessary
+    return sanitized;
+  }
+
+  private sanitizeMatch(match: any): any {
+    // Ensure we only send fields that exist in the DB
+    const allowedFields = [
+      'id', 'type', 'name', 'age', 'height', 'ethnicity', 'marital_status', 
+      'city', 'religious_level', 'service', 'occupation', 'about', 
+      'looking_for', 'smoking', 'negiah', 'age_range', 'image_url', 
+      'additional_images', 'created_by', 'creator_name', 'creator_category', 
+      'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
+      'publish_count', 'deleted_at', 'phone', 'is_published_confirmed', 
+      'crop_config', 'creation_source'
+    ];
+    
+    const sanitized: any = {};
+    allowedFields.forEach(field => {
+      if (match[field] !== undefined) {
+        sanitized[field] = match[field];
+      }
+    });
+    return sanitized;
+  }
+
   // Matches
   async getMatches(type?: 'male' | 'female'): Promise<Match[]> {
     if (this.mode === 'temporary') {
@@ -505,6 +546,9 @@ class DataService {
   }
 
   async createMatch(match: Omit<Match, 'id' | 'created_at'>): Promise<Match> {
+    const currentUserJson = localStorage.getItem('current_user');
+    const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
+
     const newMatch: Match = {
       ...match,
       id: this.generateUUID(),
@@ -512,7 +556,12 @@ class DataService {
       publish_count: 0,
       last_published_at: null,
       deleted_at: null,
-      is_published_confirmed: 0
+      is_published_confirmed: 0,
+      created_by: match.created_by || currentUser?.id,
+      creator_name: match.creator_name || currentUser?.name,
+      creator_category: match.creator_category || currentUser?.category,
+      creator_gender: match.creator_gender || currentUser?.gender,
+      creator_phone: match.creator_phone || currentUser?.phone
     };
 
     if (this.mode === 'temporary') {
@@ -521,7 +570,8 @@ class DataService {
       await this.localSet('matches', matches);
       return newMatch;
     } else {
-      const data = await this.handleSupabase(supabase.from('matches').insert(newMatch).select().single());
+      const sanitized = this.sanitizeMatch(newMatch);
+      const data = await this.handleSupabase(supabase.from('matches').insert(sanitized).select().single());
       return data as Match;
     }
   }
@@ -535,7 +585,8 @@ class DataService {
       await this.localSet('matches', matches);
       return matches[index];
     } else {
-      const data = await this.handleSupabase(supabase.from('matches').update(updates).eq('id', id).select().single());
+      const sanitized = this.sanitizeMatch(updates);
+      const data = await this.handleSupabase(supabase.from('matches').update(sanitized).eq('id', id).select().single());
       return data as Match;
     }
   }
@@ -629,7 +680,8 @@ class DataService {
       await this.localSet('mock_admins', users);
       return newUser;
     } else {
-      const data = await this.handleSupabase(supabase.from('admins').insert(newUser).select().single());
+      const sanitized = this.sanitizeAdmin(newUser);
+      const data = await this.handleSupabase(supabase.from('admins').insert(sanitized).select().single());
       return data as User;
     }
   }
@@ -662,7 +714,8 @@ class DataService {
       if (updates.password_plain) {
         updates.password_updated_at = new Date().toISOString();
       }
-      const data = await this.handleSupabase(supabase.from('admins').update(updates).eq('id', id).select().single());
+      const sanitized = this.sanitizeAdmin(updates);
+      const data = await this.handleSupabase(supabase.from('admins').update(sanitized).eq('id', id).select().single());
       return data as User;
     }
   }
