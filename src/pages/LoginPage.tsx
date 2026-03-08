@@ -98,7 +98,18 @@ export default function LoginPage() {
   const handleSyncSchema = async () => {
     setLoading(true);
     try {
-      // Check connection and tables
+      // Attempt automatic sync first
+      const syncResult = await dataService.syncSchema();
+      
+      if (syncResult.success) {
+        toast.success(syncResult.message);
+        setMode('production');
+        localStorage.setItem('backend_mode', 'production');
+        setTimeout(() => window.location.reload(), 1000);
+        return;
+      }
+
+      // If auto-sync fails, check connection and tables to show manual SQL if needed
       const { error: adminsError } = await supabase.from('admins').select('id').limit(1);
       const { error: matchesError } = await supabase.from('matches').select('id').limit(1);
 
@@ -108,104 +119,11 @@ export default function LoginPage() {
         localStorage.setItem('backend_mode', 'production');
         setTimeout(() => window.location.reload(), 1000);
       } else {
-        // Generate SQL
-        const script = `-- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Create admins table
-CREATE TABLE IF NOT EXISTS admins (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  username TEXT NOT NULL UNIQUE,
-  email TEXT NOT NULL,
-  role TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active',
-  category TEXT,
-  secondary_category TEXT,
-  gender TEXT,
-  phone TEXT,
-  google_login_allowed TEXT DEFAULT 'false',
-  avatar_url TEXT,
-  deleted_at TIMESTAMP WITH TIME ZONE,
-  daily_message_template TEXT,
-  daily_message_template_male TEXT,
-  daily_message_template_female TEXT,
-  is_from_file INTEGER DEFAULT 0,
-  is_approved INTEGER DEFAULT 0,
-  is_shaham_manager INTEGER DEFAULT 0,
-  password_updated_at TIMESTAMP WITH TIME ZONE,
-  password_plain TEXT,
-  assigned_group_id UUID,
-  created_by INTEGER,
-  creator_name TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create matches table
-CREATE TABLE IF NOT EXISTS matches (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  type TEXT NOT NULL,
-  name TEXT NOT NULL,
-  age INTEGER,
-  height TEXT,
-  ethnicity TEXT,
-  marital_status TEXT,
-  city TEXT,
-  religious_level TEXT,
-  service TEXT,
-  occupation TEXT,
-  about TEXT,
-  looking_for TEXT,
-  smoking TEXT,
-  negiah TEXT,
-  age_range TEXT,
-  image_url TEXT,
-  additional_images TEXT,
-  created_by UUID,
-  creator_name TEXT,
-  creator_category TEXT,
-  creator_gender TEXT,
-  creator_phone TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  last_published_at TIMESTAMP WITH TIME ZONE,
-  publish_count INTEGER DEFAULT 0,
-  deleted_at TIMESTAMP WITH TIME ZONE,
-  phone TEXT,
-  is_published_confirmed INTEGER DEFAULT 0,
-  crop_config TEXT,
-  creation_source TEXT
-);
-
--- Create activity_logs table
-CREATE TABLE IF NOT EXISTS activity_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID,
-  user_name TEXT,
-  action TEXT,
-  details TEXT,
-  entity_type TEXT,
-  entity_id UUID,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create publish_logs table
-CREATE TABLE IF NOT EXISTS publish_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  match_id UUID,
-  match_name TEXT,
-  user_id UUID,
-  user_name TEXT,
-  group_name TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Insert initial admin user
-INSERT INTO admins (id, name, username, email, role, password_plain, status, is_approved)
-VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active', 1)
-ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good';`;
+        // Show manual SQL script
+        const script = dataService.getSchemaSQL();
         setSqlScript(script);
         setShowSqlModal(true);
-        toast.error('חסרות טבלאות במסד הנתונים. אנא הרץ את ה-SQL המצורף.');
+        toast.error('חסרות טבלאות במסד הנתונים. אנא הרץ את ה-SQL המצורף ב-Dashboard של Supabase.');
       }
     } catch (err) {
       console.error(err);

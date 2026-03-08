@@ -1,7 +1,121 @@
 import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats } from '../types';
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 
 export type BackendMode = 'temporary' | 'production';
+
+const SCHEMA_SQL = `-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Create admins table
+CREATE TABLE IF NOT EXISTS admins (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  category TEXT,
+  secondary_category TEXT,
+  gender TEXT,
+  phone TEXT,
+  google_login_allowed TEXT DEFAULT 'false',
+  avatar_url TEXT,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  daily_message_template TEXT,
+  daily_message_template_male TEXT,
+  daily_message_template_female TEXT,
+  is_from_file INTEGER DEFAULT 0,
+  is_approved INTEGER DEFAULT 0,
+  is_shaham_manager INTEGER DEFAULT 0,
+  password_updated_at TIMESTAMP WITH TIME ZONE,
+  password_plain TEXT,
+  assigned_group_id UUID,
+  created_by INTEGER,
+  creator_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create matches table
+CREATE TABLE IF NOT EXISTS matches (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  age INTEGER,
+  height TEXT,
+  ethnicity TEXT,
+  marital_status TEXT,
+  city TEXT,
+  religious_level TEXT,
+  service TEXT,
+  occupation TEXT,
+  about TEXT,
+  looking_for TEXT,
+  smoking TEXT,
+  negiah TEXT,
+  age_range TEXT,
+  image_url TEXT,
+  additional_images TEXT,
+  created_by UUID,
+  creator_name TEXT,
+  creator_category TEXT,
+  creator_gender TEXT,
+  creator_phone TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_published_at TIMESTAMP WITH TIME ZONE,
+  publish_count INTEGER DEFAULT 0,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  phone TEXT,
+  is_published_confirmed INTEGER DEFAULT 0,
+  crop_config TEXT,
+  creation_source TEXT
+);
+
+-- Create activity_logs table
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID,
+  user_name TEXT,
+  action TEXT,
+  details TEXT,
+  entity_type TEXT,
+  entity_id UUID,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create publish_logs table
+CREATE TABLE IF NOT EXISTS publish_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  match_id UUID,
+  match_name TEXT,
+  user_id UUID,
+  user_name TEXT,
+  group_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create whatsapp_groups table
+CREATE TABLE IF NOT EXISTS whatsapp_groups (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  category TEXT NOT NULL,
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  link TEXT NOT NULL,
+  whapi_id TEXT,
+  last_initial_sent TIMESTAMP WITH TIME ZONE,
+  last_initial_sent_method TEXT
+);
+
+-- Disable RLS for all tables to allow prototype access
+ALTER TABLE admins DISABLE ROW LEVEL SECURITY;
+ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE publish_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_groups DISABLE ROW LEVEL SECURITY;
+
+-- Insert initial admin user
+INSERT INTO admins (id, name, username, email, role, password_plain, status, is_approved)
+VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'active', 1)
+ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good';`;
 
 class DataService {
   private mode: BackendMode = (localStorage.getItem('backend_mode') as BackendMode) || 'temporary';
@@ -28,20 +142,54 @@ class DataService {
     try {
       const { data, error } = await promise;
       if (error) {
+        console.error('Supabase error details:', error);
         // PostgREST error codes: 42P01 = relation does not exist (table missing)
         if (error.code === '42P01' || (error.message && error.message.includes('does not exist'))) {
           throw new Error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+        }
+        // RLS error or permission denied
+        if (error.code === '42501' || error.message?.includes('permission denied')) {
+          throw new Error('שגיאת הרשאות (RLS). אנא וודא שביטלת את ה-RLS ב-Supabase עבור כל הטבלאות.');
         }
         throw error;
       }
       return data;
     } catch (err: any) {
       console.error('Supabase error:', err);
-      if (err.message && err.message.includes('סנכרון')) {
+      if (err.message && (err.message.includes('סנכרון') || err.message.includes('הרשאות'))) {
         throw err;
       }
-      throw new Error('שגיאה בחיבור לשרת. אנא וודא שהמפתחות תקינים או עבור לשרת זמני.');
+      throw new Error(`שגיאה בחיבור לשרת: ${err.message || 'וודא שהמפתחות תקינים'}`);
     }
+  }
+
+  async syncSchema(): Promise<{ success: boolean; message: string }> {
+    if (this.mode === 'temporary') return { success: true, message: 'מצב זמני - אין צורך בסנכרון' };
+
+    try {
+      // Attempt to run SQL via RPC if it exists
+      const { error } = await supabaseAdmin.rpc('exec_sql', { sql: SCHEMA_SQL });
+      
+      if (error) {
+        console.error('Schema sync RPC error:', error);
+        return { 
+          success: false, 
+          message: 'לא ניתן היה לסנכרן אוטומטית. אנא הרץ את ה-SQL ידנית ב-Supabase Dashboard.' 
+        };
+      }
+
+      return { success: true, message: 'סנכרון סכמה הושלם בהצלחה!' };
+    } catch (err: any) {
+      console.error('Schema sync catch error:', err);
+      return { 
+        success: false, 
+        message: `שגיאה בסנכרון: ${err.message}` 
+      };
+    }
+  }
+
+  getSchemaSQL(): string {
+    return SCHEMA_SQL;
   }
 
   private generateUUID(): string {
@@ -401,7 +549,7 @@ class DataService {
         await this.localSet('matches', matches);
       }
     } else {
-      await supabase.from('matches').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+      await this.handleSupabase(supabase.from('matches').update({ deleted_at: new Date().toISOString() }).eq('id', id));
     }
   }
 
@@ -525,7 +673,7 @@ class DataService {
       const filtered = users.filter(u => u.id !== id);
       await this.localSet('mock_admins', filtered);
     } else {
-      await supabase.from('admins').delete().eq('id', id);
+      await this.handleSupabase(supabase.from('admins').delete().eq('id', id));
     }
   }
 
@@ -542,7 +690,7 @@ class DataService {
       logs.unshift(newLog);
       await this.localSet('activity_logs', logs.slice(0, 1000));
     } else {
-      await supabase.from('activity_logs').insert(newLog);
+      await this.handleSupabase(supabase.from('activity_logs').insert(newLog));
     }
   }
 
@@ -639,13 +787,13 @@ class DataService {
         await this.localSet('matches', matches);
       }
     } else {
-      await supabase.from('publish_logs').insert(newLog);
+      await this.handleSupabase(supabase.from('publish_logs').insert(newLog));
       // Supabase trigger or manual update for match
-      const { data: match } = await supabase.from('matches').select('publish_count').eq('id', matchId).single();
-      await supabase.from('matches').update({
+      const match = await this.handleSupabase(supabase.from('matches').select('publish_count').eq('id', matchId).single());
+      await this.handleSupabase(supabase.from('matches').update({
         last_published_at: now,
-        publish_count: (match?.publish_count || 0) + 1
-      }).eq('id', matchId);
+        publish_count: ((match as any)?.publish_count || 0) + 1
+      }).eq('id', matchId));
     }
   }
 
