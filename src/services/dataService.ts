@@ -161,8 +161,12 @@ class DataService {
       if (error) {
         console.error('Supabase error details:', error);
         // PostgREST error codes: 42P01 = relation does not exist (table missing)
-        if (error.code === '42P01' || (error.message && error.message.includes('does not exist'))) {
-          throw new Error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+        if (error.code === '42P01') {
+          throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+        }
+        // 42703 = undefined_column (column missing)
+        if (error.code === '42703' || (error.message && error.message.includes('does not exist'))) {
+          throw new Error(`חסרה עמודה במסד הנתונים (${error.message}). אנא הרץ את ה-SQL המלא כדי להוסיף את כל העמודות החסרות.`);
         }
         // RLS error or permission denied
         if (error.code === '42501' || error.message?.includes('permission denied')) {
@@ -364,8 +368,13 @@ class DataService {
         .limit(1)
         .single();
         
-      if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
-        throw new Error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+      if (error) {
+        if (error.code === '42P01') {
+          throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
+        }
+        if (error.code === '42703' || error.message?.includes('does not exist')) {
+          throw new Error(`חסרה עמודה במסד הנתונים: ${error.message}. אנא הרץ את ה-SQL המלא כדי להוסיף את כל העמודות החסרות.`);
+        }
       }
         
       // Special handling for 'good' user: Auto-create or Auto-fix password
@@ -848,8 +857,8 @@ class DataService {
     } else {
       await this.handleSupabase(supabase.from('publish_logs').insert(newLog));
       // Supabase trigger or manual update for match
-      const match = await this.handleSupabase(supabase.from('matches').select('publish_count').eq('id', matchId).single());
-      await this.handleSupabase(supabase.from('matches').update({
+      const match = await this.handleSupabase(supabase.from('candidates').select('publish_count').eq('id', matchId).single());
+      await this.handleSupabase(supabase.from('candidates').update({
         last_published_at: now,
         publish_count: ((match as any)?.publish_count || 0) + 1
       }).eq('id', matchId));

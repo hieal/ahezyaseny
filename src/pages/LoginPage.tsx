@@ -104,8 +104,8 @@ export default function LoginPage() {
       }
 
       // If auto-sync fails, check connection and tables to show manual SQL if needed
-      const { error: adminsError } = await supabase.from('admins').select('id').limit(1);
-      const { error: matchesError } = await supabase.from('matches').select('id').limit(1);
+      const { error: adminsError } = await supabase.from('admins').select('id, phone').limit(1);
+      const { error: matchesError } = await supabase.from('candidates').select('id, full_name').limit(1);
 
       if (!adminsError && !matchesError) {
         toast.success('חיבור תקין ומבנה נתונים מאומת!');
