@@ -269,11 +269,17 @@ class DataService {
       const activeMatches = matches.filter(m => !m.deleted_at);
       const today = new Date().toISOString().split('T')[0];
       
+      const users = await this.localGet<User>('users');
+      const activeAdmins = users.filter(u => u.status === 'active');
+
       return {
         males: activeMatches.filter(m => m.type === 'male').length,
         females: activeMatches.filter(m => m.type === 'female').length,
         publishedToday: activeMatches.filter(m => m.last_published_at?.startsWith(today)).length,
-        neverPublished: activeMatches.filter(m => !m.last_published_at).length
+        neverPublished: activeMatches.filter(m => !m.last_published_at).length,
+        totalAdmins: activeAdmins.length,
+        adminMales: activeAdmins.filter(u => u.gender === 'male').length,
+        adminFemales: activeAdmins.filter(u => u.gender === 'female').length
       };
     } else {
       // In a real app, you'd use a RPC or multiple queries
@@ -281,11 +287,17 @@ class DataService {
       const activeMatches = matches || [];
       const today = new Date().toISOString().split('T')[0];
 
+      const { data: users } = await supabase.from('admins').select('gender, status').eq('status', 'active');
+      const activeAdmins = users || [];
+
       return {
         males: activeMatches.filter((m: any) => m.type === 'male').length,
         females: activeMatches.filter((m: any) => m.type === 'female').length,
         publishedToday: activeMatches.filter((m: any) => m.last_published_at?.startsWith(today)).length,
-        neverPublished: activeMatches.filter((m: any) => !m.last_published_at).length
+        neverPublished: activeMatches.filter((m: any) => !m.last_published_at).length,
+        totalAdmins: activeAdmins.length,
+        adminMales: activeAdmins.filter((u: any) => u.gender === 'male').length,
+        adminFemales: activeAdmins.filter((u: any) => u.gender === 'female').length
       };
     }
   }

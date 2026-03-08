@@ -6,10 +6,10 @@ import { toast } from 'react-hot-toast';
 
 interface Message {
   id: number;
-  sender_id: number;
-  receiver_id: number;
+  sender_id: string;
+  receiver_id: string;
   text: string;
-  match_id?: number;
+  match_id?: string;
   match_name?: string;
   match_type?: 'male' | 'female';
   match_age?: number;
@@ -19,7 +19,7 @@ interface Message {
 }
 
 interface InternalChatProps {
-  otherUser: { id: number, name: string };
+  otherUser: { id: string, name: string };
   onClose: () => void;
 }
 
@@ -70,14 +70,14 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
 
   useEffect(scrollToBottom, [messages]);
 
-  const handleSend = async (e?: React.FormEvent, matchId?: number) => {
+  const handleSend = async (e?: React.FormEvent, matchId?: string) => {
     e?.preventDefault();
     if (!newMessage.trim() && !matchId) return;
 
     // Mock send for temporary mode
     const newMsg: Message = {
       id: Date.now(),
-      sender_id: user?.id || 0,
+      sender_id: user?.id || '0',
       receiver_id: otherUser.id,
       text: newMessage || 'שלחתי לך הצעה למשודך',
       match_id: matchId,

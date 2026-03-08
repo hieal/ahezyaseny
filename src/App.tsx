@@ -17,6 +17,7 @@ import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
+import { InternalChat } from './components/InternalChat';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -41,6 +42,14 @@ function Sidebar() {
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
+  const [showChat, setShowChat] = React.useState<{id: string, name: string} | null>(null);
+  const [onlineUsers, setOnlineUsers] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (allAdmins.length > 0) {
+      setOnlineUsers(allAdmins.map(a => a.id));
+    }
+  }, [allAdmins]);
 
   React.useEffect(() => {
     if (user) {
@@ -404,6 +413,16 @@ function Sidebar() {
               </button>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Internal Chat */}
+      <AnimatePresence>
+        {showChat && (
+          <InternalChat 
+            otherUser={showChat} 
+            onClose={() => setShowChat(null)} 
+          />
         )}
       </AnimatePresence>
 

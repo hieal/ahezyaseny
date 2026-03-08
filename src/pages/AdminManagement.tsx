@@ -77,7 +77,8 @@ export default function AdminManagement() {
           ...formData,
           role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
           status: formData.status as "active" | "inactive",
-          gender: (formData.gender || undefined) as "male" | "female" | undefined
+          gender: (formData.gender || undefined) as "male" | "female" | undefined,
+          google_login_allowed: formData.google_login_allowed as "true" | "false"
         });
         toast.success('המנהל עודכן');
       } else {
@@ -86,6 +87,7 @@ export default function AdminManagement() {
           role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
+          google_login_allowed: formData.google_login_allowed as "true" | "false",
           deleted_at: null,
           daily_message_template: null,
           daily_message_template_male: null,
@@ -357,6 +359,20 @@ export default function AdminManagement() {
     return 0;
   });
 
+  const getCategoryLegendColor = (cat: string) => {
+    const colors: Record<string, string> = {
+      '18-22': 'bg-green-500 border-green-600',
+      '23-27': 'bg-blue-500 border-blue-600',
+      '28-32': 'bg-indigo-500 border-indigo-600',
+      '33-40': 'bg-purple-500 border-purple-600',
+      '41-65': 'bg-pink-500 border-pink-600',
+      'פרויקט שח"ם': 'bg-emerald-500 border-emerald-600',
+      'פרויקט קומי אורי': 'bg-amber-500 border-amber-600',
+      'פרויקט אור': 'bg-orange-500 border-orange-600'
+    };
+    return colors[cat] || 'bg-slate-400 border-slate-500';
+  };
+
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -547,7 +563,7 @@ export default function AdminManagement() {
         </div>
         {CATEGORIES.map(cat => (
           <div key={cat} className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full border ${getCategoryColor(cat).split(' ')[0]}`}></div>
+            <div className={`w-3 h-3 rounded-full border ${getCategoryLegendColor(cat)}`}></div>
             <span className="text-[10px] font-bold text-slate-600">{cat}</span>
           </div>
         ))}

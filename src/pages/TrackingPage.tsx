@@ -112,7 +112,7 @@ export default function TrackingPage() {
     fetchMatches();
   }, [filters]);
 
-  const handleConfirmPublish = async (matchId: number, confirmed: boolean) => {
+  const handleConfirmPublish = async (matchId: string, confirmed: boolean) => {
     try {
       // const res = await fetch(`/api/matches/${matchId}/confirm-publish`, {
       //   method: 'PUT',
@@ -128,7 +128,7 @@ export default function TrackingPage() {
     }
   };
 
-  const handleUpdatePhone = async (matchId: number, phone: string) => {
+  const handleUpdatePhone = async (matchId: string, phone: string) => {
     try {
       // const res = await fetch(`/api/matches/${matchId}/phone`, {
       //   method: 'PUT',

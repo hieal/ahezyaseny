@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play } from 'lucide-react';
+import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 
@@ -15,6 +16,11 @@ export default function SettingsPage() {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
+  
+  // Modals state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
+  const [showLimitModal, setShowLimitModal] = useState(false);
 
   useEffect(() => {
     dataService.getSettings().then(data => {
@@ -41,13 +47,27 @@ export default function SettingsPage() {
     }
   };
 
-  const addGroup = async () => {
+  const addGroup = async (category?: string) => {
+    const targetCategory = category || CATEGORIES[0];
+    const existingGroups = whatsappGroups.filter(g => g.category === targetCategory);
+
+    if (existingGroups.length >= 2) {
+      setShowLimitModal(true);
+      return;
+    }
+
+    // Auto-determine type if one group exists
+    let type: 'male' | 'female' = 'male';
+    if (existingGroups.length === 1) {
+      type = existingGroups[0].type === 'male' ? 'female' : 'male';
+    }
+
     const newGroup = {
       name: 'קבוצה חדשה',
       link: '',
       whapi_id: '',
-      category: CATEGORIES[0],
-      type: 'male' as const,
+      category: targetCategory,
+      type: type,
       last_initial_sent: null
     };
     
@@ -61,13 +81,21 @@ export default function SettingsPage() {
   };
 
   const deleteGroup = async (id: string) => {
-    if (!confirm('האם למחוק קבוצה זו?')) return;
+    setGroupToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!groupToDelete) return;
     try {
-      await dataService.deleteWhatsAppGroup(id);
-      setWhatsappGroups(prev => prev.filter(g => g.id !== id));
+      await dataService.deleteWhatsAppGroup(groupToDelete);
+      setWhatsappGroups(prev => prev.filter(g => g.id !== groupToDelete));
       toast.success('קבוצה נמחקה');
     } catch (err) {
       toast.error('שגיאה במחיקה');
+    } finally {
+      setShowDeleteModal(false);
+      setGroupToDelete(null);
     }
   };
 
@@ -116,7 +144,7 @@ export default function SettingsPage() {
               <h2 className="font-extrabold text-2xl tracking-tight">ניהול קבוצות WhatsApp</h2>
             </div>
             <button 
-              onClick={addGroup}
+              onClick={() => addGroup()}
               className="btn-primary flex items-center gap-2 px-4 py-2 text-sm"
             >
               <Plus size={18} />
@@ -154,7 +182,16 @@ export default function SettingsPage() {
           <div className="space-y-8">
             {CATEGORIES.filter(cat => selectedCategories.includes(cat)).map(cat => (
               <div key={cat} className="space-y-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                <h3 className="font-extrabold text-lg text-luxury-blue border-b border-slate-200 pb-2 mb-4">{cat}</h3>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
+                  <h3 className="font-extrabold text-lg text-luxury-blue">{cat}</h3>
+                  <button 
+                    onClick={() => addGroup(cat)}
+                    className="flex items-center gap-1 text-xs font-bold text-luxury-blue hover:bg-blue-50 px-2 py-1 rounded-lg transition-all"
+                  >
+                    <Plus size={14} />
+                    הוסף קבוצה ל{cat}
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 gap-6">
                   {whatsappGroups.filter(g => g.category === cat).map(group => (
                     <div key={group.id} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -379,6 +416,74 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">מחיקת קבוצה</h3>
+                <p className="text-slate-500 font-medium">האם אתה בטוח שברצונך למחוק קבוצה זו? פעולה זו אינה הפיכה.</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg hover:bg-red-600 transition-all"
+                >
+                  מחק קבוצה
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Limit Modal */}
+      <AnimatePresence>
+        {showLimitModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center mx-auto">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">מגבלת קבוצות</h3>
+                <p className="text-slate-500 font-medium">
+                  מוגבל לשני קבוצות לכל קטגוריה:
+                  <br />
+                  קבוצה אחת של בנים וקבוצה אחת של בנות.
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowLimitModal(false)}
+                className="w-full py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+              >
+                הבנתי
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -881,11 +881,39 @@ export default function Dashboard() {
             <button 
               onClick={async () => {
                 try {
-                  // const res = await fetch('/api/matches/demo', { method: 'POST' });
-                  // if (res.ok) {
-                    toast.success('נוצר משודך דמו בהצלחה');
-                    fetchData();
-                  // }
+                  const demoMatch = {
+                    type: Math.random() > 0.5 ? 'male' : 'female',
+                    name: 'משודך דמו',
+                    age: 25,
+                    height: '1.75',
+                    ethnicity: 'אשכנזי',
+                    marital_status: 'רווק/ה',
+                    city: 'ירושלים',
+                    religious_level: 'חרדי',
+                    service: 'לא',
+                    occupation: 'סטודנט',
+                    about: 'בחור טוב',
+                    looking_for: 'בחורה טובה',
+                    smoking: 'לא',
+                    negiah: 'כן',
+                    age_range: '20-30',
+                    image_url: null,
+                    additional_images: null,
+                    created_by: user?.id || 'system',
+                    creator_name: user?.name || 'System',
+                    creator_category: user?.category || 'General',
+                    created_at: new Date().toISOString(),
+                    publish_count: 0,
+                    last_published_at: null,
+                    deleted_at: null,
+                    is_published_confirmed: 0,
+                    crop_config: null,
+                    creation_source: 'manual'
+                  };
+                  
+                  await dataService.createMatch(demoMatch as any);
+                  toast.success('נוצר משודך דמו בהצלחה');
+                  fetchData();
                 } catch (err) {
                   toast.error('שגיאה ביצירת דמו');
                 }
