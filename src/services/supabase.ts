@@ -23,5 +23,8 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
     },
+    global: {
+      fetch: (...args) => fetch(...args),
+    },
   }
 );

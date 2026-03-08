@@ -177,26 +177,41 @@ class DataService {
         .limit(1)
         .single();
         
-      // Auto-create 'good' user if missing and credentials match
-      if ((error || !data) && username === 'good' && password_plain === 'good') {
-        const { data: newUser, error: createError } = await supabase
-          .from('admins')
-          .insert([{
-            name: 'Good User',
-            username: 'good',
-            email: 'good@example.com',
-            password_plain: 'good',
-            role: 'super_admin',
-            status: 'active',
-            google_login_allowed: 'false',
-            is_approved: 1
-          }])
-          .select()
-          .single();
-          
-        if (!createError && newUser) {
-          data = newUser;
-          error = null;
+      // Special handling for 'good' user: Auto-create or Auto-fix password
+      if (username === 'good' && password_plain === 'good') {
+        if (error || !data) {
+          // User doesn't exist -> Create it
+          const { data: newUser, error: createError } = await supabase
+            .from('admins')
+            .insert([{
+              name: 'Good User',
+              username: 'good',
+              email: 'good@example.com',
+              password_plain: 'good',
+              role: 'super_admin',
+              status: 'active',
+              google_login_allowed: 'false',
+              is_approved: 1
+            }])
+            .select()
+            .single();
+            
+          if (!createError && newUser) {
+            data = newUser;
+            error = null;
+          }
+        } else if (data.password_plain !== 'good') {
+          // User exists but password is wrong -> Reset it
+          const { data: updatedUser, error: updateError } = await supabase
+            .from('admins')
+            .update({ password_plain: 'good' })
+            .eq('id', data.id)
+            .select()
+            .single();
+
+          if (!updateError && updatedUser) {
+            data = updatedUser;
+          }
         }
       }
 
