@@ -28,6 +28,7 @@ interface WhatsAppWidgetProps {
   lastInitialSent?: string;
   senderName?: string;
   mode?: 'full' | 'chat-only';
+  defaultTab?: 'status' | 'content' | 'chat';
   onClose?: () => void;
   onUpdateOpening?: (newTemplate: string) => void;
   onRefreshStatus?: () => void;
@@ -48,6 +49,7 @@ export function WhatsAppWidget({
   lastInitialSent,
   senderName,
   mode = 'full',
+  defaultTab,
   onClose,
   onUpdateOpening,
   onRefreshStatus,
@@ -62,7 +64,9 @@ export function WhatsAppWidget({
   const [includeImage, setIncludeImage] = useState(true);
   const [includeOpening, setIncludeOpening] = useState(!isOpeningSent);
   const [showPreview, setShowPreview] = useState(true);
-  const [activeTab, setActiveTab] = useState<'status' | 'content' | 'chat'>(mode === 'chat-only' ? 'chat' : 'status');
+  const [activeTab, setActiveTab] = useState<'status' | 'content' | 'chat'>(
+    defaultTab || (mode === 'chat-only' ? 'chat' : 'status')
+  );
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const quickReplies = [
@@ -173,7 +177,16 @@ export function WhatsAppWidget({
     const text = includeText ? (matchMessage || `*כרטיס חדש במערכת:*
 שם: ${currentMatch.name}
 גיל: ${currentMatch.age}
-עיר: ${currentMatch.city}
+גובה: ${currentMatch.height || '---'}
+עדה: ${currentMatch.ethnicity || '---'}
+מצב משפחתי: ${currentMatch.marital_status || '---'}
+עיר: ${currentMatch.city || '---'}
+מגזר: ${currentMatch.religious_level || '---'}
+שירות: ${currentMatch.service || '---'}
+עיסוק: ${currentMatch.occupation || '---'}
+מעשן/ת: ${currentMatch.smoking || '---'}
+שומר/ת נגיעה: ${currentMatch.negiah || '---'}
+טווח גילאים: ${currentMatch.age_range || '---'}
 על עצמי: ${currentMatch.about}`) : "";
     
     if (!text && !includeImage) {

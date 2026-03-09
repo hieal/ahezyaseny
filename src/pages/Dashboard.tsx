@@ -45,9 +45,10 @@ export default function Dashboard() {
   }, [user]);
   const [templateGender, setTemplateGender] = useState<'all' | 'male' | 'female'>('all');
   const [publishText, setPublishText] = useState(true);
+  const [publishModalTab, setPublishModalTab] = useState<'status' | 'content' | 'chat'>('status');
   const [isInitialMarkedSent, setIsInitialMarkedSent] = useState(false);
   const [displaySize, setDisplaySize] = useState<'small' | 'medium' | 'large'>('medium');
-  const [showMinimal, setShowMinimal] = useState(false);
+  const [showMinimal, setShowMinimal] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -86,6 +87,7 @@ export default function Dashboard() {
   };
 
   const [showManagersViewerModal, setShowManagersViewerModal] = useState(false);
+  const [showDesignedCardModal, setShowDesignedCardModal] = useState(false);
   const [viewerSelectedManagerId, setViewerSelectedManagerId] = useState<string | null>(null);
   const [viewerAffiliation, setViewerAffiliation] = useState<string>('all');
   const [viewerSearch, setViewerSearch] = useState('');
@@ -169,7 +171,7 @@ export default function Dashboard() {
     setIsGenerating(true);
     const canvas = document.createElement('canvas');
     canvas.width = 1600; 
-    canvas.height = 3200; // Increased height for more content
+    canvas.height = 3400; // Increased height for more content and breathing room
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
@@ -183,12 +185,12 @@ export default function Dashboard() {
     const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 3200);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 3400);
     gradient.addColorStop(0, loveBg);
     gradient.addColorStop(0.5, lightAccent);
     gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1600, 3200);
+    ctx.fillRect(0, 0, 1600, 3400);
 
     // Decorative Frame with Glow
     ctx.save();
@@ -196,7 +198,7 @@ export default function Dashboard() {
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 20;
-    ctx.strokeRect(margin, margin, 1600 - margin*2, 3200 - margin*2);
+    ctx.strokeRect(margin, margin, 1600 - margin*2, 3400 - margin*2);
     ctx.restore();
     
     // Header Section
@@ -355,7 +357,7 @@ export default function Dashboard() {
       ctx.font = 'bold 44px sans-serif';
       
       let value = String(item.value || '---');
-      const maxValWidth = 400;
+      const maxValWidth = 550;
       if (ctx.measureText(value).width > maxValWidth) {
         while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
           value = value.slice(0, -1);
@@ -425,21 +427,46 @@ export default function Dashboard() {
 
     if (match.looking_for) {
       const height = drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY);
-      currentY += height + 60;
+      currentY += height + 100; // Increased spacing
     }
 
     // Footer
-    const footerY = 3050;
+    const footerY = 3250; // Moved down
+    
+    // Separator Line
+    ctx.beginPath();
+    ctx.moveTo(margin + 200, footerY - 120);
+    ctx.lineTo(1600 - margin - 200, footerY - 120);
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = 0.3;
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+
+    // Glowing Manager Name
+    ctx.save();
+    ctx.shadowBlur = 35;
+    ctx.shadowColor = accentColor;
     ctx.fillStyle = accentColor;
-    ctx.font = 'bold 52px sans-serif';
+    ctx.font = 'italic bold 68px serif';
     ctx.textAlign = 'center';
     const creatorText = `נשלח על ידי ${match.creator_gender === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    
+    // Draw text with multiple layers for intense glow
     ctx.fillText(creatorText, 800, footerY);
+    ctx.shadowBlur = 15;
+    ctx.fillText(creatorText, 800, footerY);
+    ctx.restore();
     
     if (match.creator_phone || user?.phone) {
-      ctx.font = 'bold 40px sans-serif';
-      ctx.fillStyle = '#64748b';
-      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 60);
+      ctx.save();
+      ctx.shadowBlur = 25;
+      ctx.shadowColor = '#0f172a'; // Dark glow
+      ctx.font = 'bold 58px sans-serif'; // Larger
+      ctx.fillStyle = '#0f172a'; // Different color
+      ctx.textAlign = 'center';
+      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 120); // Moved down more
+      ctx.restore();
     }
 
     setGeneratedImageUrl(canvas.toDataURL('image/png'));
@@ -1104,78 +1131,104 @@ export default function Dashboard() {
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">רשימת מנהלים</p>
                   <button 
                     onClick={() => setViewerSelectedManagerId(null)}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${!viewerSelectedManagerId ? 'bg-luxury-blue text-white shadow-md' : 'hover:bg-white text-slate-600'}`}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${!viewerSelectedManagerId ? 'bg-luxury-blue text-white shadow-lg shadow-luxury-blue/20 ring-2 ring-luxury-blue/50' : 'hover:bg-white text-slate-600 border border-transparent hover:border-slate-100'}`}
                   >
-                    <span className="font-bold">כל המנהלים</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${!viewerSelectedManagerId ? 'bg-white/20' : 'bg-slate-200'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${!viewerSelectedManagerId ? 'bg-white/20' : 'bg-slate-100 text-slate-400'}`}>
+                        <Globe size={14} />
+                      </div>
+                      <span className="font-bold text-sm">כל המנהלים</span>
+                    </div>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${!viewerSelectedManagerId ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>
                       {matches?.length || 0}
                     </span>
                   </button>
                   {allUsers?.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-slate-400 animate-pulse">טוען מנהלים...</div>
+                    <div className="p-8 text-center">
+                      <div className="w-12 h-12 border-4 border-luxury-blue/30 border-t-luxury-blue rounded-full animate-spin mx-auto mb-3"></div>
+                      <p className="text-xs text-slate-400 font-medium">טוען מנהלים...</p>
+                    </div>
                   ) : (
                     allUsers?.filter(u => {
                       const matchesRole = u?.role !== 'viewer';
                       const matchesAffiliation = viewerAffiliation === 'all' || u?.category === viewerAffiliation;
-                      const matchesSearch = (u?.username || u?.name || '').toLowerCase().includes(viewerSearch.toLowerCase());
+                      const nameToSearch = (u?.name || u?.username || '').toLowerCase();
+                      const matchesSearch = nameToSearch.includes(viewerSearch.toLowerCase());
                       return matchesRole && matchesAffiliation && matchesSearch;
-                    }).map(m => (
-                      <div key={m?.id} className="group relative">
-                        <button 
-                          onClick={() => setViewerSelectedManagerId(m?.id)}
-                          className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
-                            viewerSelectedManagerId === m?.id 
-                              ? 'bg-luxury-blue text-white shadow-md' 
-                              : m?.gender === 'female' 
-                                ? 'bg-pink-50/50 hover:bg-pink-100 text-pink-700 border border-pink-100' 
-                                : 'bg-blue-50/50 hover:bg-blue-100 text-blue-700 border border-blue-100'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                              viewerSelectedManagerId === m?.id 
-                                ? 'bg-white/20' 
-                                : m?.gender === 'female' ? 'bg-pink-200' : 'bg-blue-200'
-                            }`}>
-                              {m?.username?.[0] || m?.name?.[0] || '?'}
-                            </div>
-                            <span className="font-bold text-sm truncate max-w-[100px]">{m?.username || m?.name || 'מנהל'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                              viewerSelectedManagerId === m?.id 
-                                ? 'bg-white/20' 
-                                : 'bg-amber-100 text-amber-600 border border-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
-                            }`}>
-                              {managerCounts?.[m?.id || ''] || 0}
-                            </span>
-                          </div>
-                        </button>
-                        
-                        <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {m?.phone && (
-                            <a 
-                              href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 bg-green-500 text-white rounded-lg hover:scale-110 transition-transform shadow-sm"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MessageSquare size={12} />
-                            </a>
-                          )}
+                    }).map(m => {
+                      const displayName = m?.name?.trim() || m?.username?.trim() || 'מנהל';
+                      const isSelected = viewerSelectedManagerId === m?.id;
+                      
+                      return (
+                        <div key={m?.id} className="group relative">
                           <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowChat({ id: m.id, name: m.username || m.name });
-                            }}
-                            className="p-1.5 bg-luxury-blue text-white rounded-lg hover:scale-110 transition-transform shadow-sm"
+                            onClick={() => setViewerSelectedManagerId(m?.id)}
+                            className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all duration-300 ${
+                              isSelected 
+                                ? 'bg-luxury-blue text-white shadow-xl shadow-luxury-blue/30 ring-2 ring-luxury-blue/50 scale-[1.02]' 
+                                : m?.gender === 'female' 
+                                  ? 'bg-pink-50/50 hover:bg-pink-100 text-pink-700 border border-pink-100/50 hover:scale-[1.01]' 
+                                  : 'bg-blue-50/50 hover:bg-blue-100 text-blue-700 border border-blue-100/50 hover:scale-[1.01]'
+                            }`}
                           >
-                            <Send size={12} />
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black transition-transform duration-300 ${
+                                isSelected 
+                                  ? 'bg-white/20 rotate-12' 
+                                  : m?.gender === 'female' ? 'bg-pink-200 shadow-inner' : 'bg-blue-200 shadow-inner'
+                              }`}>
+                                {displayName[0]}
+                              </div>
+                              <div className="flex flex-col items-start">
+                                <span className="font-black text-sm truncate max-w-[130px] leading-tight">{displayName}</span>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-200/50 text-slate-500'
+                                  }`}>
+                                    {m?.category || 'מנהל'}
+                                  </span>
+                                  {m?.is_online && (
+                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg transition-colors ${
+                                isSelected 
+                                  ? 'bg-white/20 text-white' 
+                                  : 'bg-amber-100 text-amber-600 border border-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                              }`}>
+                                {managerCounts?.[m?.id || ''] || 0}
+                              </span>
+                            </div>
                           </button>
+                          
+                          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+                            {m?.phone && (
+                              <a 
+                                href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-2 bg-green-500 text-white rounded-xl hover:scale-110 transition-transform shadow-lg"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MessageSquare size={14} />
+                              </a>
+                            )}
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowChat({ id: m.id, name: displayName });
+                              }}
+                              className="p-2 bg-luxury-blue text-white rounded-xl hover:scale-110 transition-transform shadow-lg"
+                            >
+                              <Send size={14} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1255,43 +1308,39 @@ export default function Dashboard() {
                           <MatchCard 
                             match={match} 
                             onView={(m) => {
-                              setSelectedMatch(m);
-                              generateDesignedImage(m);
-                              setShowPublishModal(true);
+                              setViewingMatch(m);
                             }}
                             onNotes={(m) => {
                               setNotesMatch(m);
                               fetchNotes(m.id);
                               setShowNotesModal(true);
                             }}
-                            minimal
                             showCreator
                             isViewer={true}
+                            minimal={true}
                           />
-                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
-                            <button 
-                              onClick={() => {
-                                setSelectedMatch(match);
-                                setShowPublishModal(true);
-                              }}
-                              className="p-2 bg-white/90 backdrop-blur-sm text-luxury-blue rounded-lg shadow-lg hover:bg-white transition-all"
-                              title="צפה בכרטיס מלא"
-                            >
-                              <Eye size={16} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                setSelectedMatch(match);
-                                generateDesignedImage(match);
-                                setShowPublishModal(true);
-                                // We can add a state to force designed view if needed
-                              }}
-                              className="p-2 bg-white/90 backdrop-blur-sm text-amber-600 rounded-lg shadow-lg hover:bg-white transition-all"
-                              title="צפה בכרטיס מעוצב"
-                            >
-                              <ImageIcon size={16} />
-                            </button>
-                          </div>
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              <button 
+                                onClick={() => {
+                                  setViewingMatch(match);
+                                }}
+                                className="p-2 bg-white/90 backdrop-blur-sm text-luxury-blue rounded-lg shadow-lg hover:bg-white transition-all"
+                                title="צפה בכרטיס מלא"
+                              >
+                                <Eye size={16} />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setSelectedMatch(match);
+                                  generateDesignedImage(match);
+                                  setShowDesignedCardModal(true);
+                                }}
+                                className="p-2 bg-white/90 backdrop-blur-sm text-purple-600 rounded-lg shadow-lg hover:bg-white transition-all"
+                                title="צפה בכרטיס מעוצב"
+                              >
+                                <ImageIcon size={16} />
+                              </button>
+                            </div>
                         </div>
                       ))
                     }
@@ -1988,105 +2037,51 @@ export default function Dashboard() {
         )}
 
         {viewingMatch && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="card w-full max-w-2xl shadow-2xl border-none flex flex-col max-h-[90vh] overflow-hidden"
+              className="w-full max-w-4xl max-h-[90vh] overflow-y-auto"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    viewingMatch.type === 'male' ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600'
-                  }`}>
-                    {viewingMatch.type === 'male' ? <UserCheck size={24} /> : <Heart size={24} fill="currentColor" />}
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-extrabold text-text-main">{viewingMatch.name}</h2>
-                    <p className="text-sm text-text-secondary font-medium">פרטים מלאים של {viewingMatch.type === 'male' ? 'המשודך' : 'המשודכת'}</p>
-                  </div>
-                </div>
-                <button onClick={() => setViewingMatch(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                  <Plus size={24} className="rotate-45 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                {viewingMatch.image_url && (
-                  <div className="relative aspect-video w-full rounded-2xl overflow-hidden shadow-lg border border-slate-100">
-                    <img 
-                      src={viewingMatch.image_url} 
-                      alt={viewingMatch.name} 
-                      className="w-full h-full object-cover"
-                      style={viewingMatch.crop_config ? {
-                        transform: `scale(${JSON.parse(viewingMatch.crop_config).zoom}) translate(${JSON.parse(viewingMatch.crop_config).crop.x}px, ${JSON.parse(viewingMatch.crop_config).crop.y}px)`
-                      } : {}}
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                  <DetailItem label="גיל" value={`${viewingMatch.age} שנים`} />
-                  <DetailItem label="גובה" value={viewingMatch.height} />
-                  <DetailItem label="עדה" value={viewingMatch.ethnicity} />
-                  <DetailItem label="מצב משפחתי" value={viewingMatch.marital_status} />
-                  <DetailItem label="עיר מגורים" value={viewingMatch.city} />
-                  <DetailItem label="מגזר" value={viewingMatch.religious_level} />
-                  <DetailItem label="שירות" value={viewingMatch.service} />
-                  <DetailItem label="עיסוק" value={viewingMatch.occupation} />
-                  <DetailItem label="מעשן/ת" value={viewingMatch.smoking} />
-                  <DetailItem label="שומר/ת נגיעה" value={viewingMatch.negiah} />
-                  <DetailItem label="טווח גילאים" value={viewingMatch.age_range} />
-                  <DetailItem label="טלפון" value={viewingMatch.phone} />
-                </div>
-
-                {viewingMatch.about && (
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                      <MessageSquare size={16} className="text-luxury-blue" />
-                      קצת עליי
-                    </h3>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-text-main leading-relaxed">
-                      {viewingMatch.about}
-                    </div>
-                  </div>
-                )}
-
-                {viewingMatch.looking_for && (
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                      <Heart size={16} className="text-pink-500" />
-                      מה אני מחפש/ת
-                    </h3>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-text-main leading-relaxed">
-                      {viewingMatch.looking_for}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  <span>נוצר בתאריך: {new Date(viewingMatch.created_at).toLocaleDateString('he-IL')}</span>
-                  <span>פורסם {viewingMatch.publish_count} פעמים</span>
-                </div>
-              </div>
-
-              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <MatchCard 
+                match={viewingMatch} 
+                onView={() => {}} 
+                onEdit={(id) => {
+                  setViewingMatch(null);
+                  navigate(`/matches/edit/${id}`);
+                }}
+                onDelete={(id) => {
+                  setViewingMatch(null);
+                  handleDelete(id);
+                }}
+                onImageClick={(m) => {
+                  setImageMatch(m);
+                  setImageUrlInput(m.image_url || '');
+                  setShowImageModal(true);
+                }}
+                onPublish={(m) => {
+                  setViewingMatch(null);
+                  handlePublish(m);
+                }}
+                onHistory={fetchPublishHistory}
+                onQuickUpdate={handleQuickUpdate}
+                onSuggest={handleSuggest}
+                onNotes={(m) => {
+                  setNotesMatch(m);
+                  fetchNotes(m.id);
+                  setShowNotesModal(true);
+                }}
+                showCreator={user?.role === 'super_admin'}
+                isViewer={user?.role === 'viewer' && viewingMatch.created_by !== user?.id}
+                minimal={false}
+              />
+              <div className="mt-4 flex justify-center">
                 <button 
-                  onClick={() => {
-                    setViewingMatch(null);
-                    handlePublish(viewingMatch);
-                  }}
-                  className="btn-whatsapp flex-1 py-3 font-bold"
+                  onClick={() => setViewingMatch(null)}
+                  className="px-8 py-3 bg-white text-slate-900 rounded-xl font-bold shadow-xl hover:bg-slate-50 transition-all"
                 >
-                  <Send size={20} />
-                  פרסם עכשיו
-                </button>
-                <button 
-                  onClick={() => navigate(`/matches/edit/${viewingMatch.id}`)}
-                  className="btn-secondary px-8 py-3 font-bold"
-                >
-                  ערוך כרטיס
+                  סגור
                 </button>
               </div>
             </motion.div>
@@ -2410,7 +2405,56 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Connected Admins Modal */}
+      {/* Designed Card Modal */}
+      <AnimatePresence>
+        {showDesignedCardModal && generatedImageUrl && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="w-full max-w-2xl flex flex-col items-center gap-8"
+            >
+              <div className="relative w-full aspect-[1/2.125] max-h-[85vh] bg-white rounded-[2.5rem] overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border-8 border-white/10 group">
+                <img 
+                  src={generatedImageUrl} 
+                  alt="Designed Card" 
+                  className="w-full h-full object-contain"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                
+                <button 
+                  onClick={() => setShowDesignedCardModal(false)}
+                  className="absolute top-6 right-6 p-3 bg-black/40 text-white rounded-2xl hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 shadow-lg"
+                >
+                  <Plus size={28} className="rotate-45" />
+                </button>
+              </div>
+              
+              <div className="flex gap-6 w-full max-w-md">
+                <button 
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = generatedImageUrl;
+                    link.download = `match-${selectedMatch?.name || 'card'}.png`;
+                    link.click();
+                  }}
+                  className="flex-1 py-4 bg-white text-luxury-blue rounded-2xl font-black shadow-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3 text-lg"
+                >
+                  <ImageIcon size={24} />
+                  הורד תמונה למכשיר
+                </button>
+                <button 
+                  onClick={() => setShowDesignedCardModal(false)}
+                  className="px-10 py-4 bg-white/10 text-white border-2 border-white/20 rounded-2xl font-black hover:bg-white/20 transition-all text-lg"
+                >
+                  סגור
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {showConnectedAdminsModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -2561,6 +2605,7 @@ export default function Dashboard() {
                 currentMatch={selectedMatch}
                 matchMessage={customMessage}
                 matchImage={generatedImageUrl}
+                defaultTab={publishModalTab}
                 openingMessage={
                   (selectedMatch.type === 'male' ? user?.daily_message_template_male : user?.daily_message_template_female) 
                   || user?.daily_message_template 

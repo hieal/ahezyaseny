@@ -338,7 +338,14 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
           <>
             <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={match.creation_source === 'csv' && !match.religious_level} />
             <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={match.creation_source === 'csv' && !match.occupation} />
-            <InfoItem icon={<Calendar size={14} />} label="פרסום" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+            <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} />
+            <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} />
+            <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} />
+            <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} />
+            <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} />
+            <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} />
+            <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} />
+            <InfoItem icon={<HistoryIcon size={14} />} label="פרסום" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
           </>
         )}
       </div>
