@@ -1,4 +1,4 @@
-import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats } from '../types';
+import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote } from '../types';
 import { supabase, supabaseAdmin } from './supabase';
 
 export type BackendMode = 'temporary' | 'production';
@@ -128,6 +128,17 @@ CREATE TABLE IF NOT EXISTS public.internal_messages (
   is_read BOOLEAN DEFAULT false
 );
 
+-- Create candidate_notes table
+CREATE TABLE IF NOT EXISTS public.candidate_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id UUID,
+  user_id UUID,
+  user_name TEXT,
+  text TEXT,
+  is_available BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Ensure columns exist (in case table was created in older version)
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
@@ -147,6 +158,7 @@ ALTER TABLE public.activity_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publish_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.internal_messages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidate_notes DISABLE ROW LEVEL SECURITY;
 
 -- Storage Setup: Create 'images' bucket and set public access
 INSERT INTO storage.buckets (id, name, public) 
@@ -795,6 +807,38 @@ class DataService {
       .from('candidates')
       .update({ image_url: imageUrl })
       .eq('id', candidateId);
+    
+    if (error) throw error;
+  }
+
+  // Notes
+  async getMatchNotes(matchId: string): Promise<MatchNote[]> {
+    const { data, error } = await supabase
+      .from('candidate_notes')
+      .select('*')
+      .eq('match_id', matchId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createMatchNote(note: Omit<MatchNote, 'id' | 'created_at'>): Promise<MatchNote> {
+    const { data, error } = await supabase
+      .from('candidate_notes')
+      .insert(note)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data as MatchNote;
+  }
+
+  async deleteMatchNote(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('candidate_notes')
+      .delete()
+      .eq('id', id);
     
     if (error) throw error;
   }

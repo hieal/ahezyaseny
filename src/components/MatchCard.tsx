@@ -16,6 +16,7 @@ interface MatchCardProps {
    onImageClick?: (match: Match) => void;
    onQuickUpdate?: (id: string, updates: Partial<Match>) => void;
    onSuggest?: (match: Match) => void;
+   onNotes?: (match: Match) => void;
    showCreator?: boolean;
    minimal?: boolean;
    selected?: boolean;
@@ -23,7 +24,7 @@ interface MatchCardProps {
    isViewer?: boolean;
  }
 
-export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
+export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
@@ -409,6 +410,15 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
               >
                 <MessageSquare size={18} />
               </a>
+            )}
+            {onNotes && (
+              <button 
+                onClick={() => onNotes(match)}
+                className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center"
+                title="הערות"
+              >
+                <Paperclip size={18} />
+              </button>
             )}
           </div>
         )}

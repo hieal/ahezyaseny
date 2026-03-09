@@ -103,3 +103,13 @@ export interface PublishLog {
   group_name: string;
   created_at: string;
 }
+
+export interface MatchNote {
+  id: string;
+  match_id: string;
+  user_id: string;
+  user_name: string;
+  text: string;
+  is_available: boolean;
+  created_at: string;
+}

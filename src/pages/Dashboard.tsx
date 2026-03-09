@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -89,7 +89,16 @@ export default function Dashboard() {
   const [viewerSelectedManagerId, setViewerSelectedManagerId] = useState<string | null>(null);
   const [viewerAffiliation, setViewerAffiliation] = useState<string>('all');
   const [viewerSearch, setViewerSearch] = useState('');
+  const [viewerGenderFilter, setViewerGenderFilter] = useState<'all' | 'male' | 'female'>('all');
+  const [viewerCardView, setViewerCardView] = useState<'full' | 'designed'>('full');
   const [managerCounts, setManagerCounts] = useState<Record<string, number>>({});
+
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [notesMatch, setNotesMatch] = useState<Match | null>(null);
+  const [matchNotes, setMatchNotes] = useState<any[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [isNoteAvailable, setIsNoteAvailable] = useState(true);
+  const [loadingNotes, setLoadingNotes] = useState(false);
 
   const fetchManagerCounts = async () => {
     try {
@@ -97,6 +106,56 @@ export default function Dashboard() {
       setManagerCounts(counts);
     } catch (err) {
       console.error('Failed to fetch manager counts:', err);
+    }
+  };
+
+  const fetchNotes = async (matchId: string) => {
+    setLoadingNotes(true);
+    try {
+      const notes = await dataService.getMatchNotes(matchId);
+      setMatchNotes(notes);
+    } catch (err) {
+      console.error('Failed to fetch notes:', err);
+      toast.error('שגיאה בטעינת הערות');
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!notesMatch || !newNoteText.trim() || !user) return;
+    
+    try {
+      const note = await dataService.createMatchNote({
+        match_id: notesMatch.id,
+        user_id: user.id,
+        user_name: user.name,
+        text: newNoteText,
+        is_available: isNoteAvailable
+      });
+      
+      setMatchNotes([note, ...matchNotes]);
+      setNewNoteText('');
+      toast.success('הערה נוספה בהצלחה');
+    } catch (err) {
+      console.error('Failed to add note:', err);
+      toast.error('שגיאה בהוספת הערה');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string, noteUserId: string) => {
+    if (user?.id !== noteUserId && user?.role !== 'super_admin') {
+      toast.error('רק המנהל שכתב את ההערה יכול למחוק אותה');
+      return;
+    }
+
+    try {
+      await dataService.deleteMatchNote(noteId);
+      setMatchNotes(matchNotes.filter(n => n.id !== noteId));
+      toast.success('הערה נמחקה');
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+      toast.error('שגיאה במחיקת הערה');
     }
   };
 
@@ -267,7 +326,7 @@ export default function Dashboard() {
 
     // Details Grid
     const details = [
-      { label: 'גיל', value: `${match.age} שנים` },
+      { label: 'גיל', value: `${match.age || '---'} שנים` },
       { label: 'גובה', value: match.height || '---' },
       { label: 'עדה', value: match.ethnicity || '---' },
       { label: 'מצב משפחתי', value: match.marital_status || '---' },
@@ -295,7 +354,7 @@ export default function Dashboard() {
       ctx.fillStyle = '#1e293b';
       ctx.font = 'bold 44px sans-serif';
       
-      let value = item.value;
+      let value = String(item.value || '---');
       const maxValWidth = 400;
       if (ctx.measureText(value).width > maxValWidth) {
         while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
@@ -311,10 +370,11 @@ export default function Dashboard() {
     
     const drawWrappedText = (title: string, text: string, y: number) => {
       const lineHeight = 65;
-      const maxWidth = 1600 - margin*2 - 160;
+      const sidePadding = 120; // Increased padding from the frame
+      const maxWidth = 1600 - margin*2 - sidePadding*2;
       
       ctx.font = '42px sans-serif';
-      const words = text.split(' ');
+      const words = String(text || '').split(' ');
       let lines: string[] = [];
       let currentLine = '';
 
@@ -331,14 +391,14 @@ export default function Dashboard() {
       }
       lines.push(currentLine);
 
-      const boxHeight = (lines.length * lineHeight) + 160;
+      const boxHeight = (lines.length * lineHeight) + 180;
       
       // Box
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'rgba(0,0,0,0.05)';
       ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.roundRect(margin + 40, y - 60, 1600 - margin*2 - 80, boxHeight, 40);
+      ctx.roundRect(margin + 60, y - 60, 1600 - margin*2 - 120, boxHeight, 40);
       ctx.fill();
       ctx.shadowBlur = 0;
 
@@ -346,13 +406,13 @@ export default function Dashboard() {
       ctx.textAlign = 'right';
       ctx.fillStyle = accentColor;
       ctx.font = 'bold 48px sans-serif';
-      ctx.fillText(':' + title, 1450, y);
+      ctx.fillText(':' + title, 1450 - 40, y);
       
       // Text
       ctx.fillStyle = '#1e293b';
       ctx.font = '42px sans-serif';
       lines.forEach((line, i) => {
-        ctx.fillText(line, 1450, y + 80 + (i * lineHeight));
+        ctx.fillText(line, 1450 - 40, y + 80 + (i * lineHeight));
       });
 
       return boxHeight;
@@ -769,8 +829,12 @@ export default function Dashboard() {
     // Multi-filtering
     const matchesGroupType = filterGroup === 'all' || m.creator_category === filterGroup;
     const matchesManager = filterManager === 'all' || m.created_by === filterManager;
+
+    // Multi-selection filters (buttons)
+    const matchesMultiGroup = selectedGroupType === 'all' || m.creator_category === selectedGroupType;
+    const matchesMultiManager = selectedManagerIds.length === 0 || selectedManagerIds.includes(m.created_by);
     
-    return matchesSearch && matchesType && matchesGroupType && matchesManager;
+    return matchesSearch && matchesType && matchesGroupType && matchesManager && matchesMultiGroup && matchesMultiManager;
   });
 
   const handleSelectMatch = (id: string, selected: boolean) => {
@@ -1021,16 +1085,19 @@ export default function Dashboard() {
             <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
               {/* Sidebar: Managers List */}
               <div className="w-full md:w-80 border-l border-slate-100 bg-slate-50/30 overflow-y-auto p-4 space-y-4">
-                <div className="relative">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text" 
-                    placeholder="חפש מנהל..."
-                    className="w-full pr-10 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-luxury-blue outline-none"
-                    onChange={(e) => {
-                      // Filter managers logic can go here if needed
-                    }}
-                  />
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <p className="text-xs font-black text-slate-900 mb-3 text-center">בחר מנהל לצפייה בכרטיס</p>
+                    <div className="relative">
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input 
+                        type="text" 
+                        placeholder="חפש מנהל..."
+                        className="w-full pr-10 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-luxury-blue outline-none"
+                        onChange={(e) => setViewerSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -1041,51 +1108,127 @@ export default function Dashboard() {
                   >
                     <span className="font-bold">כל המנהלים</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full ${!viewerSelectedManagerId ? 'bg-white/20' : 'bg-slate-200'}`}>
-                      {matches.length}
+                      {matches?.length || 0}
                     </span>
                   </button>
-                  {allUsers.filter(u => u.role !== 'viewer').map(m => (
-                    <button 
-                      key={m.id}
-                      onClick={() => setViewerSelectedManagerId(m.id)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${viewerSelectedManagerId === m.id ? 'bg-luxury-blue text-white shadow-md' : 'hover:bg-white text-slate-600'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${viewerSelectedManagerId === m.id ? 'bg-white/20' : 'bg-slate-200'}`}>
-                          {m.name[0]}
+                  {allUsers?.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400 animate-pulse">טוען מנהלים...</div>
+                  ) : (
+                    allUsers?.filter(u => {
+                      const matchesRole = u?.role !== 'viewer';
+                      const matchesAffiliation = viewerAffiliation === 'all' || u?.category === viewerAffiliation;
+                      const matchesSearch = (u?.username || u?.name || '').toLowerCase().includes(viewerSearch.toLowerCase());
+                      return matchesRole && matchesAffiliation && matchesSearch;
+                    }).map(m => (
+                      <div key={m?.id} className="group relative">
+                        <button 
+                          onClick={() => setViewerSelectedManagerId(m?.id)}
+                          className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
+                            viewerSelectedManagerId === m?.id 
+                              ? 'bg-luxury-blue text-white shadow-md' 
+                              : m?.gender === 'female' 
+                                ? 'bg-pink-50/50 hover:bg-pink-100 text-pink-700 border border-pink-100' 
+                                : 'bg-blue-50/50 hover:bg-blue-100 text-blue-700 border border-blue-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                              viewerSelectedManagerId === m?.id 
+                                ? 'bg-white/20' 
+                                : m?.gender === 'female' ? 'bg-pink-200' : 'bg-blue-200'
+                            }`}>
+                              {m?.username?.[0] || m?.name?.[0] || '?'}
+                            </div>
+                            <span className="font-bold text-sm truncate max-w-[100px]">{m?.username || m?.name || 'מנהל'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                              viewerSelectedManagerId === m?.id 
+                                ? 'bg-white/20' 
+                                : 'bg-amber-100 text-amber-600 border border-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                            }`}>
+                              {managerCounts?.[m?.id || ''] || 0}
+                            </span>
+                          </div>
+                        </button>
+                        
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {m?.phone && (
+                            <a 
+                              href={`https://wa.me/${m.phone.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 bg-green-500 text-white rounded-lg hover:scale-110 transition-transform shadow-sm"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MessageSquare size={12} />
+                            </a>
+                          )}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowChat({ id: m.id, name: m.username || m.name });
+                            }}
+                            className="p-1.5 bg-luxury-blue text-white rounded-lg hover:scale-110 transition-transform shadow-sm"
+                          >
+                            <Send size={12} />
+                          </button>
                         </div>
-                        <span className="font-bold text-sm truncate max-w-[120px]">{m.name}</span>
                       </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${viewerSelectedManagerId === m.id ? 'bg-white/20' : 'bg-slate-200'}`}>
-                        {managerCounts[m.id] || 0}
-                      </span>
-                    </button>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
               {/* Main Content: Candidates Grid */}
               <div className="flex-1 flex flex-col overflow-hidden bg-white">
-                <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-4 bg-slate-50/20">
-                  <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
-                    {CATEGORIES.map(cat => (
+                <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 bg-slate-50/20">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">בחר קבוצה לצפייה</p>
+                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
                       <button 
-                        key={cat}
-                        onClick={() => setViewerAffiliation(cat)}
-                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === cat ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                        onClick={() => setViewerAffiliation('all')}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === 'all' ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
                       >
-                        {cat}
+                        הכל
                       </button>
-                    ))}
-                    <button 
-                      onClick={() => setViewerAffiliation('all')}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === 'all' ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
-                    >
-                      הכל
-                    </button>
+                      {CATEGORIES.map(cat => (
+                        <button 
+                          key={cat}
+                          onClick={() => setViewerAffiliation(cat)}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === cat ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="relative flex-1 min-w-[200px]">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">סינון מגדר</p>
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                      <button 
+                        onClick={() => setViewerGenderFilter('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerGenderFilter === 'all' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        הכל
+                      </button>
+                      <button 
+                        onClick={() => setViewerGenderFilter('male')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerGenderFilter === 'male' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        משודכים
+                      </button>
+                      <button 
+                        onClick={() => setViewerGenderFilter('female')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerGenderFilter === 'female' ? 'bg-pink-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        משודכות
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative flex-1 min-w-[200px] mt-auto">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <input 
                       type="text" 
@@ -1103,30 +1246,62 @@ export default function Dashboard() {
                       .filter(m => {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                         const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                        const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
                         const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
-                        return matchesManager && matchesAffiliation && matchesSearch;
+                        return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                       })
                       .map(match => (
-                        <MatchCard 
-                          key={match.id} 
-                          match={match} 
-                          onView={(m) => {
-                            setSelectedMatch(m);
-                            generateDesignedImage(m);
-                            setShowPublishModal(true);
-                          }}
-                          minimal
-                          showCreator
-                          isViewer={true}
-                        />
+                        <div key={match.id} className="relative group">
+                          <MatchCard 
+                            match={match} 
+                            onView={(m) => {
+                              setSelectedMatch(m);
+                              generateDesignedImage(m);
+                              setShowPublishModal(true);
+                            }}
+                            onNotes={(m) => {
+                              setNotesMatch(m);
+                              fetchNotes(m.id);
+                              setShowNotesModal(true);
+                            }}
+                            minimal
+                            showCreator
+                            isViewer={true}
+                          />
+                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                            <button 
+                              onClick={() => {
+                                setSelectedMatch(match);
+                                setShowPublishModal(true);
+                              }}
+                              className="p-2 bg-white/90 backdrop-blur-sm text-luxury-blue rounded-lg shadow-lg hover:bg-white transition-all"
+                              title="צפה בכרטיס מלא"
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedMatch(match);
+                                generateDesignedImage(match);
+                                setShowPublishModal(true);
+                                // We can add a state to force designed view if needed
+                              }}
+                              className="p-2 bg-white/90 backdrop-blur-sm text-amber-600 rounded-lg shadow-lg hover:bg-white transition-all"
+                              title="צפה בכרטיס מעוצב"
+                            >
+                              <ImageIcon size={16} />
+                            </button>
+                          </div>
+                        </div>
                       ))
                     }
                   </div>
                   {matches.filter(m => {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                         const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                        const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
                         const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
-                        return matchesManager && matchesAffiliation && matchesSearch;
+                        return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                       }).length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
                       <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
@@ -1594,6 +1769,11 @@ export default function Dashboard() {
             }}
             onQuickUpdate={handleQuickUpdate}
             onSuggest={handleSuggest}
+            onNotes={(m) => {
+              setNotesMatch(m);
+              fetchNotes(m.id);
+              setShowNotesModal(true);
+            }}
             showCreator={user?.role === 'super_admin'}
             selected={selectedMatchIds.includes(match.id)}
             onSelect={handleSelectMatch}
@@ -2135,6 +2315,95 @@ export default function Dashboard() {
                 >
                   סגור
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Notes Modal */}
+      <AnimatePresence>
+        {showNotesModal && notesMatch && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-2xl space-y-6 flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-slate-100 text-slate-600 rounded-2xl">
+                    <Paperclip size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900">הערות על {notesMatch.name}</h3>
+                    <p className="text-sm text-slate-500">נהל הערות וסטטוס פניות עבור המשודך</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowNotesModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X size={24} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                <textarea 
+                  placeholder="הוסף הערה חדשה..."
+                  className="w-full p-4 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-luxury-blue outline-none min-h-[100px] resize-none"
+                  value={newNoteText}
+                  onChange={(e) => setNewNoteText(e.target.value)}
+                />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-slate-600">פנוי לפרסום?</span>
+                    <button 
+                      onClick={() => setIsNoteAvailable(!isNoteAvailable)}
+                      className={`w-12 h-6 rounded-full transition-all relative ${isNoteAvailable ? 'bg-green-500' : 'bg-slate-300'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isNoteAvailable ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={handleAddNote}
+                    disabled={!newNoteText.trim()}
+                    className="btn-primary px-6 py-2 text-sm disabled:opacity-50"
+                  >
+                    הוסף הערה
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                {loadingNotes ? (
+                  <div className="py-10 text-center text-slate-400 animate-pulse">טוען הערות...</div>
+                ) : matchNotes.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 italic">אין הערות עדיין</div>
+                ) : (
+                  matchNotes.map(note => (
+                    <div key={note.id} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-2 relative group">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-luxury-blue">{note.user_name}</span>
+                          <span className="text-[10px] text-slate-400">{new Date(note.created_at).toLocaleDateString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${note.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {note.is_available ? 'פנוי לפרסום' : 'לא פנוי'}
+                          </span>
+                          {(user?.id === note.user_id || user?.role === 'super_admin') && (
+                            <button 
+                              onClick={() => handleDeleteNote(note.id, note.user_id)}
+                              className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-700 leading-relaxed">{note.text}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </motion.div>
           </div>
