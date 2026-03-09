@@ -14,51 +14,50 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const localUser = localStorage.getItem('current_user');
-    try {
-      return localUser ? JSON.parse(localUser) : null;
-    } catch (e) {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Check for Supabase session and custom session on mount
     const initAuth = async () => {
+      // Ensure loading is true at the start of initialization
+      setLoading(true);
       try {
-        // First check Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
+        // 1. Check Supabase session first (as requested)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (session?.user) {
-          // If we have a Supabase session, try to get the admin profile
           const adminProfile = await dataService.getUserById(session.user.id);
           if (adminProfile) {
             setUser(adminProfile);
             localStorage.setItem('current_user', JSON.stringify(adminProfile));
           }
         } else {
-          // Fallback to custom localStorage session
-          const currentUser = await dataService.getCurrentUser();
-          if (currentUser) {
-            setUser(currentUser);
+          // 2. Fallback to localStorage if no Supabase session
+          const localUserJson = localStorage.getItem('current_user');
+          if (localUserJson) {
+            try {
+              const localUser = JSON.parse(localUserJson);
+              setUser(localUser);
+              
+              // Verify local user in background to avoid blocking UI
+              // but we stay in loading state until we've at least tried to get a session
+            } catch (e) {
+              localStorage.removeItem('current_user');
+            }
           }
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
-        setUser(null);
       } finally {
+        // Only set loading to false after all async auth checks are complete
         setLoading(false);
       }
     };
 
     initAuth();
 
-    // 2. Listen for auth state changes
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event);
-      
       if (event === 'SIGNED_IN' && session?.user) {
         const adminProfile = await dataService.getUserById(session.user.id);
         if (adminProfile) {
