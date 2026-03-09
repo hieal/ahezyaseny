@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, AlertTriangle, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, AlertTriangle, Database, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
@@ -401,6 +401,37 @@ export default function SettingsPage() {
             <Database size={24} />
           </div>
           <h2 className="font-extrabold text-2xl tracking-tight">פעולות מתקדמות</h2>
+        </div>
+
+        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-lg text-text-main">סנכרון מסד נתונים (SQL)</h3>
+              <p className="text-text-secondary font-medium text-sm mt-1 max-w-xl">
+                מעדכן את מבנה מסד הנתונים ומוודא שכל העמודות והטבלאות הדרושות קיימות. מומלץ להריץ אם מופיעות שגיאות בחיבור או בעמודות חסרות.
+              </p>
+            </div>
+            <button 
+              onClick={async () => {
+                const toastId = toast.loading('מסנכרן מסד נתונים... אנא המתן');
+                try {
+                  const result = await dataService.syncSchema();
+                  if (result.success) {
+                    toast.success(result.message, { id: toastId });
+                    setTimeout(() => window.location.reload(), 1500);
+                  } else {
+                    toast.error(result.message, { id: toastId });
+                  }
+                } catch (err) {
+                  toast.error('שגיאה בסנכרון מסד נתונים', { id: toastId });
+                }
+              }}
+              className="px-6 py-3 bg-white border-2 border-luxury-blue text-luxury-blue hover:bg-blue-50 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap flex items-center gap-2"
+            >
+              <RefreshCw size={18} />
+              סנכרן מבנה נתונים
+            </button>
+          </div>
         </div>
 
         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">

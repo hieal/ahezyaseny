@@ -1,9 +1,10 @@
 import React from 'react';
 import { Match } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip } from 'lucide-react';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
+import { toast } from 'react-hot-toast';
 
 interface MatchCardProps {
    match: Match;
@@ -27,6 +28,22 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
+  const [isAdjusting, setIsAdjusting] = React.useState(false);
+
+  const cropConfig = React.useMemo(() => {
+    if (!match.crop_config) return { x: 50, y: 50, zoom: 1 };
+    try {
+      return JSON.parse(match.crop_config);
+    } catch (e) {
+      return { x: 50, y: 50, zoom: 1 };
+    }
+  }, [match.crop_config]);
+
+  const handleAdjust = async (e: React.MouseEvent, updates: any) => {
+    e.stopPropagation();
+    const newConfig = { ...cropConfig, ...updates };
+    onQuickUpdate?.(match.id, { crop_config: JSON.stringify(newConfig) });
+  };
 
   const getMissingFields = (m: Match) => {
     const missing = [];
@@ -66,17 +83,47 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
       )}
       {match.image_url && !minimal && (
         <div 
-          className="relative h-48 w-full overflow-hidden cursor-pointer"
+          className="relative h-48 w-full overflow-hidden cursor-pointer bg-slate-100"
           onClick={() => onImageClick?.(match)}
         >
           <img 
             src={dataService.getPublicImageUrl(match.image_url)} 
             alt={match.name} 
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover transition-transform group-hover:scale-105" 
+            className="w-full h-full object-cover transition-all" 
+            style={{
+              objectPosition: `${cropConfig.x}% ${cropConfig.y}%`,
+              transform: `scale(${cropConfig.zoom})`
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-             <Edit className="text-white" size={24} />
+          
+          {/* Adjustment Controls Overlay */}
+          {!isViewer && (
+            <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-all flex flex-col items-center justify-center opacity-0 hover:opacity-100">
+              <div className="flex flex-col items-center gap-1 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-xl scale-90" onClick={e => e.stopPropagation()}>
+                <div className="flex gap-1">
+                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, cropConfig.y - 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronUp size={16} /></button>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={(e) => handleAdjust(e, { x: Math.max(0, cropConfig.x - 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronRight size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, cropConfig.zoom + 0.1) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-luxury-blue"><ZoomIn size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, cropConfig.zoom - 0.1) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-luxury-blue"><ZoomOut size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { x: Math.min(100, cropConfig.x + 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronLeft size={16} /></button>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, cropConfig.y + 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronDown size={16} /></button>
+                </div>
+                <div className="mt-1 pt-1 border-t border-slate-100 w-full flex justify-center">
+                   <button onClick={() => onImageClick?.(match)} className="text-[10px] font-bold text-luxury-blue hover:underline">החלף תמונה</button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="absolute top-2 left-2 pointer-events-none">
+             <div className="bg-black/40 backdrop-blur-sm text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                <Edit size={14} />
+             </div>
           </div>
         </div>
       )}

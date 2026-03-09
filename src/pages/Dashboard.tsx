@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -53,6 +53,10 @@ export default function Dashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [manualPublishConfirmed, setManualPublishConfirmed] = useState(false);
   const [viewingMatch, setViewingMatch] = useState<Match | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [imageMatch, setImageMatch] = useState<Match | null>(null);
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  const [isSavingImage, setIsSavingImage] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [selectedGroupType, setSelectedGroupType] = useState<string>('all');
   const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
@@ -1432,6 +1436,11 @@ export default function Dashboard() {
             onEdit={(id) => navigate(`/matches/edit/${id}`)}
             onDelete={handleDelete}
             onHistory={fetchPublishHistory}
+            onImageClick={(m) => {
+              setImageMatch(m);
+              setImageUrlInput(m.image_url || '');
+              setShowImageModal(true);
+            }}
             onQuickUpdate={handleQuickUpdate}
             onSuggest={handleSuggest}
             showCreator={user?.role === 'super_admin'}
@@ -1450,6 +1459,136 @@ export default function Dashboard() {
         )}
       </div>
 
+
+      {/* Image Manager Modal */}
+      <AnimatePresence>
+        {showImageModal && imageMatch && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="card w-full max-w-lg p-8 space-y-6 shadow-2xl border-none"
+            >
+              <div className="flex justify-between items-center border-b pb-4">
+                <h2 className="text-2xl font-extrabold text-text-main flex items-center gap-2">
+                  <ImageIcon size={24} className="text-luxury-blue" />
+                  ניהול תמונת משודך
+                </h2>
+                <button onClick={() => setShowImageModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Current Image Preview */}
+                <div className="aspect-square w-48 mx-auto rounded-2xl overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50 relative group">
+                  {imageMatch.image_url ? (
+                    <img 
+                      src={dataService.getPublicImageUrl(imageMatch.image_url)} 
+                      alt="Preview" 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-300">
+                      <ImageIcon size={48} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-text-secondary mb-2">העלאת קובץ</label>
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setIsSavingImage(true);
+                        try {
+                          const reader = new FileReader();
+                          reader.onloadend = async () => {
+                            const base64 = reader.result as string;
+                            await handleQuickUpdate(imageMatch.id, { image_url: base64 });
+                            setImageMatch(prev => prev ? { ...prev, image_url: base64 } : null);
+                            toast.success('התמונה הועלתה בהצלחה');
+                          };
+                          reader.readAsDataURL(file);
+                        } catch (err) {
+                          toast.error('שגיאה בהעלאת התמונה');
+                        } finally {
+                          setIsSavingImage(false);
+                        }
+                      }}
+                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-luxury-blue/10 file:text-luxury-blue hover:file:bg-luxury-blue/20"
+                    />
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100">
+                    <label className="block text-sm font-bold text-text-secondary mb-2">קישור לתמונה (URL)</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        className="input-field flex-1"
+                        placeholder="הדבק כאן כתובת URL של תמונה..."
+                        value={imageUrlInput}
+                        onChange={(e) => setImageUrlInput(e.target.value)}
+                      />
+                      <button 
+                        onClick={async () => {
+                          if (!imageUrlInput.trim()) return;
+                          setIsSavingImage(true);
+                          try {
+                            // Try to "save to system" by converting to base64 if possible
+                            let finalUrl = imageUrlInput;
+                            try {
+                              const response = await fetch(imageUrlInput);
+                              const blob = await response.blob();
+                              const reader = new FileReader();
+                              const base64 = await new Promise<string>((resolve) => {
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(blob);
+                              });
+                              finalUrl = base64;
+                            } catch (e) {
+                              console.warn("Could not convert URL to base64 due to CORS, saving as URL instead", e);
+                            }
+
+                            await handleQuickUpdate(imageMatch.id, { image_url: finalUrl });
+                            setImageMatch(prev => prev ? { ...prev, image_url: finalUrl } : null);
+                            toast.success('התמונה נשמרה במערכת');
+                          } catch (err) {
+                            toast.error('שגיאה בעדכון התמונה');
+                          } finally {
+                            setIsSavingImage(false);
+                          }
+                        }}
+                        disabled={isSavingImage}
+                        className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
+                      >
+                        {isSavingImage ? <RefreshCw className="animate-spin" size={16} /> : <Database size={16} />}
+                        שמור למערכת
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-text-secondary mt-1">שים לב: אם האתר חוסם גישה, התמונה תישמר כקישור בלבד.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 flex justify-end">
+                <button 
+                  onClick={() => setShowImageModal(false)}
+                  className="btn-secondary px-8 py-2.5"
+                >
+                  סגור
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* View Match Modal */}
       <AnimatePresence>

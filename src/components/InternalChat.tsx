@@ -37,11 +37,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        // Use dataService instead of fetch
-        // const res = await fetch('/api/matches');
-        // if (res.ok) setMatches(await res.json());
-        setMatches([]);
-      } catch (e) {}
+        const data = await dataService.getMatches();
+        setMatches(data);
+      } catch (e) {
+        console.error('Failed to fetch matches for chat:', e);
+      }
     };
     fetchMatches();
   }, []);
@@ -96,21 +96,37 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     e?.preventDefault();
     if (!newMessage.trim() && !matchId) return;
 
+    let matchDetails = {};
+    if (matchId) {
+      const match = matches.find(m => m.id === matchId);
+      if (match) {
+        matchDetails = {
+          match_id: match.id,
+          match_name: match.name,
+          match_type: match.type,
+          match_age: match.age,
+          match_city: match.city
+        };
+      }
+    }
+
     const newMsg = {
-      sender_id: user?.id || '0',
+      sender_id: user?.id,
       receiver_id: otherUser.id,
       text: newMessage || 'שלחתי לך הצעה למשודך',
-      match_id: matchId,
       sender_name: user?.name || '',
+      ...matchDetails
     };
     
     try {
+      if (!newMsg.sender_id) throw new Error('Missing sender ID');
       const savedMsg = await dataService.sendInternalMessage(newMsg);
       setMessages(prev => [...prev, savedMsg]);
       setNewMessage('');
       setShowPicker(false);
-    } catch (err) {
-      toast.error('שגיאה בשליחת ההודעה');
+    } catch (err: any) {
+      console.error('Error in handleSend:', err);
+      toast.error(err.message || 'שגיאה בשליחת ההודעה');
     }
   };
 

@@ -128,6 +128,18 @@ CREATE TABLE IF NOT EXISTS public.internal_messages (
   is_read BOOLEAN DEFAULT false
 );
 
+-- Ensure columns exist (in case table was created in older version)
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS text TEXT;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_id UUID;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_name TEXT;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_type TEXT;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_age INTEGER;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_city TEXT;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
+ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+
 -- Disable RLS for all tables to allow prototype access (The "Switch")
 ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidates DISABLE ROW LEVEL SECURITY;
@@ -876,34 +888,33 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return [];
     
-    const { data, error } = await supabase
-      .from('internal_messages')
-      .select('*')
-      .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
-      .order('created_at', { ascending: true });
+    const data = await this.handleSupabase(
+      supabase
+        .from('internal_messages')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
+        .order('created_at', { ascending: true })
+    );
       
-    if (error) {
-      console.error('Error fetching internal messages:', error);
-      return [];
-    }
     return data || [];
   }
 
   async sendInternalMessage(message: any): Promise<any> {
-    const { data, error } = await supabase
-      .from('internal_messages')
-      .insert({
-        ...message,
-        id: this.generateUUID(),
-        created_at: new Date().toISOString(),
-        is_read: false
-      })
-      .select()
-      .single();
+    const data = await this.handleSupabase(
+      supabase
+        .from('internal_messages')
+        .insert({
+          ...message,
+          id: this.generateUUID(),
+          created_at: new Date().toISOString(),
+          is_read: false
+        })
+        .select()
+        .single()
+    );
       
-    if (error) {
-      console.error('Error sending internal message:', error);
-      throw error;
+    if (!data) {
+      throw new Error('Failed to send internal message');
     }
     return data;
   }
@@ -912,12 +923,14 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return;
     
-    await supabase
-      .from('internal_messages')
-      .update({ is_read: true })
-      .eq('sender_id', senderId)
-      .eq('receiver_id', currentUser.id)
-      .eq('is_read', false);
+    await this.handleSupabase(
+      supabase
+        .from('internal_messages')
+        .update({ is_read: true })
+        .eq('sender_id', senderId)
+        .eq('receiver_id', currentUser.id)
+        .eq('is_read', false)
+    );
   }
 }
 

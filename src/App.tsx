@@ -50,8 +50,10 @@ function Sidebar() {
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
-  const [showChat, setShowChat] = React.useState<{id: string, name: string} | null>(null);
   const [onlineUsers, setOnlineUsers] = React.useState<string[]>([]);
+  
+  const superAdminId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+  const isSuperAdminOnline = onlineUsers.includes(superAdminId);
 
   React.useEffect(() => {
     if (allAdmins.length > 0) {
@@ -147,6 +149,10 @@ function Sidebar() {
           )}
           <div className="flex items-center gap-2">
             <Logo size={24} />
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+              <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+              {isSuperAdminOnline ? 'ראשי מחובר' : 'ראשי לא מחובר'}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -174,7 +180,15 @@ function Sidebar() {
             className={`fixed lg:sticky top-0 right-0 h-screen w-72 bg-white border-l border-slate-100 z-50 flex flex-col shadow-xl lg:shadow-none ${!isOpen && 'hidden lg:flex'}`}
           >
             <div className="p-8 border-b border-slate-50 hidden lg:block">
-              <Logo size={40} />
+              <div className="flex items-center justify-between">
+                <Logo size={40} />
+                <div className="flex flex-col items-end">
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                    {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
+                  </div>
+                </div>
+              </div>
               <p className="text-xs text-text-secondary font-medium mt-2">מערכת ניהול מקצועית</p>
             </div>
 
@@ -324,15 +338,7 @@ function Sidebar() {
         )}
       </AnimatePresence>
 
-      {/* Internal Chat */}
-      <AnimatePresence>
-        {showChat && (
-          <InternalChat 
-            otherUser={showChat} 
-            onClose={() => setShowChat(null)} 
-          />
-        )}
-      </AnimatePresence>
+      {/* Internal Chat removed from here, moved to MainLayout */}
 
       {/* Overlay for mobile */}
       {isOpen && (
@@ -401,6 +407,14 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [isImpersonating, setIsImpersonating] = React.useState(false);
+  const [showChat, setShowChat] = React.useState<{id: string, name: string} | null>(null);
+  const [autoPopup, setAutoPopup] = React.useState(() => {
+    return localStorage.getItem('chat_auto_popup') !== 'false';
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('chat_auto_popup', autoPopup.toString());
+  }, [autoPopup]);
 
   // Heartbeat effect
   React.useEffect(() => {
@@ -432,20 +446,32 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         },
         (payload) => {
           const msg = payload.new;
+          
+          if (autoPopup) {
+            setShowChat({ id: msg.sender_id, name: msg.sender_name });
+          }
+
           toast((t) => (
             <div className="flex flex-col gap-2">
               <div className="font-bold text-sm text-luxury-blue">הודעה חדשה מ{msg.sender_name}</div>
               <div className="text-sm text-slate-700">{msg.text.length > 50 ? msg.text.substring(0, 50) + '...' : msg.text}</div>
-              <button 
-                onClick={() => {
-                  toast.dismiss(t.id);
-                  // Optional: navigate to connected admins or open chat
-                  // navigate('/connected-admins');
-                }}
-                className="mt-2 text-xs font-bold text-white bg-luxury-blue px-3 py-1.5 rounded-lg w-fit"
-              >
-                סגור
-              </button>
+              <div className="flex gap-2 mt-2">
+                <button 
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    setShowChat({ id: msg.sender_id, name: msg.sender_name });
+                  }}
+                  className="text-xs font-bold text-white bg-luxury-blue px-3 py-1.5 rounded-lg"
+                >
+                  פתח צ'אט
+                </button>
+                <button 
+                  onClick={() => toast.dismiss(t.id)}
+                  className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg"
+                >
+                  סגור
+                </button>
+              </div>
             </div>
           ), { duration: 5000, position: 'bottom-right' });
         }
@@ -520,6 +546,34 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>
+      </div>
+
+      {/* Global Internal Chat */}
+      <AnimatePresence>
+        {showChat && (
+          <InternalChat 
+            otherUser={showChat} 
+            onClose={() => setShowChat(null)} 
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Auto Popup Toggle Floating Button */}
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
+        <button 
+          onClick={() => setAutoPopup(!autoPopup)}
+          className={`p-3 rounded-2xl shadow-lg border transition-all flex items-center gap-2 ${
+            autoPopup 
+              ? 'bg-luxury-blue text-white border-blue-600' 
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+          title={autoPopup ? 'ביטול קפיצה אוטומטית של הצ\'אט' : 'הפעל קפיצה אוטומטית של הצ\'אט'}
+        >
+          <MessageSquare size={20} />
+          <span className="text-xs font-bold hidden md:inline">
+            {autoPopup ? 'צ\'אט קופץ: פעיל' : 'צ\'אט קופץ: כבוי'}
+          </span>
+        </button>
       </div>
     </div>
   );
