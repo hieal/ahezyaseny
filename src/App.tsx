@@ -11,6 +11,7 @@ import RoleManagement from './pages/RoleManagement';
 import SettingsPage from './pages/SettingsPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
+import ConnectedAdmins from './pages/ConnectedAdmins';
 import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
@@ -117,6 +118,7 @@ function Sidebar() {
     { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
     { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
     { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
+    { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
   ];
 
   if (user?.role === 'super_admin' || user?.role === 'team_leader') {
@@ -189,14 +191,6 @@ function Sidebar() {
                   <span className="font-medium">{item.label}</span>
                 </Link>
               ))}
-              
-              <button
-                onClick={() => setShowConnectedAdmins(true)}
-                className="sidebar-item w-full text-right"
-              >
-                <Users size={20} />
-                <span className="font-medium">מנהלים מחוברים</span>
-              </button>
             </nav>
 
             <div className="p-6 border-t border-slate-50">
@@ -247,105 +241,6 @@ function Sidebar() {
         )}
       </AnimatePresence>
       
-      {/* Connected Admins Modal */}
-      <AnimatePresence>
-        {showConnectedAdmins && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-6"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 text-luxury-blue">
-                  <Users size={24} />
-                  <h2 className="text-xl font-bold">מנהלים מחוברים</h2>
-                </div>
-                <button onClick={() => setShowConnectedAdmins(false)} className="p-2 hover:bg-slate-100 rounded-full">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
-                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-wider mb-1">בנים מחוברים</p>
-                  <p className="text-3xl font-black text-blue-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'male').length}
-                  </p>
-                </div>
-                <div className="bg-pink-50 p-4 rounded-2xl text-center border border-pink-100">
-                  <p className="text-[10px] text-pink-600 font-black uppercase tracking-wider mb-1">בנות מחוברות</p>
-                  <p className="text-3xl font-black text-pink-900">
-                    {allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                <table className="w-full text-sm text-right">
-                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 rounded-tr-lg">שם</th>
-                      <th className="px-3 py-2">סטטוס</th>
-                      <th className="px-3 py-2 rounded-tl-lg">נראה לאחרונה</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {allAdmins.filter(a => a.id !== user?.id).sort((a, b) => {
-                      const aOnline = onlineUsers.includes(a.id);
-                      const bOnline = onlineUsers.includes(b.id);
-                      if (aOnline && !bOnline) return -1;
-                      if (!aOnline && bOnline) return 1;
-                      return 0;
-                    }).map(admin => {
-                      const isOnline = onlineUsers.includes(admin.id);
-                      return (
-                        <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-3 py-3 font-medium text-slate-900 flex items-center gap-2">
-                            <div className="relative">
-                              {admin.avatar_url ? (
-                                <img src={admin.avatar_url} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                                  <User size={16} />
-                                </div>
-                              )}
-                              {isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>}
-                            </div>
-                            <div>
-                              <div className="font-bold">{admin.name}</div>
-                              <div className="text-[10px] text-slate-400">{admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}</div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            {isOnline ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                מחובר
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
-                                לא מחובר
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-slate-500 text-xs">
-                            {isOnline ? 'עכשיו' : (admin.last_seen ? new Date(admin.last_seen).toLocaleString('he-IL') : 'לא ידוע')}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {allAdmins.length <= 1 && (
-                  <p className="text-center text-slate-400 text-sm py-8">אין מנהלים אחרים במערכת</p>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* Password Change Modal */}
       <AnimatePresence>
         {showPasswordModal && (
@@ -603,6 +498,7 @@ export default function App() {
               <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
               <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
               <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
+              <Route path="/connected-admins" element={<ProtectedRoute><ConnectedAdmins /></ProtectedRoute>} />
               <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
               <Route path="/roles" element={<ProtectedRoute adminOnly><RoleManagement /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute superAdminOnly><SettingsPage /></ProtectedRoute>} />

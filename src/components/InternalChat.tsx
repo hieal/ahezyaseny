@@ -121,7 +121,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
           </div>
           <div>
             <p className="text-sm font-bold leading-tight">{otherUser.name}</p>
-            <p className="text-[10px] opacity-80 font-medium">שיחה עם {otherUser.name} • מאת {user?.name}</p>
+            <p className="text-[10px] opacity-80 font-medium">שיחה בין המנהל/ת {user?.name} למנהל/ת {otherUser.name}</p>
           </div>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all">

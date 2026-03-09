@@ -209,7 +209,26 @@ class DataService {
 
   // Auth
   async heartbeat(): Promise<boolean> {
-    return true;
+    const sessionUserJson = sessionStorage.getItem('current_user');
+    const localUserJson = localStorage.getItem('current_user');
+    const userJson = sessionUserJson || localUserJson;
+    
+    if (!userJson) return false;
+    
+    try {
+      const user = JSON.parse(userJson);
+      // Don't update for the fallback "Good User"
+      if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
+        await supabase.from('admins').update({ 
+          last_seen: new Date().toISOString(),
+          is_online: true 
+        }).eq('id', user.id);
+      }
+      return true;
+    } catch (err) {
+      console.error('Heartbeat error:', err);
+      return false;
+    }
   }
 
   async getCurrentUser(): Promise<User | null> {
