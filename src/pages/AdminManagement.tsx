@@ -70,6 +70,8 @@ export default function AdminManagement() {
 
   useEffect(() => {
     fetchUsers();
+    const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
+    return () => clearInterval(interval);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -713,6 +715,52 @@ export default function AdminManagement() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="card p-6 shadow-sm border-none">
+          <h2 className="text-lg font-black text-green-600 mb-4 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            מנהלים מחוברים כרגע
+          </h2>
+          <div className="space-y-2">
+            {users.filter(u => u.is_online).map(u => (
+              <div key={u.id} className="flex items-center justify-between p-3 bg-green-50 rounded-xl">
+                <span className="font-bold text-slate-800">{u.name}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                    <Phone size={16} />
+                  </button>
+                  <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                    <MessageSquare size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {users.filter(u => u.is_online).length === 0 && <p className="text-sm text-slate-400">אין מנהלים מחוברים כרגע</p>}
+          </div>
+        </div>
+        <div className="card p-6 shadow-sm border-none">
+          <h2 className="text-lg font-black text-slate-500 mb-4 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+            מנהלים לא מחוברים
+          </h2>
+          <div className="space-y-2">
+            {users.filter(u => !u.is_online).map(u => (
+              <div key={u.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                <span className="font-bold text-slate-600">{u.name}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                    <Phone size={16} />
+                  </button>
+                  <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                    <MessageSquare size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="card overflow-hidden border-none shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-right">
@@ -755,6 +803,7 @@ export default function AdminManagement() {
                           <div className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url ? 'hidden' : ''}`}>
                             <UserCheck size={24} />
                           </div>
+                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`} title={u.is_online ? 'מחובר' : 'לא מחובר'}></div>
                           {u.role === 'super_admin' && (
                             <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center text-white border-2 border-white shadow-sm">
                               <ShieldAlert size={10} />
@@ -927,7 +976,7 @@ export default function AdminManagement() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-left">
+                  <td className="px-6 py-5 text-left min-w-[200px]">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
                         <Phone size={16} />

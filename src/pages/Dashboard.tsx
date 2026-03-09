@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -897,6 +897,29 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        
+        {/* Personal Stats */}
+        <div className="flex gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <Users size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">הכרטיסים שלי</p>
+              <p className="text-xl font-black text-slate-900">{matches.filter(m => m.created_by === user?.id).length}</p>
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <CheckCircle size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">פורסמו היום</p>
+              <p className="text-xl font-black text-slate-900">{matches.filter(m => m.created_by === user?.id && m.last_published_at && new Date(m.last_published_at).toDateString() === new Date().toDateString()).length}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-3">
           {user?.role === 'super_admin' && (
             <button 
@@ -1822,6 +1845,49 @@ export default function Dashboard() {
                 >
                   סגור
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Connected Admins Modal */}
+      <AnimatePresence>
+        {showConnectedAdminsModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-lg space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-black text-slate-900">מנהלים מחוברים</h3>
+                <button onClick={() => setShowConnectedAdminsModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X size={24} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {allUsers.filter(u => u.status === 'active').map(u => (
+                  <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                      <div>
+                        <p className="font-bold text-slate-800">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.is_online ? 'מחובר' : 'לא מחובר'}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                        <Phone size={18} />
+                      </button>
+                      <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                        <MessageSquare size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           </div>
