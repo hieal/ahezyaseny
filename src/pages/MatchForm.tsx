@@ -36,6 +36,7 @@ export default function MatchForm() {
     phone: '',
     image_url: null,
     additional_images: '[]',
+    viewer_group_ids: '[]',
     creation_source: 'manual'
   });
 
@@ -362,6 +363,7 @@ export default function MatchForm() {
           occupation: entry['עיסוק'] || entry['Occupation'] || '',
           about: entry['על עצמי'] || entry['קצת עליי'] || entry['About'] || '',
           looking_for: entry['מה מחפש'] || entry['אני מחפש/ת'] || entry['Looking For'] || '',
+          viewer_group_ids: '[]',
           creation_source: 'csv'
         };
         
@@ -439,7 +441,8 @@ export default function MatchForm() {
                   creator_name: user?.name || 'System',
                   creator_category: user?.category || 'general',
                   is_published_confirmed: 0,
-                  crop_config: null
+                  crop_config: null,
+                  viewer_group_ids: '[]'
                 });
                 toast.success('נוצר משודך דמו בהצלחה');
                 navigate('/');

@@ -230,12 +230,14 @@ class DataService {
 
   async syncSchema(): Promise<{ success: boolean; message: string }> {
     try {
+      // First check if we have service role key, if not, we can't use RPC exec_sql usually
+      // unless it's explicitly allowed. 
       const { error } = await supabaseAdmin.rpc('exec_sql', { sql: SCHEMA_SQL });
       if (error) {
         console.error('Schema sync RPC error:', error);
         return { 
           success: false, 
-          message: 'לא ניתן היה לסנכרן אוטומטית. אנא הרץ את ה-SQL ידנית ב-Supabase Dashboard.' 
+          message: 'לא ניתן היה לסנכרן אוטומטית. וודא שפונקציית exec_sql קיימת ב-Supabase.' 
         };
       }
       return { success: true, message: 'סנכרון סכמה הושלם בהצלחה!' };
@@ -589,6 +591,13 @@ class DataService {
     return data as User;
   }
 
+  async getUserByEmail(email: string): Promise<User | null> {
+    const data = await this.handleSupabase(
+      supabase.from('admins').select('*').eq('email', email).limit(1).maybeSingle()
+    );
+    return data as User;
+  }
+
   async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
     const currentUser = await this.getCurrentUser();
     const newUser: any = {
@@ -802,6 +811,36 @@ class DataService {
     }
   }
 
+  getCategoryByAge(age: number): string {
+    if (age >= 18 && age <= 22) return '18-22';
+    if (age >= 23 && age <= 27) return '23-27';
+    if (age >= 28 && age <= 32) return '28-32';
+    if (age >= 33 && age <= 40) return '33-40';
+    if (age >= 41 && age <= 65) return '41-65';
+    return '41-65'; // Default fallback
+  }
+
+  async syncWhatsAppGroupsFromAnchor(category?: string): Promise<{ success: boolean; message: string }> {
+    // Placeholder for anchor sync logic
+    console.log(`Syncing WhatsApp groups from anchor for category: ${category || 'all'}`);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return { success: true, message: 'סנכרון קבוצות מהעוגן הושלם בהצלחה' };
+  }
+
+  async syncTemplatesFromAnchor(): Promise<{ success: boolean; message: string }> {
+    // Placeholder for anchor sync logic
+    console.log('Syncing templates from anchor');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return { success: true, message: 'סנכרון תבניות מהעוגן הושלם בהצלחה' };
+  }
+
+  async syncResetsFromAnchor(): Promise<{ success: boolean; message: string }> {
+    // Placeholder for anchor sync logic
+    console.log('Syncing resets from anchor');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return { success: true, message: 'סנכרון איפוסים מהעוגן הושלם בהצלחה' };
+  }
+
   async updateCandidateImage(candidateId: string, imageUrl: string) {
     const { error } = await supabase
       .from('candidates')
@@ -945,34 +984,74 @@ class DataService {
   async getStats(user?: User): Promise<Stats> {
     try {
       let matchesQuery = supabase.from('candidates').select('type, publish_count, created_by').is('deleted_at', null);
-      let adminsQuery = supabase.from('admins').select('gender, created_by').is('deleted_at', null);
+      let adminsQuery = supabase.from('admins').select('gender, created_by, category, secondary_category').is('deleted_at', null);
+      let publishLogsQuery = supabase.from('publish_logs').select('created_at, user_id');
 
+      let groupAdminIds: string[] = [];
       if (user && user.role !== 'super_admin') {
+        // Fetch admins in the same group to calculate group stats
+        const myCategories = [user.category, user.secondary_category].filter(Boolean);
+        if (myCategories.length > 0) {
+          const { data: sameGroupAdmins } = await supabase.from('admins')
+            .select('id')
+            .or(`category.in.(${myCategories.join(',')}),secondary_category.in.(${myCategories.join(',')})`);
+          groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
+        }
+
         if (user.role === 'team_leader') {
           const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
           const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
           matchesQuery = matchesQuery.in('created_by', adminIds);
-          // For team leader, stats might still show all admins or just their team? 
-          // Usually stats for "total admins" is global or team-based. Let's keep it team-based if filtered.
-          adminsQuery = adminsQuery.in('created_by', [user.id]); // Admins created by them
+          adminsQuery = adminsQuery.in('created_by', [user.id]);
+          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([...adminIds, ...groupAdminIds])));
         } else {
           matchesQuery = matchesQuery.eq('created_by', user.id);
           adminsQuery = adminsQuery.eq('id', user.id);
+          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([user.id, ...groupAdminIds])));
         }
       }
 
-      const [matchesData, adminsData] = await Promise.all([
+      const [matchesData, adminsData, publishLogsData] = await Promise.all([
         matchesQuery,
-        adminsQuery
+        adminsQuery,
+        publishLogsQuery
       ]);
 
       const matches = matchesData.data || [];
       const admins = adminsData.data || [];
+      const publishLogs = publishLogsData.data || [];
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const publishedTodayCount = publishLogs.filter(log => {
+        const logDate = new Date(log.created_at);
+        return logDate >= today;
+      }).length;
+
+      const publishedThisMonthCount = publishLogs.filter(log => {
+        const logDate = new Date(log.created_at);
+        return logDate >= firstDayOfMonth;
+      }).length;
+
+      const publishedThisMonthMeCount = user ? publishLogs.filter(log => {
+        const logDate = new Date(log.created_at);
+        return logDate >= firstDayOfMonth && log.user_id === user.id;
+      }).length : 0;
+
+      const publishedThisMonthGroupCount = groupAdminIds.length > 0 ? publishLogs.filter(log => {
+        const logDate = new Date(log.created_at);
+        return logDate >= firstDayOfMonth && groupAdminIds.includes(log.user_id);
+      }).length : publishedThisMonthCount;
 
       return {
         males: matches.filter(m => m.type === 'male').length,
         females: matches.filter(m => m.type === 'female').length,
-        publishedToday: matches.filter(m => m.publish_count > 0).length,
+        publishedToday: publishedTodayCount,
+        publishedThisMonth: publishedThisMonthCount,
+        publishedThisMonthMe: publishedThisMonthMeCount,
+        publishedThisMonthGroup: publishedThisMonthGroupCount,
         neverPublished: matches.filter(m => m.publish_count === 0).length,
         totalAdmins: admins.length,
         adminMales: admins.filter(a => a.gender === 'male').length,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, AlertTriangle, Database, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldCheck, Plus, Trash2, CheckCircle, XCircle, Play, AlertTriangle, Database, RefreshCw, Anchor } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
@@ -131,16 +131,72 @@ export default function SettingsPage() {
     }
   };
 
+  const scrollToSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-4xl font-extrabold text-text-main tracking-tight">הגדרות מערכת</h1>
-        <p className="text-text-secondary mt-1 font-medium">ניהול תבניות והגדרות כלליות עבור {APP_NAME}</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-extrabold text-text-main tracking-tight">הגדרות מערכת</h1>
+          <p className="text-text-secondary mt-1 font-medium">ניהול תבניות והגדרות כלליות עבור {APP_NAME}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="relative group">
+            <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-luxury-blue hover:bg-blue-50 transition-all flex items-center gap-2 shadow-sm">
+              <MessageSquare size={14} />
+              קבוצות וואטזאפ
+            </button>
+            <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-2 space-y-1">
+              <button 
+                onClick={() => scrollToSection('section-whatsapp')}
+                className="w-full text-right px-3 py-2 text-xs font-bold text-slate-600 hover:bg-blue-50 hover:text-luxury-blue rounded-lg transition-all"
+              >
+                כל הקבוצות
+              </button>
+              <div className="border-t border-slate-50 my-1"></div>
+              {CATEGORIES.map(cat => (
+                <button 
+                  key={cat}
+                  onClick={() => scrollToSection(`cat-${cat}`)}
+                  className="w-full text-right px-3 py-2 text-xs font-medium text-slate-500 hover:bg-blue-50 hover:text-luxury-blue rounded-lg transition-all"
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button 
+            onClick={() => scrollToSection('section-opening')}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-blue-50 hover:text-luxury-blue transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Play size={14} />
+            הודעות פתיחה
+          </button>
+          <button 
+            onClick={() => scrollToSection('section-google')}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-blue-50 hover:text-luxury-blue transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Globe size={14} />
+            התחברות גוגל
+          </button>
+          <button 
+            onClick={() => scrollToSection('section-advanced')}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-blue-50 hover:text-luxury-blue transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Database size={14} />
+            פעולות מתקדמות
+          </button>
+        </div>
       </div>
 
       <div className="card p-10 space-y-10 shadow-xl border-none">
         {/* WhatsApp Groups Management Section */}
-        <div className="space-y-6">
+        <div id="section-whatsapp" className="space-y-6 scroll-mt-20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 text-luxury-blue">
               <div className="p-3 bg-blue-50 rounded-2xl shadow-sm">
@@ -186,9 +242,24 @@ export default function SettingsPage() {
           
           <div className="space-y-8">
             {CATEGORIES.filter(cat => selectedCategories.includes(cat)).map(cat => (
-              <div key={cat} className="space-y-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+              <div key={cat} id={`cat-${cat}`} className="space-y-6 bg-slate-50 p-6 rounded-2xl border border-slate-100 scroll-mt-20">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
-                  <h3 className="font-extrabold text-lg text-luxury-blue">{cat}</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-extrabold text-lg text-luxury-blue">{cat}</h3>
+                    <button 
+                      onClick={async () => {
+                        const tid = toast.loading(`מסנכרן קבוצות עבור ${cat}...`);
+                        const res = await dataService.syncWhatsAppGroupsFromAnchor(cat);
+                        if (res.success) toast.success(res.message, { id: tid });
+                        else toast.error(res.message, { id: tid });
+                      }}
+                      className="flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-luxury-blue px-2 py-1 rounded-lg hover:bg-blue-200 transition-all"
+                      title="סנכרן קבוצות מהענן"
+                    >
+                      <Anchor size={12} />
+                      קישור עוגן
+                    </button>
+                  </div>
                   <button 
                     onClick={() => addGroup(cat)}
                     className="flex items-center gap-1 text-xs font-bold text-luxury-blue hover:bg-blue-50 px-2 py-1 rounded-lg transition-all"
@@ -330,10 +401,24 @@ export default function SettingsPage() {
             ))}
           </div>
 
-          <div className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-            <p className="text-sm text-text-secondary font-bold uppercase tracking-wider">
-              הודעת פתיחה יומית לקבוצה
-            </p>
+          <div id="section-opening" className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100 scroll-mt-20">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-text-secondary font-bold uppercase tracking-wider">
+                הודעת פתיחה יומית לקבוצה
+              </p>
+              <button 
+                onClick={async () => {
+                  const tid = toast.loading('מסנכרן תבניות מהעוגן...');
+                  const res = await dataService.syncTemplatesFromAnchor();
+                  if (res.success) toast.success(res.message, { id: tid });
+                  else toast.error(res.message, { id: tid });
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-luxury-blue px-2 py-1 rounded-lg hover:bg-blue-200 transition-all"
+              >
+                <Anchor size={12} />
+                קישור עוגן
+              </button>
+            </div>
             <p className="text-sm text-text-secondary font-medium">
               הודעה זו תישלח פעם אחת ביום לפני תחילת פרסום הכרטיסים כדי להכין את חברי הקבוצה.
             </p>
@@ -345,7 +430,7 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+          <div id="section-template" className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100 scroll-mt-20">
             <p className="text-sm text-text-secondary font-bold uppercase tracking-wider">
               תבנית כרטיס (הודעה קבועה)
             </p>
@@ -362,7 +447,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Google Login Section */}
-        <div className="space-y-6 pt-6 border-t border-slate-100">
+        <div id="section-google" className="space-y-6 pt-6 border-t border-slate-100 scroll-mt-20">
           <div className="flex items-center gap-3 text-soft-purple">
             <div className="p-3 bg-purple-50 rounded-2xl shadow-sm">
               <Globe size={24} />
@@ -397,43 +482,12 @@ export default function SettingsPage() {
       </div>
 
       {/* Advanced Actions Section */}
-      <div className="card p-8 bg-white space-y-8 shadow-sm border border-slate-100">
+      <div id="section-advanced" className="card p-8 bg-white space-y-8 shadow-sm border border-slate-100 scroll-mt-20">
         <div className="flex items-center gap-3 text-luxury-blue">
           <div className="p-3 bg-blue-50 rounded-2xl shadow-sm">
             <Database size={24} />
           </div>
           <h2 className="font-extrabold text-2xl tracking-tight">פעולות מתקדמות</h2>
-        </div>
-
-        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-lg text-text-main">סנכרון מסד נתונים (SQL)</h3>
-              <p className="text-text-secondary font-medium text-sm mt-1 max-w-xl">
-                מעדכן את מבנה מסד הנתונים ומוודא שכל העמודות והטבלאות הדרושות קיימות. מומלץ להריץ אם מופיעות שגיאות בחיבור או בעמודות חסרות.
-              </p>
-            </div>
-            <button 
-              onClick={async () => {
-                const toastId = toast.loading('מסנכרן מסד נתונים... אנא המתן');
-                try {
-                  const result = await dataService.syncSchema();
-                  if (result.success) {
-                    toast.success(result.message, { id: toastId });
-                    setTimeout(() => window.location.reload(), 1500);
-                  } else {
-                    toast.error(result.message, { id: toastId });
-                  }
-                } catch (err) {
-                  toast.error('שגיאה בסנכרון מסד נתונים', { id: toastId });
-                }
-              }}
-              className="px-6 py-3 bg-white border-2 border-luxury-blue text-luxury-blue hover:bg-blue-50 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap flex items-center gap-2"
-            >
-              <RefreshCw size={18} />
-              סנכרן מבנה נתונים
-            </button>
-          </div>
         </div>
 
         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
@@ -455,10 +509,24 @@ export default function SettingsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 space-y-4">
-            <h3 className="font-bold text-lg text-amber-700 flex items-center gap-2">
-              <AlertTriangle size={20} />
-              איפוס היסטוריה
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-amber-700 flex items-center gap-2">
+                <AlertTriangle size={20} />
+                איפוס היסטוריה
+              </h3>
+              <button 
+                onClick={async () => {
+                  const tid = toast.loading('מסנכרן איפוסים מהעוגן...');
+                  const res = await dataService.syncResetsFromAnchor();
+                  if (res.success) toast.success(res.message, { id: tid });
+                  else toast.error(res.message, { id: tid });
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-lg hover:bg-amber-200 transition-all"
+              >
+                <Anchor size={12} />
+                קישור עוגן
+              </button>
+            </div>
             <p className="text-amber-600 text-sm font-medium">
               פעולה זו תמחק את כל הכרטיסים (משודכים), היסטוריית הפרסומים ומעקב הפעולות.
               <br />

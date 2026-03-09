@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBackend } from '../contexts/BackendContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud, Settings, RefreshCw, Copy, X, Zap } from 'lucide-react';
+import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud, Settings, RefreshCw, Copy, X, Zap, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
 import { Logo } from '../components/Logo';
@@ -156,7 +156,7 @@ export default function LoginPage() {
         toast.success('ברוך הבא!');
         navigate('/');
       } else {
-        toast.error('שגיאה בהתחברות - בדוק שם משתמש וסיסמה');
+        toast.error('שם משתמש או סיסמה שגויים');
       }
     } catch (err: any) {
       toast.error(err.message || 'שגיאה בחיבור למסד הנתונים');
@@ -209,31 +209,6 @@ export default function LoginPage() {
         className="w-full max-w-2xl"
       >
         <div className="text-center mb-8 flex flex-col items-center">
-          <button 
-            onClick={async () => {
-              setLoading(true);
-              try {
-                const syncResult = await dataService.syncSchema();
-                if (syncResult.success) {
-                  toast.success(syncResult.message);
-                  setTimeout(() => window.location.reload(), 1000);
-                } else {
-                  setSqlScript(dataService.getSchemaSQL());
-                  setShowSqlModal(true);
-                  toast.error(syncResult.message);
-                }
-              } catch (err) {
-                toast.error('שגיאה בסנכרון');
-              } finally {
-                setLoading(false);
-              }
-            }}
-            disabled={loading}
-            className="mb-4 text-xs font-bold text-slate-400 hover:text-luxury-blue flex items-center gap-1"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-            סנכרון מסד נתונים (SQL)
-          </button>
           <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-6 border border-slate-100">
             <Logo size={80} showText={false} />
           </div>
@@ -375,6 +350,43 @@ export default function LoginPage() {
                       </>
                     )}
                   </button>
+
+                  {loginType === 'admin' && (
+                    <div className="pt-4 space-y-4">
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-slate-100"></span>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-white px-2 text-slate-400 font-bold">או התחברות מהירה</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLoading(true);
+                          try {
+                            const { error } = await supabase.auth.signInWithOAuth({
+                              provider: 'google',
+                              options: {
+                                redirectTo: window.location.origin,
+                              }
+                            });
+                            if (error) throw error;
+                          } catch (err: any) {
+                            toast.error('שגיאה בהתחברות עם גוגל: ' + err.message);
+                            setLoading(false);
+                          }
+                        }}
+                        disabled={loading}
+                        className="w-full py-3.5 flex items-center justify-center gap-3 text-sm rounded-xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+                      >
+                        <Globe size={18} className="text-blue-500" />
+                        התחברות באמצעות Google
+                      </button>
+                    </div>
+                  )}
                 </form>
               </motion.div>
             )}

@@ -36,6 +36,7 @@ export default function AdminManagement() {
   const [scannedAdmins, setScannedAdmins] = useState<any[]>([]);
   const [showConnectionStatus, setShowConnectionStatus] = useState(true);
   const [connectionView, setConnectionView] = useState<'online' | 'offline'>('online');
+  const [scrollThreshold, setScrollThreshold] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
@@ -727,6 +728,21 @@ export default function AdminManagement() {
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showConnectionStatus ? '-translate-x-6' : '-translate-x-1'}`} />
           </button>
         </div>
+
+        <div className="flex items-center gap-4 bg-slate-50 p-2 px-4 rounded-xl border border-slate-100">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">גובה טבלת מנהלים</span>
+            <span className="text-xs font-bold text-luxury-blue">הצג עד {scrollThreshold} מנהלים</span>
+          </div>
+          <input 
+            type="range" 
+            min="3" 
+            max="50" 
+            value={scrollThreshold} 
+            onChange={(e) => setScrollThreshold(parseInt(e.target.value))}
+            className="w-32 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-luxury-blue"
+          />
+        </div>
       </div>
 
       <AnimatePresence>
@@ -809,7 +825,10 @@ export default function AdminManagement() {
       </AnimatePresence>
 
       <div className="card overflow-hidden border-none shadow-lg">
-        <div className="overflow-x-auto">
+        <div 
+          className="overflow-x-auto overflow-y-auto custom-scrollbar"
+          style={{ maxHeight: `${scrollThreshold * 85 + 60}px` }}
+        >
           <table className="w-full text-right">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>

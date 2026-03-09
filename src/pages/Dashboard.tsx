@@ -69,6 +69,8 @@ export default function Dashboard() {
   const [showChat, setShowChat] = useState<any>(null);
   const [dailySuggestions, setDailySuggestions] = useState<any[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [sortAlphabetically, setSortAlphabetically] = useState(false);
+  const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
 
   const handleSuggest = (match: Match) => {
     setShowConnectedAdminsModal(true);
@@ -94,6 +96,7 @@ export default function Dashboard() {
   const [viewerSearch, setViewerSearch] = useState('');
   const [viewerGenderFilter, setViewerGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [viewerCardView, setViewerCardView] = useState<'full' | 'designed'>('full');
+  const [showSameGroupsAdminsModal, setShowSameGroupsAdminsModal] = useState(false);
   const [managerCounts, setManagerCounts] = useState<Record<string, number>>({});
 
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -102,6 +105,16 @@ export default function Dashboard() {
   const [newNoteText, setNewNoteText] = useState('');
   const [isNoteAvailable, setIsNoteAvailable] = useState(true);
   const [loadingNotes, setLoadingNotes] = useState(false);
+
+  const adminsInSameGroups = allUsers.filter(u => {
+    if (user?.role === 'super_admin') return true;
+    if (!user?.category && !user?.secondary_category) return u.id === user?.id;
+    
+    const myCategories = [user.category, user.secondary_category].filter(Boolean);
+    const userCategories = [u.category, u.secondary_category].filter(Boolean);
+    
+    return userCategories.some(cat => myCategories.includes(cat));
+  });
 
   const fetchManagerCounts = async () => {
     try {
@@ -172,7 +185,7 @@ export default function Dashboard() {
     setIsGenerating(true);
     const canvas = document.createElement('canvas');
     canvas.width = 1600; 
-    canvas.height = 3400; // Increased height for more content and breathing room
+    canvas.height = 3600; // Increased height for footer below frame
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
@@ -186,12 +199,12 @@ export default function Dashboard() {
     const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 3400);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 3600);
     gradient.addColorStop(0, loveBg);
     gradient.addColorStop(0.5, lightAccent);
     gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1600, 3400);
+    ctx.fillRect(0, 0, 1600, 3600);
 
     // Decorative Frame with Glow
     ctx.save();
@@ -199,7 +212,7 @@ export default function Dashboard() {
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 20;
-    ctx.strokeRect(margin, margin, 1600 - margin*2, 3400 - margin*2);
+    ctx.strokeRect(margin, margin, 1600 - margin*2, 3320 - margin); // Frame ends before footer
     ctx.restore();
     
     // Header Section
@@ -432,41 +445,43 @@ export default function Dashboard() {
     }
 
     // Footer
-    const footerY = 3250; // Moved down
+    const footerY = 3480; 
     
-    // Separator Line
-    ctx.beginPath();
-    ctx.moveTo(margin + 200, footerY - 120);
-    ctx.lineTo(1600 - margin - 200, footerY - 120);
-    ctx.strokeStyle = accentColor;
-    ctx.lineWidth = 4;
-    ctx.globalAlpha = 0.3;
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
+    // Decorative Box for Manager Label
+    const labelText = `נשלח על ידי ${match.type === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    ctx.font = 'bold 60px sans-serif';
+    const textWidth = ctx.measureText(labelText).width;
+    const boxWidth = textWidth + 120;
+    const boxHeight = 120;
+    const boxX = (1600 - boxWidth) / 2;
+    const boxY = footerY - 80;
 
-    // Glowing Manager Name
     ctx.save();
-    ctx.shadowBlur = 35;
-    ctx.shadowColor = accentColor;
     ctx.fillStyle = accentColor;
-    ctx.font = 'italic bold 68px serif';
-    ctx.textAlign = 'center';
-    const creatorText = `נשלח על ידי ${match.creator_gender === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 30);
+    ctx.fill();
     
-    // Draw text with multiple layers for intense glow
-    ctx.fillText(creatorText, 800, footerY);
-    ctx.shadowBlur = 15;
-    ctx.fillText(creatorText, 800, footerY);
+    // Inner border for box
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.stroke();
     ctx.restore();
+
+    // Manager Name Text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 60px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(labelText, 800, footerY);
     
     if (match.creator_phone || user?.phone) {
       ctx.save();
-      ctx.shadowBlur = 25;
-      ctx.shadowColor = '#0f172a'; // Dark glow
-      ctx.font = 'bold 58px sans-serif'; // Larger
-      ctx.fillStyle = '#0f172a'; // Different color
+      ctx.font = 'bold 54px sans-serif';
+      ctx.fillStyle = '#0f172a';
       ctx.textAlign = 'center';
-      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 120); // Moved down more
+      ctx.fillText(`ליצירת קשר: ${match.creator_phone || user?.phone}`, 800, footerY + 100);
       ctx.restore();
     }
 
@@ -490,7 +505,7 @@ export default function Dashboard() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [showStatsModal, setShowStatsModal] = useState(false);
-  const [statsModalType, setStatsModalType] = useState<'males' | 'females' | 'publishedToday' | 'neverPublished' | 'publishedLastMonth' | 'notPublishedLastMonth' | 'joinedLastWeek' | 'joinedLastMonth' | null>(null);
+  const [statsModalType, setStatsModalType] = useState<'males' | 'females' | 'publishedToday' | 'neverPublished' | 'publishedLastMonth' | 'notPublishedLastMonth' | 'joinedLastWeek' | 'joinedLastMonth' | 'publishedThisMonthMe' | 'publishedThisMonthGroup' | null>(null);
   const [filterManager, setFilterManager] = useState<string>('all');
   const [filterGroup, setFilterGroup] = useState<string>('all');
 
@@ -1320,6 +1335,7 @@ export default function Dashboard() {
                         <div key={match.id} className="relative group">
                           <MatchCard 
                             match={match} 
+                            allGroups={whatsappGroups}
                             onView={(m) => {
                               setViewingMatch(m);
                             }}
@@ -1584,11 +1600,20 @@ export default function Dashboard() {
               color="border-pink-100 bg-pink-50/30"
             />
           </div>
-          <div className="cursor-pointer" onClick={() => { setStatsModalType('publishedToday'); setShowStatsModal(true); }}>
+          <div className="cursor-pointer" onClick={() => { 
+            if (user?.role === 'super_admin') {
+              setStatsModalType('publishedToday'); 
+              setShowStatsModal(true); 
+            } else {
+              setStatsViewMode('me');
+              setStatsModalType('publishedThisMonthMe');
+              setShowStatsModal(true);
+            }
+          }}>
             <StatCard 
               icon={<Send className="text-green-600" />} 
-              label="פורסמו היום" 
-              value={stats?.publishedToday || 0} 
+              label="פורסמו החודש" 
+              value={user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (stats?.publishedThisMonthMe || 0)} 
               color="border-green-100 bg-green-50/30"
             />
           </div>
@@ -1602,33 +1627,14 @@ export default function Dashboard() {
           </div>
           <div 
             className="relative cursor-pointer"
-            onClick={() => setShowAdminBreakdown(!showAdminBreakdown)}
+            onClick={() => setShowSameGroupsAdminsModal(true)}
           >
             <StatCard 
               icon={<Users className="text-purple-600" />} 
-              label="סה״כ מנהלים" 
-              value={stats?.totalAdmins || 0} 
+              label="מנהלים בקבוצות שלי" 
+              value={adminsInSameGroups.length} 
               color="border-purple-100 bg-purple-50/30"
             />
-            {showAdminBreakdown && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="absolute top-full left-0 right-0 mt-2 p-4 bg-white rounded-2xl shadow-2xl border border-purple-100 z-50 text-center"
-              >
-                <div className="flex justify-around items-center gap-4">
-                  <div>
-                    <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider">בנים</p>
-                    <p className="text-xl font-extrabold text-blue-600">{stats?.adminMales || 0}</p>
-                  </div>
-                  <div className="w-px h-8 bg-slate-100" />
-                  <div>
-                    <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider">בנות</p>
-                    <p className="text-xl font-extrabold text-pink-600">{stats?.adminFemales || 0}</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
           </div>
         </div>
       )}
@@ -1647,6 +1653,15 @@ export default function Dashboard() {
             />
           </div>
           <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-500">מיון א-ב</span>
+              <button 
+                onClick={() => setSortAlphabetically(!sortAlphabetically)}
+                className={`w-10 h-5 rounded-full transition-all relative ${sortAlphabetically ? 'bg-luxury-blue' : 'bg-slate-200'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${sortAlphabetically ? 'left-5.5' : 'left-0.5'}`} />
+              </button>
+            </div>
             {user?.role === 'super_admin' && (
               <>
                 <select 
@@ -1819,38 +1834,42 @@ export default function Dashboard() {
       )}
 
       {/* Matches Grid */}
-      <div className={`grid gap-6 ${
-        displaySize === 'small' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5' :
-        displaySize === 'medium' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' :
-        'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
-      }`}>
-        {filteredMatches.map((match) => (
-          <MatchCard 
-            key={match.id}
-            match={match}
-            minimal={showMinimal}
-            onPublish={handlePublish}
-            onView={(m) => setViewingMatch(m)}
-            onEdit={(id) => navigate(`/matches/edit/${id}`)}
-            onDelete={handleDelete}
-            onHistory={fetchPublishHistory}
-            onImageClick={(m) => {
-              setImageMatch(m);
-              setImageUrlInput(m.image_url || '');
-              setShowImageModal(true);
-            }}
-            onQuickUpdate={handleQuickUpdate}
-            onSuggest={handleSuggest}
-            onNotes={(m) => {
-              setNotesMatch(m);
-              fetchNotes(m.id);
-              setShowNotesModal(true);
-            }}
-            showCreator={user?.role === 'super_admin'}
-            selected={selectedMatchIds.includes(match.id)}
-            onSelect={handleSelectMatch}
-          />
-        ))}
+      <div className="w-full overflow-x-auto pb-6 custom-scrollbar" dir="rtl">
+        <div className="flex gap-6 min-w-max px-2">
+          {filteredMatches.map((match) => (
+            <div key={match.id} className={`${
+              displaySize === 'small' ? 'w-72' :
+              displaySize === 'medium' ? 'w-80' :
+              'w-96'
+            }`}>
+              <MatchCard 
+                match={match}
+                allGroups={whatsappGroups}
+                minimal={showMinimal}
+                onPublish={handlePublish}
+                onView={(m) => setViewingMatch(m)}
+                onEdit={(id) => navigate(`/matches/edit/${id}`)}
+                onDelete={handleDelete}
+                onHistory={fetchPublishHistory}
+                onImageClick={(m) => {
+                  setImageMatch(m);
+                  setImageUrlInput(m.image_url || '');
+                  setShowImageModal(true);
+                }}
+                onQuickUpdate={handleQuickUpdate}
+                onSuggest={handleSuggest}
+                onNotes={(m) => {
+                  setNotesMatch(m);
+                  fetchNotes(m.id);
+                  setShowNotesModal(true);
+                }}
+                showCreator={user?.role === 'super_admin'}
+                selected={selectedMatchIds.includes(match.id)}
+                onSelect={handleSelectMatch}
+              />
+            </div>
+          ))}
+        </div>
         {filteredMatches.length === 0 && (
           <div className="col-span-full py-20 text-center card bg-white/50 border-dashed border-2">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 text-slate-400 mb-4">
@@ -2076,6 +2095,7 @@ export default function Dashboard() {
             >
               <MatchCard 
                 match={viewingMatch} 
+                allGroups={whatsappGroups}
                 onView={() => {}} 
                 onEdit={(id) => {
                   setViewingMatch(null);
@@ -2489,6 +2509,54 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {showSameGroupsAdminsModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-lg space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-black text-slate-900">מנהלים בקבוצות שלי</h3>
+                <button onClick={() => setShowSameGroupsAdminsModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X size={24} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {adminsInSameGroups.map(u => (
+                  <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                      <div>
+                        <p className="font-bold text-slate-800">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.category || 'ללא קטגוריה'} | {u.is_online ? 'מחובר' : 'לא מחובר'}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                        <Phone size={18} />
+                      </button>
+                      <button onClick={() => {
+                        setShowSameGroupsAdminsModal(false);
+                        setShowChat({ id: u.id, name: u.name });
+                      }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                        <MessageSquare size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {adminsInSameGroups.length === 0 && (
+                  <div className="text-center py-8 text-slate-400 italic">לא נמצאו מנהלים נוספים בקבוצות שלך</div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showConnectedAdminsModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
@@ -2549,13 +2617,37 @@ export default function Dashboard() {
                   <h2 className="text-2xl font-extrabold">
                     {statsModalType === 'males' ? 'פירוט בנים' : 
                      statsModalType === 'females' ? 'פירוט בנות' : 
-                     statsModalType === 'publishedToday' ? 'פורסמו היום' : 
+                     statsModalType === 'publishedToday' ? 'פורסמו החודש' : 
+                     statsModalType === 'publishedThisMonthMe' ? 'הפרסומים שלי החודש' :
+                     statsModalType === 'publishedThisMonthGroup' ? 'פרסומי הקבוצה החודש' :
                      statsModalType === 'publishedLastMonth' ? 'פורסמו בחודש האחרון' :
                      statsModalType === 'notPublishedLastMonth' ? 'לא פורסמו מעל חודש' :
                      statsModalType === 'neverPublished' ? 'טרם פורסמו' :
                      statsModalType === 'joinedLastWeek' ? 'הצטרפו בשבוע האחרון' : 'הצטרפו בחודש האחרון'}
                   </h2>
                 </div>
+                {user?.role !== 'super_admin' && (statsModalType === 'publishedThisMonthMe' || statsModalType === 'publishedThisMonthGroup') && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button 
+                      onClick={() => {
+                        setStatsViewMode('me');
+                        setStatsModalType('publishedThisMonthMe');
+                      }}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'me' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+                    >
+                      הפרסומים שלי ({stats?.publishedThisMonthMe || 0})
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setStatsViewMode('group');
+                        setStatsModalType('publishedThisMonthGroup');
+                      }}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'group' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+                    >
+                      פרסומי הקבוצה ({stats?.publishedThisMonthGroup || 0})
+                    </button>
+                  </div>
+                )}
                 <button onClick={() => setShowStatsModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-all">
                   <X size={24} className="text-slate-400" />
                 </button>
@@ -2582,7 +2674,24 @@ export default function Dashboard() {
 
                         if (statsModalType === 'males') return m.type === 'male';
                         if (statsModalType === 'females') return m.type === 'female';
-                        if (statsModalType === 'publishedToday') return m.last_published_at && new Date(m.last_published_at).toDateString() === now.toDateString();
+                        if (statsModalType === 'publishedToday' || statsModalType === 'publishedThisMonthMe' || statsModalType === 'publishedThisMonthGroup') {
+                          const now = new Date();
+                          const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                          const matchesDate = m.last_published_at && new Date(m.last_published_at) >= firstDayOfMonth;
+                          
+                          if (!matchesDate) return false;
+                          
+                          if (statsModalType === 'publishedThisMonthMe') {
+                            return m.created_by === user?.id;
+                          }
+                          
+                          if (statsModalType === 'publishedThisMonthGroup') {
+                            const myCategories = [user?.category, user?.secondary_category].filter(Boolean);
+                            return (m.creator_category && myCategories.includes(m.creator_category));
+                          }
+                          
+                          return true;
+                        }
                         if (statsModalType === 'neverPublished') return !m.last_published_at;
                         if (statsModalType === 'publishedLastMonth') return m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo;
                         if (statsModalType === 'notPublishedLastMonth') return m.last_published_at && new Date(m.last_published_at) < oneMonthAgo;

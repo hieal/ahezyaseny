@@ -1,13 +1,15 @@
 import React from 'react';
-import { Match } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X } from 'lucide-react';
+import { Match, WhatsAppGroup } from '../types';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { toast } from 'react-hot-toast';
+import { CATEGORIES } from '../constants';
 
 interface MatchCardProps {
    match: Match;
+   allGroups?: WhatsAppGroup[];
    onPublish?: (match: Match) => void;
    onView?: (match: Match) => void;
    onEdit?: (id: string) => void;
@@ -24,13 +26,24 @@ interface MatchCardProps {
    isViewer?: boolean;
  }
 
-export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
   const [isAdjusting, setIsAdjusting] = React.useState(false);
+  const [showViewerSelector, setShowViewerSelector] = React.useState(false);
+  const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
+
+  React.useEffect(() => {
+    if (!allGroupsProp) {
+      dataService.getWhatsAppGroups().then(setAllGroups);
+    } else {
+      setAllGroups(allGroupsProp);
+    }
+  }, [allGroupsProp]);
+
   const [localCropConfig, setLocalCropConfig] = React.useState(() => {
     if (!match.crop_config) return { x: 50, y: 50, zoom: 1 };
     try {
@@ -94,6 +107,33 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
 
   const missingFields = getMissingFields(match);
   const isCsvMissing = match.creation_source === 'csv' && missingFields.length > 0;
+
+  const naturalCategory = dataService.getCategoryByAge(match.age);
+  const naturalGroup = allGroups.find(g => g.category === naturalCategory && g.type === match.type);
+  
+  const viewerGroupIds = React.useMemo(() => {
+    if (!match.viewer_group_ids) return [];
+    try {
+      return JSON.parse(match.viewer_group_ids) as string[];
+    } catch (e) {
+      return [];
+    }
+  }, [match.viewer_group_ids]);
+
+  const viewerGroups = allGroups.filter(g => viewerGroupIds.includes(g.id));
+
+  const toggleViewerGroup = async (groupId: string) => {
+    const newIds = viewerGroupIds.includes(groupId) 
+      ? viewerGroupIds.filter(id => id !== groupId)
+      : [...viewerGroupIds, groupId];
+    
+    try {
+      await onQuickUpdate?.(match.id, { viewer_group_ids: JSON.stringify(newIds) });
+      toast.success('הגדרות צפייה עודכנו');
+    } catch (err) {
+      toast.error('שגיאה בעדכון');
+    }
+  };
 
   return (
     <motion.div 
@@ -288,6 +328,24 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
                 </AnimatePresence>
               </div>
               <span className="text-text-secondary">{match.age} שנים</span>
+              {naturalGroup && (
+                <div className={`px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold ${
+                  match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'
+                }`} title={`משויך לקבוצת ${naturalGroup.name}`}>
+                  <Users size={10} />
+                  <span>{naturalGroup.name}</span>
+                </div>
+              )}
+              {viewerGroups.length > 0 && (
+                <div className="flex gap-1">
+                  {viewerGroups.map(vg => (
+                    <div key={vg.id} className="px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100" title={`צופה בקבוצת ${vg.name}`}>
+                      <Eye size={10} />
+                      <span>{vg.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {match.creation_source && (
                 <span className={`px-2 py-0.5 rounded-full flex items-center gap-1 ${
                   match.creation_source === 'manual' ? 'bg-slate-100 text-slate-600' :
@@ -304,6 +362,7 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
               )}
             </div>
           </div>
+        </div>
           <div className="flex items-center gap-1 shrink-0">
             {onEdit && (
               <button 
@@ -331,43 +390,91 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
                 <Trash2 size={18} />
               </button>
             )}
+            {!isViewer && (
+              <div className="relative">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowViewerSelector(!showViewerSelector);
+                  }}
+                  className={`p-2 rounded-lg transition-all ${showViewerSelector ? 'bg-amber-100 text-amber-600' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'}`}
+                  title="הגדר כצופה בקבוצות נוספות"
+                >
+                  <Eye size={18} />
+                </button>
+                <AnimatePresence>
+                  {showViewerSelector && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-100 shadow-2xl rounded-2xl p-4 z-50 space-y-3"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-50 pb-2">
+                        <h4 className="text-xs font-black text-slate-900">הגדר כצופה בקבוצות</h4>
+                        <button onClick={() => setShowViewerSelector(false)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                        {allGroups.map(g => (
+                          <button 
+                            key={g.id}
+                            onClick={() => toggleViewerGroup(g.id)}
+                            className={`w-full flex items-center justify-between p-2 rounded-lg text-[10px] font-bold transition-all ${
+                              viewerGroupIds.includes(g.id) ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'hover:bg-slate-50 text-slate-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${g.type === 'male' ? 'bg-blue-400' : 'bg-pink-400'}`}></div>
+                              {g.name}
+                            </div>
+                            {viewerGroupIds.includes(g.id) && <Check size={12} />}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-6 flex-1">
-        <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={match.creation_source === 'csv' && !match.city} />
-        {!minimal && (
-          <>
-            <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={match.creation_source === 'csv' && !match.religious_level} />
-            <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={match.creation_source === 'csv' && !match.occupation} />
-            <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} />
-            <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} />
-            <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} />
-            <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} />
-            <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} />
-            <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} />
-            <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} />
-            <InfoItem icon={<HistoryIcon size={14} />} label="פרסום" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
-          </>
+      <div className="flex-1 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar mb-4">
+        <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-6">
+          <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={match.creation_source === 'csv' && !match.city} />
+          {!minimal && (
+            <>
+              <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={match.creation_source === 'csv' && !match.religious_level} />
+              <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={match.creation_source === 'csv' && !match.occupation} />
+              <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} />
+              <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} />
+              <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} />
+              <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} />
+              <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} />
+              <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} />
+              <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} />
+              <InfoItem icon={<HistoryIcon size={14} />} label="פרסום" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+            </>
+          )}
+        </div>
+
+        {(!minimal && (match.about || match.creation_source === 'csv')) && (
+          <div className="mb-6">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-text-secondary mb-1.5">
+              <Info size={12} />
+              <span>קצת עליי</span>
+            </div>
+            <p className={`text-sm text-text-main leading-relaxed p-3 rounded-xl border ${
+              match.creation_source === 'csv' && (!match.about || match.about.length < 5) 
+                ? 'bg-red-50 border-red-200 text-red-700' 
+                : 'bg-slate-50 border-slate-100'
+            }`}>
+              {match.about || 'חסר תיאור...'}
+            </p>
+          </div>
         )}
       </div>
-
-      {(!minimal && (match.about || match.creation_source === 'csv')) && (
-        <div className="mb-6">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-text-secondary mb-1.5">
-            <Info size={12} />
-            <span>קצת עליי</span>
-          </div>
-          <p className={`text-sm text-text-main line-clamp-2 leading-relaxed p-3 rounded-xl border ${
-            match.creation_source === 'csv' && (!match.about || match.about.length < 5) 
-              ? 'bg-red-50 border-red-200 text-red-700' 
-              : 'bg-slate-50 border-slate-100'
-          }`}>
-            {match.about || 'חסר תיאור...'}
-          </p>
-        </div>
-      )}
 
       <div className="mt-auto pt-4 border-t border-slate-50 flex items-center gap-2">
         {onView && (

@@ -71,12 +71,16 @@ export interface Match {
   is_published_confirmed: number;
   crop_config: string | null; // JSON string of { x, y, zoom }
   creation_source: 'manual' | 'ai' | 'csv' | null;
+  viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs
 }
 
 export interface Stats {
   males: number;
   females: number;
   publishedToday: number;
+  publishedThisMonth?: number;
+  publishedThisMonthMe?: number;
+  publishedThisMonthGroup?: number;
   neverPublished: number;
   totalAdmins?: number;
   adminMales?: number;

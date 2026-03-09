@@ -59,10 +59,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const adminProfile = await dataService.getUserById(session.user.id);
+        // Try to find user by email if they signed in via Google
+        const email = session.user.email;
+        let adminProfile = null;
+        
+        if (email) {
+          adminProfile = await dataService.getUserByEmail(email);
+        }
+        
+        // Fallback to ID if email lookup fails or not applicable
+        if (!adminProfile) {
+          adminProfile = await dataService.getUserById(session.user.id);
+        }
+
         if (adminProfile) {
           setUser(adminProfile);
           localStorage.setItem('current_user', JSON.stringify(adminProfile));
+        } else {
+          // If no admin profile found for this Google account, sign them out
+          // but only if it was a Google login (not a manual session restore)
+          if (session.user.app_metadata.provider === 'google') {
+            console.error('Google account not registered as admin:', email);
+            await supabase.auth.signOut();
+            setUser(null);
+            localStorage.removeItem('current_user');
+          }
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
