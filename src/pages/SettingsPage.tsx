@@ -21,6 +21,9 @@ export default function SettingsPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showResetHistoryModal, setShowResetHistoryModal] = useState(false);
+  const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     dataService.getSettings().then(data => {
@@ -424,7 +427,147 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 space-y-4">
+            <h3 className="font-bold text-lg text-amber-700 flex items-center gap-2">
+              <AlertTriangle size={20} />
+              איפוס היסטוריה
+            </h3>
+            <p className="text-amber-600 text-sm font-medium">
+              פעולה זו תמחק את כל הכרטיסים (משודכים), היסטוריית הפרסומים ומעקב הפעולות.
+              <br />
+              <strong>שימו לב: פעולה זו אינה הפיכה!</strong>
+            </p>
+            <button 
+              onClick={() => setShowResetHistoryModal(true)}
+              className="w-full py-3 bg-white border-2 border-amber-500 text-amber-600 hover:bg-amber-100 rounded-xl font-bold transition-all"
+            >
+              אפס היסטוריה
+            </button>
+          </div>
+
+          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 space-y-4">
+            <h3 className="font-bold text-lg text-red-700 flex items-center gap-2">
+              <Trash2 size={20} />
+              איפוס מערכת מלא (Factory Reset)
+            </h3>
+            <p className="text-red-600 text-sm font-medium">
+              מחיקת כל הנתונים במערכת: מנהלים, קבוצות, כרטיסים והגדרות. המערכת תחזור למצב התחלתי.
+              <br />
+              <strong>זהירות: כל המידע יאבד לצמיתות!</strong>
+            </p>
+            <button 
+              onClick={() => setShowFactoryResetModal(true)}
+              className="w-full py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-all shadow-md"
+            >
+              איפוס מערכת מלא
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Reset History Confirmation Modal */}
+      <AnimatePresence>
+        {showResetHistoryModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center mx-auto">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">איפוס היסטוריה</h3>
+                <p className="text-slate-500 font-medium">האם אתה בטוח שברצונך למחוק את כל הכרטיסים וההיסטוריה? פעולה זו תנקה את המערכת מכל המשודכים.</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowResetHistoryModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={async () => {
+                    setResetting(true);
+                    try {
+                      await dataService.resetHistory();
+                      toast.success('המערכת אופסה בהצלחה');
+                      setShowResetHistoryModal(false);
+                      window.location.reload();
+                    } catch (err) {
+                      toast.error('שגיאה באיפוס');
+                    } finally {
+                      setResetting(false);
+                    }
+                  }}
+                  disabled={resetting}
+                  className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg hover:bg-amber-600 transition-all"
+                >
+                  {resetting ? 'מאפס...' : 'אפס עכשיו'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Factory Reset Confirmation Modal */}
+      <AnimatePresence>
+        {showFactoryResetModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">איפוס מערכת מלא</h3>
+                <p className="text-slate-500 font-medium">
+                  <strong>אזהרה חמורה!</strong>
+                  <br />
+                  פעולה זו תמחק את כל המנהלים, הקבוצות, הכרטיסים וההגדרות. המערכת תחזור למצב ריק לחלוטין.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowFactoryResetModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={async () => {
+                    setResetting(true);
+                    try {
+                      await dataService.factoryReset();
+                      toast.success('המערכת הוחזרה למצב יצרן');
+                      setShowFactoryResetModal(false);
+                      window.location.href = '/login';
+                    } catch (err) {
+                      toast.error('שגיאה באיפוס');
+                    } finally {
+                      setResetting(false);
+                    }
+                  }}
+                  disabled={resetting}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-700 transition-all"
+                >
+                  {resetting ? 'מבצע איפוס...' : 'אפס הכל לצמיתות'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="card p-8 bg-white border-dashed border-2 flex flex-col items-center text-center space-y-4">
         <div className="w-16 h-16 rounded-full bg-pink-50 text-pink-500 flex items-center justify-center">

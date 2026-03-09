@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.admins (
   is_shaham_manager INTEGER DEFAULT 0,
   password_updated_at TIMESTAMP WITH TIME ZONE,
   assigned_group_id UUID,
-  created_by INTEGER,
+  created_by UUID,
   creator_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   last_seen TIMESTAMP WITH TIME ZONE,
@@ -112,12 +112,29 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
   last_initial_sent_method TEXT
 );
 
+-- Create internal_messages table
+CREATE TABLE IF NOT EXISTS public.internal_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id UUID,
+  receiver_id UUID,
+  text TEXT,
+  match_id UUID,
+  match_name TEXT,
+  match_type TEXT,
+  match_age INTEGER,
+  match_city TEXT,
+  sender_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_read BOOLEAN DEFAULT false
+);
+
 -- Disable RLS for all tables to allow prototype access (The "Switch")
 ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidates DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publish_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.internal_messages DISABLE ROW LEVEL SECURITY;
 
 -- Storage Setup: Create 'images' bucket and set public access
 INSERT INTO storage.buckets (id, name, public) 
@@ -419,10 +436,22 @@ class DataService {
   }
 
   // Matches (Candidates)
-  async getMatches(type?: 'male' | 'female', created_by?: string): Promise<Match[]> {
+  async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
     let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);
     if (type) query = query.eq('type', type);
-    if (created_by) query = query.eq('created_by', created_by);
+    
+    if (user && user.role !== 'super_admin') {
+      if (user.role === 'team_leader') {
+        // Fetch all admins created by this team leader
+        const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
+        const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
+        query = query.in('created_by', adminIds);
+      } else {
+        // Regular admin only sees their own
+        query = query.eq('created_by', user.id);
+      }
+    }
+    
     const data = await this.handleSupabase(query);
     return data || [];
   }
@@ -494,10 +523,12 @@ class DataService {
   }
 
   async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
+    const currentUser = await this.getCurrentUser();
     const newUser: any = {
       ...user,
       created_at: new Date().toISOString(),
-      password_plain: user.password_plain || '12345678'
+      password_plain: user.password_plain || '12345678',
+      created_by: currentUser?.id
     };
 
     const sanitized = this.sanitizeAdmin(newUser);
@@ -728,11 +759,28 @@ class DataService {
   }
 
   // Stats
-  async getStats(): Promise<Stats> {
+  async getStats(user?: User): Promise<Stats> {
     try {
+      let matchesQuery = supabase.from('candidates').select('type, publish_count, created_by').is('deleted_at', null);
+      let adminsQuery = supabase.from('admins').select('gender, created_by').is('deleted_at', null);
+
+      if (user && user.role !== 'super_admin') {
+        if (user.role === 'team_leader') {
+          const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
+          const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
+          matchesQuery = matchesQuery.in('created_by', adminIds);
+          // For team leader, stats might still show all admins or just their team? 
+          // Usually stats for "total admins" is global or team-based. Let's keep it team-based if filtered.
+          adminsQuery = adminsQuery.in('created_by', [user.id]); // Admins created by them
+        } else {
+          matchesQuery = matchesQuery.eq('created_by', user.id);
+          adminsQuery = adminsQuery.eq('id', user.id);
+        }
+      }
+
       const [matchesData, adminsData] = await Promise.all([
-        supabase.from('candidates').select('type, publish_count').is('deleted_at', null),
-        supabase.from('admins').select('gender').is('deleted_at', null)
+        matchesQuery,
+        adminsQuery
       ]);
 
       const matches = matchesData.data || [];
@@ -783,6 +831,83 @@ class DataService {
     const settings = await this.getSettings();
     settings[key] = value;
     await this.updateSettings(settings);
+  }
+
+  // Reset Actions
+  async resetHistory(): Promise<void> {
+    // Delete all candidates, activity logs, and publish logs
+    await Promise.all([
+      supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    ]);
+  }
+
+  async factoryReset(): Promise<void> {
+    const currentUser = await this.getCurrentUser();
+    
+    // Delete everything except the current super admin
+    await Promise.all([
+      supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      // Delete all admins except the current one
+      supabase.from('admins').delete().neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
+    ]);
+    
+    // Reset local settings
+    localStorage.removeItem('app_settings');
+  }
+
+  // Internal Messages
+  async getInternalMessages(otherUserId: string): Promise<any[]> {
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) return [];
+    
+    const { data, error } = await supabase
+      .from('internal_messages')
+      .select('*')
+      .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
+      .order('created_at', { ascending: true });
+      
+    if (error) {
+      console.error('Error fetching internal messages:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  async sendInternalMessage(message: any): Promise<any> {
+    const { data, error } = await supabase
+      .from('internal_messages')
+      .insert({
+        ...message,
+        id: this.generateUUID(),
+        created_at: new Date().toISOString(),
+        is_read: false
+      })
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error sending internal message:', error);
+      throw error;
+    }
+    return data;
+  }
+
+  async markMessagesAsRead(senderId: string): Promise<void> {
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) return;
+    
+    await supabase
+      .from('internal_messages')
+      .update({ is_read: true })
+      .eq('sender_id', senderId)
+      .eq('receiver_id', currentUser.id)
+      .eq('is_read', false);
   }
 }
 

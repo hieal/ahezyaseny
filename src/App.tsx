@@ -18,6 +18,7 @@ import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
+import { supabase } from './services/supabase';
 import { InternalChat } from './components/InternalChat';
 
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
@@ -413,6 +414,47 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     dataService.heartbeat();
 
     return () => clearInterval(interval);
+  }, [user]);
+
+  // Global message listener
+  React.useEffect(() => {
+    if (!user) return;
+
+    const subscription = supabase
+      .channel(`global_messages_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'internal_messages',
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const msg = payload.new;
+          toast((t) => (
+            <div className="flex flex-col gap-2">
+              <div className="font-bold text-sm text-luxury-blue">הודעה חדשה מ{msg.sender_name}</div>
+              <div className="text-sm text-slate-700">{msg.text.length > 50 ? msg.text.substring(0, 50) + '...' : msg.text}</div>
+              <button 
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  // Optional: navigate to connected admins or open chat
+                  // navigate('/connected-admins');
+                }}
+                className="mt-2 text-xs font-bold text-white bg-luxury-blue px-3 py-1.5 rounded-lg w-fit"
+              >
+                סגור
+              </button>
+            </div>
+          ), { duration: 5000, position: 'bottom-right' });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [user]);
 
   React.useEffect(() => {

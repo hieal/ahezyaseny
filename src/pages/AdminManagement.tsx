@@ -34,6 +34,8 @@ export default function AdminManagement() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scannedAdmins, setScannedAdmins] = useState<any[]>([]);
+  const [showConnectionStatus, setShowConnectionStatus] = useState(true);
+  const [connectionView, setConnectionView] = useState<'online' | 'offline'>('online');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
@@ -701,65 +703,110 @@ export default function AdminManagement() {
           </div>
         )}
       </AnimatePresence>
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap gap-4 items-center">
-        <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] animate-pulse"></div>
-          <span className="text-[10px] font-bold text-slate-600">מנהל ראשי</span>
-        </div>
-        {CATEGORIES.map(cat => (
-          <div key={cat} className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full border ${getCategoryLegendColor(cat)}`}></div>
-            <span className="text-[10px] font-bold text-slate-600">{cat}</span>
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex flex-wrap gap-4 items-center">
+          <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] animate-pulse"></div>
+            <span className="text-[10px] font-bold text-slate-600">מנהל ראשי</span>
           </div>
-        ))}
+          {CATEGORIES.map(cat => (
+            <div key={cat} className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full border ${getCategoryLegendColor(cat)}`}></div>
+              <span className="text-[10px] font-bold text-slate-600">{cat}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-100">
+          <span className="text-xs font-bold text-slate-600">הצג מנהלים מחוברים/לא מחוברים</span>
+          <button 
+            onClick={() => setShowConnectionStatus(!showConnectionStatus)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${showConnectionStatus ? 'bg-luxury-blue' : 'bg-slate-300'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showConnectionStatus ? '-translate-x-6' : '-translate-x-1'}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="card p-6 shadow-sm border-none">
-          <h2 className="text-lg font-black text-green-600 mb-4 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-            מנהלים מחוברים כרגע
-          </h2>
-          <div className="space-y-2">
-            {users.filter(u => u.is_online).map(u => (
-              <div key={u.id} className="flex items-center justify-between p-3 bg-green-50 rounded-xl">
-                <span className="font-bold text-slate-800">{u.name}</span>
-                <div className="flex gap-1">
-                  <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
-                    <Phone size={16} />
-                  </button>
-                  <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                    <MessageSquare size={16} />
-                  </button>
+      <AnimatePresence>
+        {showConnectionStatus && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setConnectionView('online')}
+                className={`flex-1 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 border-2 ${
+                  connectionView === 'online' 
+                    ? 'bg-green-50 border-green-500 text-green-700 shadow-md' 
+                    : 'bg-white border-slate-100 text-slate-400 hover:border-green-200'
+                }`}
+              >
+                <div className={`w-3 h-3 rounded-full ${connectionView === 'online' ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                מנהלים מחוברים ({users.filter(u => u.is_online).length})
+              </button>
+              <button 
+                onClick={() => setConnectionView('offline')}
+                className={`flex-1 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 border-2 ${
+                  connectionView === 'offline' 
+                    ? 'bg-slate-100 border-slate-500 text-slate-700 shadow-md' 
+                    : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
+                }`}
+              >
+                <div className={`w-3 h-3 rounded-full ${connectionView === 'offline' ? 'bg-slate-500' : 'bg-slate-300'}`}></div>
+                מנהלים לא מחוברים ({users.filter(u => !u.is_online).length})
+              </button>
+            </div>
+
+            <motion.div 
+              key={connectionView}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-4"
+            >
+              {users.filter(u => connectionView === 'online' ? u.is_online : !u.is_online).map(u => (
+                <div key={u.id} className={`flex items-center justify-between p-4 rounded-2xl border ${
+                  connectionView === 'online' ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                          <UserIcon size={20} />
+                        </div>
+                      )}
+                      {u.is_online && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">{u.name}</p>
+                      <p className="text-[10px] text-slate-500">{u.role === 'super_admin' ? 'מנהל ראשי' : u.category || 'ללא קטגוריה'}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                      <Phone size={16} />
+                    </button>
+                    <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                      <MessageSquare size={16} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {users.filter(u => u.is_online).length === 0 && <p className="text-sm text-slate-400">אין מנהלים מחוברים כרגע</p>}
-          </div>
-        </div>
-        <div className="card p-6 shadow-sm border-none">
-          <h2 className="text-lg font-black text-slate-500 mb-4 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-slate-300"></div>
-            מנהלים לא מחוברים
-          </h2>
-          <div className="space-y-2">
-            {users.filter(u => !u.is_online).map(u => (
-              <div key={u.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <span className="font-bold text-slate-600">{u.name}</span>
-                <div className="flex gap-1">
-                  <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
-                    <Phone size={16} />
-                  </button>
-                  <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                    <MessageSquare size={16} />
-                  </button>
+              ))}
+              {users.filter(u => connectionView === 'online' ? u.is_online : !u.is_online).length === 0 && (
+                <div className="col-span-full py-8 text-center text-slate-400 font-medium bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  אין מנהלים {connectionView === 'online' ? 'מחוברים' : 'לא מחוברים'} כרגע
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="card overflow-hidden border-none shadow-lg">
         <div className="overflow-x-auto">

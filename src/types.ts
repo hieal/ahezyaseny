@@ -21,7 +21,7 @@ export interface User {
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
-  created_by?: number;
+  created_by?: string;
   creator_name?: string;
   created_at: string;
   last_seen?: string;

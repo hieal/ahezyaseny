@@ -475,8 +475,8 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
-        dataService.getStats(),
-        dataService.getMatches(undefined, user?.role === 'super_admin' ? undefined : user?.id),
+        dataService.getStats(user || undefined),
+        dataService.getMatches(undefined, user || undefined),
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()

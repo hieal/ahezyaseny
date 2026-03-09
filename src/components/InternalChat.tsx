@@ -3,9 +3,11 @@ import { Send, X, Smile, Paperclip, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
+import { dataService } from '../services/dataService';
+import { supabase } from '../services/supabase';
 
 interface Message {
-  id: number;
+  id: string;
   sender_id: string;
   receiver_id: string;
   text: string;
@@ -51,13 +53,9 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        // Use dataService instead of fetch
-        // const res = await fetch(`/api/internal-messages/${otherUser.id}`);
-        // if (res.ok) {
-        //   const data = await res.json();
-        //   setMessages(data);
-        // }
-        setMessages([]);
+        const data = await dataService.getInternalMessages(otherUser.id);
+        setMessages(data);
+        await dataService.markMessagesAsRead(otherUser.id);
       } catch (err) {
         console.error('Failed to fetch messages:', err);
       } finally {
@@ -66,7 +64,31 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     };
 
     fetchMessages();
-  }, [otherUser.id]);
+
+    // Subscribe to new messages
+    const subscription = supabase
+      .channel(`internal_messages_${user?.id}_${otherUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'internal_messages',
+          filter: `receiver_id=eq.${user?.id}`,
+        },
+        (payload) => {
+          if (payload.new.sender_id === otherUser.id) {
+            setMessages((prev) => [...prev, payload.new as Message]);
+            dataService.markMessagesAsRead(otherUser.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [otherUser.id, user?.id]);
 
   useEffect(scrollToBottom, [messages]);
 
@@ -74,20 +96,22 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     e?.preventDefault();
     if (!newMessage.trim() && !matchId) return;
 
-    // Mock send for temporary mode
-    const newMsg: Message = {
-      id: Date.now(),
+    const newMsg = {
       sender_id: user?.id || '0',
       receiver_id: otherUser.id,
       text: newMessage || 'שלחתי לך הצעה למשודך',
       match_id: matchId,
       sender_name: user?.name || '',
-      created_at: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, newMsg]);
-    setNewMessage('');
-    setShowPicker(false);
+    try {
+      const savedMsg = await dataService.sendInternalMessage(newMsg);
+      setMessages(prev => [...prev, savedMsg]);
+      setNewMessage('');
+      setShowPicker(false);
+    } catch (err) {
+      toast.error('שגיאה בשליחת ההודעה');
+    }
   };
 
   const suggestMatch = () => {
