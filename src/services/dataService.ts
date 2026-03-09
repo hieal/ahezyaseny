@@ -464,6 +464,23 @@ class DataService {
     return sanitized;
   }
 
+  async getManagerCandidateCounts(): Promise<Record<string, number>> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('created_by')
+      .is('deleted_at', null);
+    
+    if (error) throw error;
+    
+    const counts: Record<string, number> = {};
+    data.forEach((m: any) => {
+      if (m.created_by) {
+        counts[m.created_by] = (counts[m.created_by] || 0) + 1;
+      }
+    });
+    return counts;
+  }
+
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
     let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);

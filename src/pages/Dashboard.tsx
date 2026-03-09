@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -85,58 +85,78 @@ export default function Dashboard() {
     }
   };
 
+  const [showManagersViewerModal, setShowManagersViewerModal] = useState(false);
+  const [viewerSelectedManagerId, setViewerSelectedManagerId] = useState<string | null>(null);
+  const [viewerAffiliation, setViewerAffiliation] = useState<string>('all');
+  const [viewerSearch, setViewerSearch] = useState('');
+  const [managerCounts, setManagerCounts] = useState<Record<string, number>>({});
+
+  const fetchManagerCounts = async () => {
+    try {
+      const counts = await dataService.getManagerCandidateCounts();
+      setManagerCounts(counts);
+    } catch (err) {
+      console.error('Failed to fetch manager counts:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (showManagersViewerModal) {
+      fetchManagerCounts();
+    }
+  }, [showManagersViewerModal]);
+
   const generateDesignedImage = async (match: Match) => {
     setIsGenerating(true);
     const canvas = document.createElement('canvas');
-    canvas.width = 1600; // Increased width
-    canvas.height = 3000; // Increased height
+    canvas.width = 1600; 
+    canvas.height = 3200; // Increased height for more content
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
       return;
     }
 
-    const margin = 100;
+    const margin = 80;
     const accentColor = match.type === 'male' ? '#2563eb' : '#db2777';
     const lightAccent = match.type === 'male' ? '#eff6ff' : '#fdf2f8';
     const greenColor = '#16a34a'; 
     const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 3000);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 3200);
     gradient.addColorStop(0, loveBg);
     gradient.addColorStop(0.5, lightAccent);
     gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1600, 3000);
+    ctx.fillRect(0, 0, 1600, 3200);
 
     // Decorative Frame with Glow
     ctx.save();
-    ctx.shadowBlur = 50;
+    ctx.shadowBlur = 40;
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
-    ctx.lineWidth = 25;
-    ctx.strokeRect(margin, margin, 1600 - margin*2, 3000 - margin*2);
+    ctx.lineWidth = 20;
+    ctx.strokeRect(margin, margin, 1600 - margin*2, 3200 - margin*2);
     ctx.restore();
     
     // Header Section
     ctx.fillStyle = '#ffffff';
-    ctx.roundRect(margin + 30, margin + 30, 1600 - margin*2 - 60, 280, 40);
+    ctx.roundRect(margin + 20, margin + 20, 1600 - margin*2 - 40, 280, 40);
     ctx.fill();
     
-    // Logo and Title Side-by-Side
-    const headerCenterY = margin + 170;
+    // Logo and Title
+    const headerCenterY = margin + 160;
     
     // Logo
     ctx.save();
-    ctx.translate(150, margin + 70);
+    ctx.translate(140, margin + 60);
     const logoSize = 200;
     ctx.strokeStyle = greenColor;
     ctx.lineWidth = 16;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     
-    // Draw H shape
     ctx.beginPath();
     ctx.moveTo(logoSize * 0.2, logoSize * 0.2);
     ctx.lineTo(logoSize * 0.2, logoSize * 0.8);
@@ -146,7 +166,6 @@ export default function Dashboard() {
     ctx.lineTo(logoSize * 0.8, logoSize * 0.5);
     ctx.stroke();
 
-    // Draw Heart
     ctx.beginPath();
     ctx.moveTo(logoSize * 0.5, logoSize * 0.4);
     ctx.bezierCurveTo(logoSize * 0.3, logoSize * 0.2, logoSize * 0.1, logoSize * 0.5, logoSize * 0.5, logoSize * 0.8);
@@ -165,10 +184,10 @@ export default function Dashboard() {
     ctx.fillText('אנשים פוגשים אנשים', 1450, headerCenterY + 50);
 
     // Image Section
-    const imgX = 250;
-    const imgY = 420;
-    const imgW = 1100;
-    const imgH = 1100;
+    const imgX = 200;
+    const imgY = 400;
+    const imgW = 1200;
+    const imgH = 1200;
 
     if (match.image_url) {
       try {
@@ -187,27 +206,22 @@ export default function Dashboard() {
         
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(imgX, imgY, imgW, imgH, 80);
+        ctx.roundRect(imgX, imgY, imgW, imgH, 60);
         ctx.clip();
         
         if (match.crop_config) {
           const config = JSON.parse(match.crop_config);
-          const { croppedAreaPixels, crop, zoom } = config;
-          if (croppedAreaPixels) {
-            ctx.drawImage(
-              img, 
-              croppedAreaPixels.x, croppedAreaPixels.y, 
-              croppedAreaPixels.width, croppedAreaPixels.height, 
-              imgX, imgY, imgW, imgH
-            );
-          } else if (crop && zoom) {
-            const scale = Math.max(imgW / img.width, imgH / img.height) * zoom;
-            const x = imgX + (imgW - img.width * scale) / 2 + (crop.x * scale);
-            const y = imgY + (imgH - img.height * scale) / 2 + (crop.y * scale);
-            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-          } else {
-            ctx.drawImage(img, imgX, imgY, imgW, imgH);
-          }
+          const { x, y, zoom } = config;
+          
+          const scale = Math.max(imgW / img.width, imgH / img.height) * (zoom || 1);
+          const drawW = img.width * scale;
+          const drawH = img.height * scale;
+          
+          // Calculate position based on percentage (x, y are 0-100)
+          const drawX = imgX + (imgW - drawW) * (x / 100);
+          const drawY = imgY + (imgH - drawH) * (y / 100);
+          
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
         } else {
           const imgRatio = img.width / img.height;
           const targetRatio = imgW / imgH;
@@ -229,14 +243,14 @@ export default function Dashboard() {
 
         // Elegant border for image
         ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 20;
+        ctx.lineWidth = 15;
         ctx.beginPath();
-        ctx.roundRect(imgX - 10, imgY - 10, imgW + 20, imgH + 20, 90);
+        ctx.roundRect(imgX - 5, imgY - 5, imgW + 10, imgH + 10, 65);
         ctx.stroke();
       } catch (e) {
         console.error("Failed to load image for canvas", e);
         ctx.fillStyle = '#f1f5f9';
-        ctx.roundRect(imgX, imgY, imgW, imgH, 80);
+        ctx.roundRect(imgX, imgY, imgW, imgH, 60);
         ctx.fill();
       }
     }
@@ -244,12 +258,12 @@ export default function Dashboard() {
     // "הכירו את" + Name
     ctx.textAlign = 'center';
     ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 90px sans-serif';
-    ctx.fillText('הכירו את', 800, 1580);
+    ctx.font = 'bold 80px sans-serif';
+    ctx.fillText('הכירו את', 800, 1680);
     
     ctx.fillStyle = accentColor;
-    ctx.font = 'bold 160px sans-serif';
-    ctx.fillText(match.name, 800, 1740);
+    ctx.font = 'bold 140px sans-serif';
+    ctx.fillText(match.name, 800, 1830);
 
     // Details Grid
     const details = [
@@ -267,21 +281,20 @@ export default function Dashboard() {
     ];
 
     ctx.textAlign = 'right';
-    const gridStartY = 1850;
+    const gridStartY = 1950;
     details.forEach((item, i) => {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 1450 - (col * 700);
-      const y = gridStartY + (row * 95);
+      const y = gridStartY + (row * 85);
       
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 46px sans-serif';
+      ctx.font = 'bold 42px sans-serif';
       ctx.fillText(':' + item.label, x, y);
       
       ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 48px sans-serif';
+      ctx.font = 'bold 44px sans-serif';
       
-      // Handle wrapping/truncation for values
       let value = item.value;
       const maxValWidth = 400;
       if (ctx.measureText(value).width > maxValWidth) {
@@ -293,14 +306,14 @@ export default function Dashboard() {
       ctx.fillText(value, x - 300, y);
     });
 
-    // About & Looking For sections
-    let currentY = gridStartY + (Math.ceil(details.length / 2) * 95) + 120;
+    // Sections
+    let currentY = gridStartY + (Math.ceil(details.length / 2) * 85) + 100;
     
-    const drawWrappedText = (title: string, text: string, y: number, maxLines: number) => {
-      const lineHeight = 75;
+    const drawWrappedText = (title: string, text: string, y: number) => {
+      const lineHeight = 65;
       const maxWidth = 1600 - margin*2 - 160;
       
-      ctx.font = '45px sans-serif';
+      ctx.font = '42px sans-serif';
       const words = text.split(' ');
       let lines: string[] = [];
       let currentLine = '';
@@ -317,75 +330,56 @@ export default function Dashboard() {
         }
       }
       lines.push(currentLine);
-      lines = lines.slice(0, maxLines);
 
-      const boxHeight = (lines.length * lineHeight) + 180;
+      const boxHeight = (lines.length * lineHeight) + 160;
       
       // Box
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(0,0,0,0.1)';
-      ctx.shadowBlur = 25;
+      ctx.shadowColor = 'rgba(0,0,0,0.05)';
+      ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.roundRect(margin + 40, y - 70, 1600 - margin*2 - 80, boxHeight, 50);
+      ctx.roundRect(margin + 40, y - 60, 1600 - margin*2 - 80, boxHeight, 40);
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Title
       ctx.textAlign = 'right';
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 52px sans-serif';
-      ctx.fillText(':' + title.replace(':', ''), 1450, y);
+      ctx.font = 'bold 48px sans-serif';
+      ctx.fillText(':' + title, 1450, y);
       
       // Text
       ctx.fillStyle = '#1e293b';
-      ctx.font = '45px sans-serif';
+      ctx.font = '42px sans-serif';
       lines.forEach((line, i) => {
-        ctx.fillText(line, 1450, y + 90 + (i * lineHeight));
+        ctx.fillText(line, 1450, y + 80 + (i * lineHeight));
       });
 
       return boxHeight;
     };
 
     if (match.about) {
-      const height = drawWrappedText('קצת עליי', match.about, currentY, 8);
-      currentY += height + 100;
+      const height = drawWrappedText('קצת עליי', match.about, currentY);
+      currentY += height + 60;
     }
 
     if (match.looking_for) {
-      drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY, 8);
+      const height = drawWrappedText('מה אני מחפש/ת', match.looking_for, currentY);
+      currentY += height + 60;
     }
 
-    // Corner Hearts
-    const drawHeart = (x: number, y: number, size: number, color: string, alpha: number = 1) => {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(x, y);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(-size/2, -size/2, -size, size/3, 0, size);
-      ctx.bezierCurveTo(size, size/3, size/2, -size/2, 0, 0);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.restore();
-    };
-
-    drawHeart(margin + 50, margin + 50, 60, accentColor);
-    drawHeart(1600 - margin - 50, margin + 50, 60, accentColor);
-    drawHeart(margin + 50, 3000 - margin - 50, 60, accentColor);
-    drawHeart(1600 - margin - 50, 3000 - margin - 50, 60, accentColor);
-
-    // Footer / Creator Info
-    const footerY = 2850;
+    // Footer
+    const footerY = 3050;
     ctx.fillStyle = accentColor;
-    ctx.font = 'bold 48px sans-serif';
+    ctx.font = 'bold 52px sans-serif';
     ctx.textAlign = 'center';
     const creatorText = `נשלח על ידי ${match.creator_gender === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
     ctx.fillText(creatorText, 800, footerY);
     
     if (match.creator_phone || user?.phone) {
-      ctx.font = 'bold 36px sans-serif';
+      ctx.font = 'bold 40px sans-serif';
       ctx.fillStyle = '#64748b';
-      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 50);
+      ctx.fillText(match.creator_phone || user?.phone || '', 800, footerY + 60);
     }
 
     setGeneratedImageUrl(canvas.toDataURL('image/png'));
@@ -481,7 +475,7 @@ export default function Dashboard() {
     try {
       const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
         dataService.getStats(user || undefined),
-        dataService.getMatches(undefined, user || undefined),
+        dataService.getMatches(), // Fetch all matches for the viewer
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()
@@ -756,6 +750,10 @@ export default function Dashboard() {
   };
 
   const filteredMatches = matches.filter(m => {
+    // Main dashboard should only show user's matches (unless super admin)
+    const isOwner = user?.role === 'super_admin' || m.created_by === user?.id;
+    if (!isOwner) return false;
+
     const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
                          m.city?.toLowerCase().includes(search.toLowerCase());
     
@@ -980,6 +978,13 @@ export default function Dashboard() {
             התראות
           </button>
           <button 
+            onClick={() => setShowManagersViewerModal(true)} 
+            className="btn-secondary flex items-center gap-2 px-6 py-3 text-sm md:text-lg border-luxury-blue/30 text-luxury-blue hover:bg-luxury-blue/5"
+          >
+            <Eye size={20} />
+            צפיית כרטיסי מנהלים
+          </button>
+          <button 
             onClick={() => navigate('/matches/new')} 
             disabled={isViewer}
             className="btn-primary flex items-center gap-2 px-6 py-3 text-sm md:text-lg disabled:opacity-50 disabled:cursor-not-allowed"
@@ -990,7 +995,152 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Personal Template Modal */}
+      {/* Managers Viewer Modal */}
+      {showManagersViewerModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[2rem] w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-luxury-blue text-white rounded-2xl shadow-lg shadow-luxury-blue/20">
+                  <Eye size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">צפיית כרטיסי מנהלים</h2>
+                  <p className="text-sm text-slate-500 font-medium">חפש וצפה בכרטיסים של מנהלים אחרים במערכת</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManagersViewerModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X size={24} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+              {/* Sidebar: Managers List */}
+              <div className="w-full md:w-80 border-l border-slate-100 bg-slate-50/30 overflow-y-auto p-4 space-y-4">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder="חפש מנהל..."
+                    className="w-full pr-10 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-luxury-blue outline-none"
+                    onChange={(e) => {
+                      // Filter managers logic can go here if needed
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">רשימת מנהלים</p>
+                  <button 
+                    onClick={() => setViewerSelectedManagerId(null)}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${!viewerSelectedManagerId ? 'bg-luxury-blue text-white shadow-md' : 'hover:bg-white text-slate-600'}`}
+                  >
+                    <span className="font-bold">כל המנהלים</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${!viewerSelectedManagerId ? 'bg-white/20' : 'bg-slate-200'}`}>
+                      {matches.length}
+                    </span>
+                  </button>
+                  {allUsers.filter(u => u.role !== 'viewer').map(m => (
+                    <button 
+                      key={m.id}
+                      onClick={() => setViewerSelectedManagerId(m.id)}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${viewerSelectedManagerId === m.id ? 'bg-luxury-blue text-white shadow-md' : 'hover:bg-white text-slate-600'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${viewerSelectedManagerId === m.id ? 'bg-white/20' : 'bg-slate-200'}`}>
+                          {m.name[0]}
+                        </div>
+                        <span className="font-bold text-sm truncate max-w-[120px]">{m.name}</span>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${viewerSelectedManagerId === m.id ? 'bg-white/20' : 'bg-slate-200'}`}>
+                        {managerCounts[m.id] || 0}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Main Content: Candidates Grid */}
+              <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-4 bg-slate-50/20">
+                  <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
+                    {CATEGORIES.map(cat => (
+                      <button 
+                        key={cat}
+                        onClick={() => setViewerAffiliation(cat)}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === cat ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                    <button 
+                      onClick={() => setViewerAffiliation('all')}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewerAffiliation === 'all' ? 'bg-luxury-blue text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      הכל
+                    </button>
+                  </div>
+
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="חפש לפי שם או עיר..."
+                      className="w-full pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-luxury-blue outline-none"
+                      value={viewerSearch}
+                      onChange={(e) => setViewerSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {matches
+                      .filter(m => {
+                        const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
+                        const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                        const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                        return matchesManager && matchesAffiliation && matchesSearch;
+                      })
+                      .map(match => (
+                        <MatchCard 
+                          key={match.id} 
+                          match={match} 
+                          onView={(m) => {
+                            setSelectedMatch(m);
+                            generateDesignedImage(m);
+                            setShowPublishModal(true);
+                          }}
+                          minimal
+                          showCreator
+                          isViewer={true}
+                        />
+                      ))
+                    }
+                  </div>
+                  {matches.filter(m => {
+                        const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
+                        const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                        const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                        return matchesManager && matchesAffiliation && matchesSearch;
+                      }).length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
+                      <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
+                        <Search size={40} />
+                      </div>
+                      <p className="font-bold">לא נמצאו כרטיסים התואמים לחיפוש</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
       {showPersonalTemplateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <motion.div 
@@ -2155,6 +2305,24 @@ export default function Dashboard() {
                   setTemplate(newTemplate);
                 }}
                 onRefreshStatus={fetchData}
+                onAdjustImage={async (direction) => {
+                  if (!selectedMatch) return;
+                  const config = selectedMatch.crop_config ? JSON.parse(selectedMatch.crop_config) : { x: 50, y: 50, zoom: 1 };
+                  let newConfig = { ...config };
+                  
+                  switch(direction) {
+                    case 'up': newConfig.y = Math.max(0, config.y - 5); break;
+                    case 'down': newConfig.y = Math.min(100, config.y + 5); break;
+                    case 'left': newConfig.x = Math.max(0, config.x - 5); break;
+                    case 'right': newConfig.x = Math.min(100, config.x + 5); break;
+                    case 'zoomIn': newConfig.zoom = Math.min(3, (config.zoom || 1) + 0.1); break;
+                    case 'zoomOut': newConfig.zoom = Math.max(1, (config.zoom || 1) - 0.1); break;
+                  }
+                  
+                  const updated = await dataService.updateMatch(selectedMatch.id, { crop_config: JSON.stringify(newConfig) });
+                  setSelectedMatch(updated);
+                  generateDesignedImage(updated);
+                }}
               />
             </motion.div>
           </div>

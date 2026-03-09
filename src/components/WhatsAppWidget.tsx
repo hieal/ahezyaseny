@@ -31,6 +31,7 @@ interface WhatsAppWidgetProps {
   onClose?: () => void;
   onUpdateOpening?: (newTemplate: string) => void;
   onRefreshStatus?: () => void;
+  onAdjustImage?: (direction: 'up' | 'down' | 'left' | 'right' | 'zoomIn' | 'zoomOut') => void;
 }
 
 export function WhatsAppWidget({ 
@@ -49,7 +50,8 @@ export function WhatsAppWidget({
   mode = 'full',
   onClose,
   onUpdateOpening,
-  onRefreshStatus
+  onRefreshStatus,
+  onAdjustImage
 }: WhatsAppWidgetProps) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -405,6 +407,53 @@ export function WhatsAppWidget({
                   </div>
                   <div className="rounded-2xl overflow-hidden border-4 border-white shadow-lg relative group max-w-sm mx-auto">
                     <img src={matchImage} alt="Designed Card" className="w-full h-auto" />
+                    
+                    {/* Adjustment Controls */}
+                    {onAdjustImage && (
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                        <div className="flex flex-col items-center gap-1">
+                          <button 
+                            onClick={() => onAdjustImage('up')}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"
+                          >
+                            <Plus size={16} className="rotate-45" />
+                          </button>
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => onAdjustImage('right')}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"
+                            >
+                              <Plus size={16} className="rotate-90" />
+                            </button>
+                            <button 
+                              onClick={() => onAdjustImage('zoomIn')}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-[#075E54]"
+                            >
+                              <Plus size={16} />
+                            </button>
+                            <button 
+                              onClick={() => onAdjustImage('zoomOut')}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-[#075E54]"
+                            >
+                              <Plus size={16} className="rotate-45" />
+                            </button>
+                            <button 
+                              onClick={() => onAdjustImage('left')}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"
+                            >
+                              <Plus size={16} className="rotate-180" />
+                            </button>
+                          </div>
+                          <button 
+                            onClick={() => onAdjustImage('down')}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"
+                          >
+                            <Plus size={16} className="rotate-135" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {currentMatch && (
                       <button 
                         onClick={() => navigate(`/matches/edit/${currentMatch.id}`)}

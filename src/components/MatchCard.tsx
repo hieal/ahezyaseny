@@ -20,11 +20,12 @@ interface MatchCardProps {
    minimal?: boolean;
    selected?: boolean;
    onSelect?: (id: string, selected: boolean) => void;
+   isViewer?: boolean;
  }
 
-export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, showCreator, minimal, selected, onSelect }: MatchCardProps) {
+export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
   const { user } = useAuth();
-  const isViewer = user?.role === 'viewer';
+  const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
