@@ -67,19 +67,30 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
 
     // Subscribe to new messages
     const subscription = supabase
-      .channel(`internal_messages_${user?.id}_${otherUser.id}`)
+      .channel('internal_messages_realtime')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'internal_messages',
-          filter: `receiver_id=eq.${user?.id}`,
         },
         (payload) => {
-          if (payload.new.sender_id === otherUser.id) {
-            setMessages((prev) => [...prev, payload.new as Message]);
-            dataService.markMessagesAsRead(otherUser.id);
+          const newMsg = payload.new as Message;
+          // Check if the message belongs to this conversation
+          const isFromOther = newMsg.sender_id === otherUser.id && newMsg.receiver_id === user?.id;
+          const isFromMe = newMsg.sender_id === user?.id && newMsg.receiver_id === otherUser.id;
+          
+          if (isFromOther || isFromMe) {
+            setMessages((prev) => {
+              // Avoid duplicates
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            
+            if (isFromOther) {
+              dataService.markMessagesAsRead(otherUser.id);
+            }
           }
         }
       )

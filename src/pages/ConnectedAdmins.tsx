@@ -15,14 +15,26 @@ export default function ConnectedAdmins() {
   const [showChat, setShowChat] = useState<{id: string, name: string} | null>(null);
   const [showList, setShowList] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [autoPopup, setAutoPopup] = useState(() => {
+    return localStorage.getItem('chat_auto_popup') !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('chat_auto_popup', autoPopup.toString());
+    // Dispatch event to notify App.tsx if needed, but since it reads from localStorage on render it might be fine.
+    // Actually, App.tsx listener uses state. We should probably use a custom event or just let the user refresh.
+    // But better: App.tsx listener should read from localStorage directly inside the callback.
+    window.dispatchEvent(new Event('storage')); 
+  }, [autoPopup]);
 
   const fetchAdmins = async () => {
     try {
       let data = await dataService.getUsers();
       
-      // Filter for team leaders: only show admins they created
+      // Filter for team leaders: only show admins they created + Super Admin
+      const superAdminId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
       if (user && user.role === 'team_leader') {
-        data = data.filter(a => a.created_by === user.id || a.id === user.id);
+        data = data.filter(a => a.created_by === user.id || a.id === user.id || a.id === superAdminId);
       }
       
       setAllAdmins(data);
@@ -83,14 +95,29 @@ export default function ConnectedAdmins() {
           <p className="text-slate-500 mt-2 font-medium">צפה במנהלים המחוברים כעת למערכת וצור איתם קשר</p>
         </div>
 
-        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-sm font-bold text-slate-600 mr-2">הצג רשימה</span>
-          <button 
-            onClick={() => setShowList(!showList)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${showList ? 'bg-luxury-blue' : 'bg-slate-200'}`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showList ? '-translate-x-6' : '-translate-x-1'}`} />
-          </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 bg-white p-2 px-4 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={16} className="text-luxury-blue" />
+              <span className="text-sm font-bold text-slate-600">צ'אט קופץ אוטומטי</span>
+            </div>
+            <button 
+              onClick={() => setAutoPopup(!autoPopup)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${autoPopup ? 'bg-luxury-blue' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoPopup ? '-translate-x-6' : '-translate-x-1'}`} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 bg-white p-2 px-4 rounded-2xl border border-slate-100 shadow-sm">
+            <span className="text-sm font-bold text-slate-600">הצג רשימה</span>
+            <button 
+              onClick={() => setShowList(!showList)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${showList ? 'bg-luxury-blue' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showList ? '-translate-x-6' : '-translate-x-1'}`} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -196,13 +223,15 @@ export default function ConnectedAdmins() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            <button 
-                              onClick={() => admin.phone ? window.open(`https://wa.me/${admin.phone.replace(/\D/g, '')}`) : toast.error('אין מספר טלפון')} 
-                              className="p-2 text-green-600 hover:bg-green-100 rounded-xl transition-colors" 
-                              title="שלח וואטסאפ"
-                            >
-                              <Phone size={20} />
-                            </button>
+                            {admin.role !== 'super_admin' && (
+                              <button 
+                                onClick={() => admin.phone ? window.open(`https://wa.me/${admin.phone.replace(/\D/g, '')}`) : toast.error('אין מספר טלפון')} 
+                                className="p-2 text-green-600 hover:bg-green-100 rounded-xl transition-colors" 
+                                title="שלח וואטסאפ"
+                              >
+                                <Phone size={20} />
+                              </button>
+                            )}
                             <button 
                               onClick={() => setShowChat({ id: admin.id, name: admin.name })} 
                               className="p-2 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" 

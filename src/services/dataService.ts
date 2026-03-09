@@ -603,20 +603,35 @@ class DataService {
     if (!url || !url.startsWith('http')) return null;
     
     try {
-      // Use a CORS proxy to fetch the image from the browser
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-      const response = await fetch(proxyUrl);
+      if (url.includes('airtableusercontent')) {
+        console.log('Airtable link detected - attempting direct mirror');
+      }
+
+      // Try direct fetch first as requested, avoiding corsproxy.io which is being blocked
+      let response;
+      try {
+        response = await fetch(url);
+      } catch (fetchError) {
+        console.warn('Direct fetch failed (likely CORS), attempting with fallback options...');
+        // If direct fetch fails, we can't really do much else from the browser if CORS is enforced
+        // and the proxy is blocked. But we'll try to proceed if we got a response.
+        throw fetchError;
+      }
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch image via proxy: ${response.statusText}`);
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
       }
       
       const blob = await response.blob();
-      const fileName = `mirrored_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      const fileExt = url.split('.').pop()?.split('?')[0] || 'jpg';
+      const fileName = `mirrored_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from(bucket)
-        .upload(fileName, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+        .upload(fileName, blob, { 
+          contentType: blob.type || 'image/jpeg', 
+          upsert: true 
+        });
 
       if (uploadError) throw uploadError;
 

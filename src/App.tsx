@@ -51,7 +51,26 @@ function Sidebar() {
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [allAdmins, setAllAdmins] = React.useState<any[]>([]);
   const [onlineUsers, setOnlineUsers] = React.useState<string[]>([]);
-  
+  const [autoPopup, setAutoPopup] = React.useState(() => {
+    return localStorage.getItem('chat_auto_popup') !== 'false';
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('chat_auto_popup', autoPopup.toString());
+    window.dispatchEvent(new Event('storage'));
+  }, [autoPopup]);
+
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      const val = localStorage.getItem('chat_auto_popup');
+      if (val !== null) {
+        setAutoPopup(val !== 'false');
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const superAdminId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
   const isSuperAdminOnline = onlineUsers.includes(superAdminId);
 
@@ -194,17 +213,31 @@ function Sidebar() {
 
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
               {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={`sidebar-item ${
-                    location.pathname === item.path ? 'sidebar-item-active' : ''
-                  }`}
-                >
-                  {item.icon}
-                  <span className="font-medium">{item.label}</span>
-                </Link>
+                <div key={item.path} className="relative group">
+                  <Link
+                    to={item.path}
+                    onClick={() => setIsOpen(false)}
+                    className={`sidebar-item flex-1 ${
+                      location.pathname === item.path ? 'sidebar-item-active' : ''
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="font-medium flex-1">{item.label}</span>
+                    {item.path === '/connected-admins' && (
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setAutoPopup(!autoPopup);
+                        }}
+                        className={`p-1 rounded-lg transition-all ${autoPopup ? 'text-luxury-blue bg-blue-50' : 'text-slate-300 hover:text-slate-400'}`}
+                        title={autoPopup ? 'צ\'אט קופץ פעיל' : 'צ\'אט קופץ כבוי'}
+                      >
+                        <MessageSquare size={14} />
+                      </button>
+                    )}
+                  </Link>
+                </div>
               ))}
             </nav>
 
@@ -416,6 +449,17 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('chat_auto_popup', autoPopup.toString());
   }, [autoPopup]);
 
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      const val = localStorage.getItem('chat_auto_popup');
+      if (val !== null) {
+        setAutoPopup(val !== 'false');
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Heartbeat effect
   React.useEffect(() => {
     if (!user) return;
@@ -558,23 +602,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      {/* Auto Popup Toggle Floating Button */}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
-        <button 
-          onClick={() => setAutoPopup(!autoPopup)}
-          className={`p-3 rounded-2xl shadow-lg border transition-all flex items-center gap-2 ${
-            autoPopup 
-              ? 'bg-luxury-blue text-white border-blue-600' 
-              : 'bg-white text-slate-600 border-slate-200'
-          }`}
-          title={autoPopup ? 'ביטול קפיצה אוטומטית של הצ\'אט' : 'הפעל קפיצה אוטומטית של הצ\'אט'}
-        >
-          <MessageSquare size={20} />
-          <span className="text-xs font-bold hidden md:inline">
-            {autoPopup ? 'צ\'אט קופץ: פעיל' : 'צ\'אט קופץ: כבוי'}
-          </span>
-        </button>
-      </div>
+      {/* Auto Popup Toggle Floating Button removed from here, moved to ConnectedAdmins.tsx */}
     </div>
   );
 }
