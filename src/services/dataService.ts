@@ -165,6 +165,16 @@ ON CONFLICT (id) DO UPDATE SET name = 'מנהל ראשי', username = 'god', pas
 
 -- Delete the old 'good' user if it exists to prevent duplicates
 DELETE FROM public.admins WHERE username = 'good' AND id != 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+
+-- הארכת תוקף החיבור ל-24 שעות
+ALTER ROLE authenticator SET auth.jwt_expiry = 86400;
+
+-- וודא שהמנהל שלך (god/good) מסומן כפעיל תמיד
+UPDATE public.admins 
+SET last_seen = NOW(), is_online = true
+WHERE username = 'god' OR username = 'good';
+
+NOTIFY pgrst, 'reload schema';
 `;
 
 class DataService {
