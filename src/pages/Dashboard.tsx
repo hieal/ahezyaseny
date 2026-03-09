@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -48,7 +48,8 @@ export default function Dashboard() {
   const [publishModalTab, setPublishModalTab] = useState<'status' | 'content' | 'chat'>('status');
   const [isInitialMarkedSent, setIsInitialMarkedSent] = useState(false);
   const [displaySize, setDisplaySize] = useState<'small' | 'medium' | 'large'>('medium');
-  const [showMinimal, setShowMinimal] = useState(true);
+  const [showMinimal, setShowMinimal] = useState(false);
+  const [completionFilter, setCompletionFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -501,6 +502,9 @@ export default function Dashboard() {
     if (!m.occupation) missing.push('עיסוק');
     if (!m.phone) missing.push('טלפון');
     if (!m.image_url) missing.push('תמונה');
+    if (!m.negiah) missing.push('שומר נגיעה');
+    if (!m.smoking) missing.push('מעשן');
+    if (!m.age_range) missing.push('טווח גילאים');
     return missing;
   };
 
@@ -516,7 +520,10 @@ export default function Dashboard() {
         'עיסוק': 'occupation',
         'טלפון': 'phone',
         'תמונה': 'image_url',
-        'עיר': 'city'
+        'עיר': 'city',
+        'שומר נגיעה': 'negiah',
+        'מעשן': 'smoking',
+        'טווח גילאים': 'age_range'
       };
       
       const dbField = fieldMap[editingField];
@@ -861,7 +868,13 @@ export default function Dashboard() {
     const matchesMultiGroup = selectedGroupType === 'all' || m.creator_category === selectedGroupType;
     const matchesMultiManager = selectedManagerIds.length === 0 || selectedManagerIds.includes(m.created_by);
     
-    return matchesSearch && matchesType && matchesGroupType && matchesManager && matchesMultiGroup && matchesMultiManager;
+    // Completion filter
+    const missing = getMissingFields(m);
+    const matchesCompletion = completionFilter === 'all' || 
+                             (completionFilter === 'complete' && missing.length === 0) ||
+                             (completionFilter === 'incomplete' && missing.length > 0);
+
+    return matchesSearch && matchesType && matchesGroupType && matchesManager && matchesMultiGroup && matchesMultiManager && matchesCompletion;
   });
 
   const handleSelectMatch = (id: string, selected: boolean) => {
@@ -1670,10 +1683,20 @@ export default function Dashboard() {
               <option value="not_published">טרם פורסמו</option>
               <option value="published_today">פורסמו היום</option>
             </select>
+            <select 
+              className="input-field py-3 px-4 font-bold"
+              value={completionFilter}
+              onChange={(e) => setCompletionFilter(e.target.value as any)}
+            >
+              <option value="all">כל הכרטיסים (תקינות)</option>
+              <option value="complete">כרטיסים מלאים</option>
+              <option value="incomplete">כרטיסים עם פרטים חסרים</option>
+            </select>
             <button 
               onClick={() => {
                 setSearch('');
                 setFilter('all');
+                setCompletionFilter('all');
                 setSelectedGroupType('all');
                 setSelectedManagerIds([]);
               }}
@@ -1877,9 +1900,13 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-text-secondary mb-2">העלאת קובץ</label>
+                <div className="grid grid-cols-1 gap-6">
+                  {/* Option 1: File Upload */}
+                  <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-3">
+                    <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
+                      <Plus size={18} />
+                      אפשרות 1: העלאת קובץ מהמחשב
+                    </div>
                     <input 
                       type="file" 
                       accept="image/*"
@@ -1902,16 +1929,20 @@ export default function Dashboard() {
                           setIsSavingImage(false);
                         }
                       }}
-                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-luxury-blue/10 file:text-luxury-blue hover:file:bg-luxury-blue/20"
+                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-luxury-blue file:text-white hover:file:bg-blue-600 transition-all cursor-pointer"
                     />
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100">
-                    <label className="block text-sm font-bold text-text-secondary mb-2">קישור לתמונה (URL)</label>
+                  {/* Option 2: URL */}
+                  <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 space-y-3">
+                    <div className="flex items-center gap-2 text-purple-700 font-bold text-sm">
+                      <Paperclip size={18} />
+                      אפשרות 2: שימוש בקישור (URL)
+                    </div>
                     <div className="flex gap-2">
                       <input 
                         type="text"
-                        className="input-field flex-1"
+                        className="input-field flex-1 text-sm"
                         placeholder="הדבק כאן כתובת URL של תמונה..."
                         value={imageUrlInput}
                         onChange={(e) => setImageUrlInput(e.target.value)}
@@ -1921,7 +1952,6 @@ export default function Dashboard() {
                           if (!imageUrlInput.trim()) return;
                           setIsSavingImage(true);
                           try {
-                            // Try to "save to system" by converting to base64 if possible
                             let finalUrl = imageUrlInput;
                             try {
                               const response = await fetch(imageUrlInput);
@@ -1946,13 +1976,13 @@ export default function Dashboard() {
                           }
                         }}
                         disabled={isSavingImage}
-                        className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
+                        className="bg-purple-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-purple-700 transition-all flex items-center gap-2 shadow-sm"
                       >
-                        {isSavingImage ? <RefreshCw className="animate-spin" size={16} /> : <Database size={16} />}
-                        שמור למערכת
+                        {isSavingImage ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
+                        שמור
                       </button>
                     </div>
-                    <p className="text-[10px] text-text-secondary mt-1">שים לב: אם האתר חוסם גישה, התמונה תישמר כקישור בלבד.</p>
+                    <p className="text-[10px] text-purple-400">מומלץ להשתמש בקישור ישיר לקובץ תמונה (מסתיים ב-jpg, png וכו').</p>
                   </div>
                 </div>
               </div>
@@ -2122,7 +2152,10 @@ export default function Dashboard() {
                           'עיסוק': 'occupation',
                           'טלפון': 'phone',
                           'תמונה': 'image_url',
-                          'עיר': 'city'
+                          'עיר': 'city',
+                          'שומר נגיעה': 'negiah',
+                          'מעשן': 'smoking',
+                          'טווח גילאים': 'age_range'
                         };
                         setEditValue((validationMatch as any)?.[fieldMap[err]] || '');
                       }}

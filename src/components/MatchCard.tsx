@@ -86,6 +86,9 @@ export default function MatchCard({ match, onPublish, onView, onEdit, onDelete, 
     if (!m.occupation) missing.push('עיסוק');
     if (!m.phone) missing.push('טלפון');
     if (!m.image_url) missing.push('תמונה');
+    if (!m.negiah) missing.push('שומר נגיעה');
+    if (!m.smoking) missing.push('מעשן');
+    if (!m.age_range) missing.push('טווח גילאים');
     return missing;
   };
 
