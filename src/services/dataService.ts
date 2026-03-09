@@ -540,8 +540,17 @@ class DataService {
 
   // Users (Admins)
   async getUsers(): Promise<User[]> {
-    const data = await this.handleSupabase(supabase.from('admins').select('*').is('deleted_at', null));
-    return data || [];
+    try {
+      const { data, error } = await supabase.from('admins').select('*');
+      if (error) {
+        console.error('CRITICAL ERROR fetching admins:', error.message, error.details, error.hint);
+        throw error;
+      }
+      return data || [];
+    } catch (err: any) {
+      console.error('FAILED to fetch admins from Supabase:', err);
+      throw err;
+    }
   }
 
   async getUserById(id: string): Promise<User | null> {
@@ -581,7 +590,15 @@ class DataService {
   // Images
   getPublicImageUrl(path: string): string {
     if (!path) return '';
-    if (path.startsWith('http')) return path;
+    
+    // If it's already a full URL, ensure it uses the correct project ID
+    if (path.startsWith('http')) {
+      if (path.includes('.supabase.co')) {
+        return path.replace(/https:\/\/[^.]+\.supabase\.co/g, 'https://bdxddmsdkebxpfuirkmh.supabase.co');
+      }
+      return path;
+    }
+    
     const { data } = supabase.storage.from('images').getPublicUrl(path);
     return data.publicUrl;
   }

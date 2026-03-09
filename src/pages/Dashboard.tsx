@@ -174,7 +174,8 @@ export default function Dashboard() {
       try {
         const img = new Image();
         const isBase64 = match.image_url.startsWith('data:');
-        const imageUrl = isBase64 ? match.image_url : (match.image_url.includes('?') ? `${match.image_url}&t=${Date.now()}` : `${match.image_url}?t=${Date.now()}`);
+        const baseImageUrl = dataService.getPublicImageUrl(match.image_url);
+        const imageUrl = isBase64 ? baseImageUrl : (baseImageUrl.includes('?') ? `${baseImageUrl}&t=${Date.now()}` : `${baseImageUrl}?t=${Date.now()}`);
         
         await new Promise((resolve, reject) => {
           if (!isBase64) img.crossOrigin = "anonymous";

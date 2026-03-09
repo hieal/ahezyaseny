@@ -18,7 +18,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
   supabaseAnonKey || 'placeholder_key',
   {
     auth: {
@@ -30,7 +30,7 @@ export const supabase = createClient(
 
 // Administrative client that bypasses RLS if service key is provided
 export const supabaseAdmin = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
   supabaseServiceKey || supabaseAnonKey || 'placeholder_key',
   {
     auth: {

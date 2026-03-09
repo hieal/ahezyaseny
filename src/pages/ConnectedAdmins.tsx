@@ -29,14 +29,8 @@ export default function ConnectedAdmins() {
 
   const fetchAdmins = async () => {
     try {
-      let data = await dataService.getUsers();
-      
-      // Filter for team leaders: only show admins they created + Super Admin
-      const superAdminId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-      if (user && user.role === 'team_leader') {
-        data = data.filter(a => a.created_by === user.id || a.id === user.id || a.id === superAdminId);
-      }
-      
+      const data = await dataService.getUsers();
+      console.log('Fetched admins count:', data.length);
       setAllAdmins(data);
       
       const now = new Date().getTime();
@@ -49,8 +43,11 @@ export default function ConnectedAdmins() {
       }).map(a => a.id);
       
       setOnlineUsers(online);
-    } catch (err) {
-      console.error('Failed to fetch admins:', err);
+    } catch (err: any) {
+      console.error('CRITICAL: Failed to fetch admins in ConnectedAdmins.tsx:', err.message || err);
+      if (err.details) console.error('Error details:', err.details);
+      if (err.hint) console.error('Error hint:', err.hint);
+      toast.error('שגיאה בטעינת מנהלים. בדוק את ה-Console לפרטים.');
     } finally {
       setLoading(false);
     }
@@ -74,9 +71,12 @@ export default function ConnectedAdmins() {
   const onlineFemales = allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length;
 
   const filteredAdmins = allAdmins
-    .filter(a => a.id !== user?.id)
     .filter(a => a.name?.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => {
+      // 'good' or 'god' always at the top
+      if (a.username === 'good' || a.username === 'god') return -1;
+      if (b.username === 'good' || b.username === 'god') return 1;
+
       const aOnline = onlineUsers.includes(a.id);
       const bOnline = onlineUsers.includes(b.id);
       if (aOnline && !bOnline) return -1;
@@ -194,7 +194,7 @@ export default function ConnectedAdmins() {
                             <div className="relative">
                               {admin.avatar_url ? (
                                 <div className="relative">
-                                  <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                  <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
                                   {admin.avatar_url.includes('supabase.co') && (
                                     <div className="absolute -top-1 -right-1 bg-green-500 text-white p-0.5 rounded-full border border-white shadow-sm" title="תמונה מסונכרנת">
                                       <CheckCircle size={10} />

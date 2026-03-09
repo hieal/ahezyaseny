@@ -189,7 +189,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center border border-white/30 overflow-hidden relative">
               {otherUserDetails?.avatar_url ? (
                 <>
-                  <img src={otherUserDetails.avatar_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={dataService.getPublicImageUrl(otherUserDetails.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   {otherUserDetails.avatar_url.includes('supabase.co') && (
                     <div className="absolute top-0 right-0 bg-green-500 text-white p-0.5 rounded-full border border-white shadow-sm" title="תמונה מסונכרנת">
                       <CheckCircle size={8} />
