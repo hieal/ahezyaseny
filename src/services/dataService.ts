@@ -148,8 +148,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = '
 
 -- Insert initial admin user
 INSERT INTO public.admins (id, name, username, email, role, password_plain, password, status, is_approved)
-VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'Good User', 'good', 'good@example.com', 'super_admin', 'good', 'good', 'active', 1)
-ON CONFLICT (id) DO UPDATE SET username = 'good', password_plain = 'good', password = 'good';`;
+VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'מנהל ראשי', 'god', 'admin@example.com', 'super_admin', 'good', 'good', 'active', 1)
+ON CONFLICT (id) DO UPDATE SET name = 'מנהל ראשי', username = 'god', password_plain = 'good', password = 'good';
+
+-- Delete the old 'good' user if it exists to prevent duplicates
+DELETE FROM public.admins WHERE username = 'good' AND id != 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+`;
 
 class DataService {
   private mode: BackendMode = 'production';
@@ -234,7 +238,7 @@ class DataService {
     
     try {
       const user = JSON.parse(userJson);
-      // Don't update for the fallback "Good User"
+      // Don't update for the fallback "מנהל ראשי"
       if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
         await supabase.from('admins').update({ 
           last_seen: new Date().toISOString(),
@@ -306,26 +310,29 @@ class DataService {
     }
   }
 
-  async login(username: string, password_plain: string): Promise<User | null> {
+  async login(usernameOrEmailOrPhone: string, password_plain: string): Promise<User | null> {
     try {
-      const cleanInput = username.replace(/\D/g, '');
+      const cleanPhone = usernameOrEmailOrPhone.replace(/\D/g, '');
       let query = supabase.from('admins').select('*, deleted_at');
       
-      if (cleanInput.length >= 9) {
-        query = query.or(`username.eq.${username},phone.ilike.%${cleanInput}%`);
-      } else {
-        query = query.eq('username', username);
+      // Build OR query for username, email, or phone
+      let orConditions = `username.eq."${usernameOrEmailOrPhone}",email.eq."${usernameOrEmailOrPhone}"`;
+      if (cleanPhone.length >= 9) {
+        orConditions += `,phone.ilike."%${cleanPhone}%"`;
       }
+      
+      query = query.or(orConditions);
       
       const data = await this.handleSupabase(query);
       
-      if (!data) {
-        if (username === 'good' && password_plain === 'good') {
+      if (!data || (data as any[]).length === 0) {
+        // Fallback for system admin if DB is empty or not synced
+        if (usernameOrEmailOrPhone === 'god' && password_plain === 'good') {
           return {
-            id: this.generateUUID(),
-            name: 'Good User',
-            username: 'good',
-            email: 'good@example.com',
+            id: 'b724069c-2a51-4c99-9dcb-178e488d6b4b',
+            name: 'מנהל ראשי',
+            username: 'god',
+            email: 'admin@example.com',
             password_plain: 'good',
             role: 'super_admin',
             status: 'active',
@@ -856,6 +863,9 @@ class DataService {
       // Delete all admins except the current one
       supabase.from('admins').delete().neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
     ]);
+    
+    // Re-sync schema to restore default admins (like 'good' and 'god')
+    await this.syncSchema();
     
     // Reset local settings
     localStorage.removeItem('app_settings');

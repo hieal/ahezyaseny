@@ -163,13 +163,21 @@ export default function LoginPage() {
         return;
       }
 
-      const user = await dataService.login('good', 'good');
+      const user = await dataService.login('god', 'good');
       if (user) {
         login(user);
         toast.success('כניסה מהירה בוצעה בהצלחה!');
         navigate('/');
       } else {
-        toast.error('שגיאה בכניסה מהירה');
+        // Fallback to 'good' if 'god' doesn't exist yet
+        const fallbackUser = await dataService.login('good', 'good');
+        if (fallbackUser) {
+          login(fallbackUser);
+          toast.success('כניסה מהירה בוצעה בהצלחה!');
+          navigate('/');
+        } else {
+          toast.error('שגיאה בכניסה מהירה');
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -274,25 +282,9 @@ export default function LoginPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-lg">כניסת מנהלים</h3>
-                    <p className="text-sm text-text-secondary">כניסה מהירה עם גוגל או סיסמה</p>
+                    <p className="text-sm text-text-secondary">כניסה עם שם משתמש, טלפון או אימייל</p>
                   </div>
                 </button>
-
-                {mode === 'production' && (
-                  <button 
-                    onClick={handleBypassLogin}
-                    disabled={loading}
-                    className="card p-6 flex items-center gap-4 border-amber-200 bg-amber-50/30 hover:border-amber-500 transition-all group text-right"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-all">
-                      {loading ? <RefreshCw size={24} className="animate-spin" /> : <Zap size={24} />}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg">כניסה מהירה (פיתוח)</h3>
-                      <p className="text-sm text-text-secondary">כניסה למנהל ראשי ללא סיסמה</p>
-                    </div>
-                  </button>
-                )}
               </motion.div>
             ) : (
               <motion.div 
@@ -315,7 +307,7 @@ export default function LoginPage() {
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
-                    <label className="block text-sm font-semibold text-text-main mb-2">שם משתמש או טלפון</label>
+                    <label className="block text-sm font-semibold text-text-main mb-2">שם משתמש, אימייל או טלפון</label>
                     <div className="relative">
                       <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400">
                         <User size={18} />
@@ -324,7 +316,7 @@ export default function LoginPage() {
                         type="text"
                         required
                         className="input-field pr-12"
-                        placeholder="הזן שם משתמש או טלפון"
+                        placeholder="הזן שם משתמש, אימייל או טלפון"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                       />
