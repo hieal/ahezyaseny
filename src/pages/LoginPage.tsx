@@ -30,8 +30,22 @@ export default function LoginPage() {
   const [showQuickConnect, setShowQuickConnect] = useState(false);
   const [quickConnectText, setQuickConnectText] = useState('');
   
-  const { login } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/');
+    }
+  }, [user, authLoading, navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-gray">
+        <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   const handleSaveKeys = () => {
     if (customUrl) localStorage.setItem('supabase_url', customUrl);
