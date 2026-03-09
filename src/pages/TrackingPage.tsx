@@ -54,7 +54,7 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const data = await dataService.getActivityLogs();
+      const data = await dataService.getActivityLogs(user?.role === 'super_admin' ? undefined : user?.id);
       setLogs(data);
     } catch (err) {
       toast.error('שגיאה בטעינת מעקב פעולות');

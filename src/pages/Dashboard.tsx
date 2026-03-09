@@ -72,11 +72,8 @@ export default function Dashboard() {
   const fetchDailySuggestions = async () => {
     setLoadingSuggestions(true);
     try {
-      // const res = await fetch('/api/daily-suggestions');
-      // if (res.ok) {
-      //   setDailySuggestions(await res.json());
-      // }
-      setDailySuggestions([]);
+      const suggestions = await dataService.getDailySuggestions(3);
+      setDailySuggestions(suggestions.map(match => ({ match, potentialMatches: [] })));
     } catch (err) {
       console.error('Failed to fetch daily suggestions:', err);
     } finally {
@@ -479,7 +476,7 @@ export default function Dashboard() {
     try {
       const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
         dataService.getStats(),
-        dataService.getMatches(),
+        dataService.getMatches(undefined, user?.role === 'super_admin' ? undefined : user?.id),
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()

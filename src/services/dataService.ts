@@ -400,9 +400,10 @@ class DataService {
   }
 
   // Matches (Candidates)
-  async getMatches(type?: 'male' | 'female'): Promise<Match[]> {
+  async getMatches(type?: 'male' | 'female', created_by?: string): Promise<Match[]> {
     let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);
     if (type) query = query.eq('type', type);
+    if (created_by) query = query.eq('created_by', created_by);
     const data = await this.handleSupabase(query);
     return data || [];
   }
@@ -427,6 +428,15 @@ class DataService {
 
     const sanitized = this.sanitizeMatch(newMatch);
     sanitized.full_name = sanitized.name;
+
+    // Mirror external images (e.g., from Airtable CSV imports)
+    if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
+      const mirroredUrl = await this.mirrorImage(sanitized.image_url);
+      if (mirroredUrl) {
+        sanitized.image_url = mirroredUrl;
+      }
+    }
+
     const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
     return data as Match;
   }
@@ -434,6 +444,15 @@ class DataService {
   async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
     const sanitized = this.sanitizeMatch(updates);
     if (sanitized.name) sanitized.full_name = sanitized.name;
+
+    // Mirror external images
+    if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
+      const mirroredUrl = await this.mirrorImage(sanitized.image_url);
+      if (mirroredUrl) {
+        sanitized.image_url = mirroredUrl;
+      }
+    }
+
     const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
     return data as Match;
   }
@@ -511,6 +530,77 @@ class DataService {
     }
   }
 
+  async mirrorImage(url: string, bucket: string = 'images'): Promise<string | null> {
+    if (!url || !url.startsWith('http')) return null;
+    
+    try {
+      // Use a CORS proxy to fetch the image from the browser
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+      const response = await fetch(proxyUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image via proxy: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const fileName = `mirrored_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error mirroring image:', error);
+      return null;
+    }
+  }
+
+  async mirrorAllExternalImages(): Promise<{ success: number; failed: number }> {
+    try {
+      // Fetch all candidates with external images (not hosted on supabase)
+      const { data: candidates } = await supabase
+        .from('candidates')
+        .select('id, image_url')
+        .not('image_url', 'is', null)
+        .neq('image_url', '');
+
+      if (!candidates) return { success: 0, failed: 0 };
+
+      const externalCandidates = candidates.filter(c => 
+        c.image_url && 
+        c.image_url.startsWith('http') && 
+        !c.image_url.includes('supabase.co')
+      );
+
+      let success = 0;
+      let failed = 0;
+
+      for (const item of externalCandidates) {
+        try {
+          const mirroredUrl = await this.mirrorImage(item.image_url);
+          if (mirroredUrl) {
+            await supabase.from('candidates').update({ image_url: mirroredUrl }).eq('id', item.id);
+            success++;
+          } else {
+            failed++;
+          }
+        } catch (err) {
+          console.error(`Failed for ID ${item.id}:`, err);
+          failed++;
+        }
+      }
+
+      return { success, failed };
+    } catch (error) {
+      console.error('Error mirroring all images:', error);
+      return { success: 0, failed: 0 };
+    }
+  }
+
   async updateCandidateImage(candidateId: string, imageUrl: string) {
     const { error } = await supabase
       .from('candidates')
@@ -535,10 +625,24 @@ class DataService {
     }
   }
 
-  async getActivityLogs(): Promise<ActivityLog[]> {
-    const data = await this.handleSupabase(
-      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100)
-    );
+  async getDailySuggestions(limit: number = 3): Promise<Match[]> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .is('deleted_at', null)
+      .limit(limit);
+    
+    if (error) {
+      console.error('Error fetching daily suggestions:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  async getActivityLogs(user_id?: string): Promise<ActivityLog[]> {
+    let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
+    if (user_id) query = query.eq('user_id', user_id);
+    const data = await this.handleSupabase(query);
     return data || [];
   }
 

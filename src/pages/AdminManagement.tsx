@@ -24,6 +24,7 @@ export default function AdminManagement() {
   const [tempPhone, setTempPhone] = useState('');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<string[]>([]);
+  const [filterConnection, setFilterConnection] = useState<'all' | 'online' | 'offline'>('all');
   const [showPassword, setShowPassword] = useState<string | null>(null);
   const [csvFiles, setCsvFiles] = useState<File[]>([]);
   const [currentCsvIndex, setCurrentCsvIndex] = useState(0);
@@ -397,7 +398,10 @@ export default function AdminManagement() {
     const matchesCategory = filterCategory.length === 0 || 
                             (u.category && filterCategory.includes(u.category)) ||
                             (u.secondary_category && filterCategory.includes(u.secondary_category));
-    return matchesSearch && matchesCategory;
+    const matchesConnection = filterConnection === 'all' || 
+                              (filterConnection === 'online' && u.is_online) || 
+                              (filterConnection === 'offline' && !u.is_online);
+    return matchesSearch && matchesCategory && matchesConnection;
   }).sort((a, b) => {
     if (a.role === 'super_admin') return -1;
     if (b.role === 'super_admin') return 1;
@@ -471,6 +475,29 @@ export default function AdminManagement() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+        </div>
+        <div className="relative">
+          <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+          <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
+            <button
+              onClick={() => setFilterConnection('all')}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'all' ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue' : 'bg-white text-text-secondary border-slate-200 hover:border-luxury-blue'}`}
+            >
+              הכל
+            </button>
+            <button
+              onClick={() => setFilterConnection('online')}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'online' ? 'bg-green-500 text-white shadow-sm border-green-500' : 'bg-white text-text-secondary border-slate-200 hover:border-green-500'}`}
+            >
+              מחוברים
+            </button>
+            <button
+              onClick={() => setFilterConnection('offline')}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'offline' ? 'bg-red-500 text-white shadow-sm border-red-500' : 'bg-white text-text-secondary border-slate-200 hover:border-red-500'}`}
+            >
+              לא מחוברים
+            </button>
+          </div>
         </div>
         <div className="relative">
           <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
@@ -901,22 +928,31 @@ export default function AdminManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-5 text-left">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
+                        <Phone size={16} />
+                      </button>
+                      <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעת צ'אט">
+                        <MessageSquare size={16} />
+                      </button>
+                      <button onClick={() => toast('הצעת משודך - בביצוע')} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
+                        <Heart size={16} />
+                      </button>
                       {currentUser?.role === 'super_admin' && u.id !== currentUser.id && (
                         <button 
                           onClick={() => setImpersonateUser(u)} 
-                          className="p-2.5 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
                           title="התחבר כמנהל זה"
                         >
-                          <ExternalLink size={18} />
+                          <ExternalLink size={16} />
                         </button>
                       )}
-                      <button onClick={() => handleEdit(u)} className="p-2.5 text-luxury-blue hover:bg-blue-50 rounded-xl transition-all">
-                        <Edit2 size={18} />
+                      <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
+                        <Edit2 size={16} />
                       </button>
                       {u.role !== 'super_admin' && (
-                        <button onClick={() => handleDelete(u)} className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                          <Trash2 size={18} />
+                        <button onClick={() => handleDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
+                          <Trash2 size={16} />
                         </button>
                       )}
                     </div>
