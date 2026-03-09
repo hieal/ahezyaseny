@@ -440,7 +440,11 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [isImpersonating, setIsImpersonating] = React.useState(false);
-  const [showChat, setShowChat] = React.useState<{id: string, name: string} | null>(null);
+  const [activeChats, setActiveChats] = React.useState<{id: string, name: string}[]>([]);
+  const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
+  const [multiChatMode, setMultiChatMode] = React.useState(() => {
+    return localStorage.getItem('multi_chat_mode') === 'true';
+  });
   const [autoPopup, setAutoPopup] = React.useState(() => {
     return localStorage.getItem('chat_auto_popup') !== 'false';
   });
@@ -448,6 +452,31 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     localStorage.setItem('chat_auto_popup', autoPopup.toString());
   }, [autoPopup]);
+
+  React.useEffect(() => {
+    localStorage.setItem('multi_chat_mode', multiChatMode.toString());
+  }, [multiChatMode]);
+
+  const openChat = (otherUser: {id: string, name: string}) => {
+    setActiveChats(prev => {
+      if (prev.some(c => c.id === otherUser.id)) {
+        setSelectedChatId(otherUser.id);
+        return prev;
+      }
+      setSelectedChatId(otherUser.id);
+      return [...prev, otherUser];
+    });
+  };
+
+  const closeChat = (userId: string) => {
+    setActiveChats(prev => {
+      const filtered = prev.filter(c => c.id !== userId);
+      if (selectedChatId === userId) {
+        setSelectedChatId(filtered.length > 0 ? filtered[0].id : null);
+      }
+      return filtered;
+    });
+  };
 
   React.useEffect(() => {
     const handleStorageChange = () => {
@@ -491,33 +520,38 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         (payload) => {
           const msg = payload.new;
           
+          // Don't show toast if chat is already open with this user
+          const isChatOpen = activeChats.some(c => c.id === msg.sender_id);
+          
           if (autoPopup) {
-            setShowChat({ id: msg.sender_id, name: msg.sender_name });
+            openChat({ id: msg.sender_id, name: msg.sender_name });
           }
 
-          toast((t) => (
-            <div className="flex flex-col gap-2">
-              <div className="font-bold text-sm text-luxury-blue">הודעה חדשה מ{msg.sender_name}</div>
-              <div className="text-sm text-slate-700">{msg.text.length > 50 ? msg.text.substring(0, 50) + '...' : msg.text}</div>
-              <div className="flex gap-2 mt-2">
-                <button 
-                  onClick={() => {
-                    toast.dismiss(t.id);
-                    setShowChat({ id: msg.sender_id, name: msg.sender_name });
-                  }}
-                  className="text-xs font-bold text-white bg-luxury-blue px-3 py-1.5 rounded-lg"
-                >
-                  פתח צ'אט
-                </button>
-                <button 
-                  onClick={() => toast.dismiss(t.id)}
-                  className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg"
-                >
-                  סגור
-                </button>
+          if (!isChatOpen) {
+            toast((t) => (
+              <div className="flex flex-col gap-2">
+                <div className="font-bold text-sm text-luxury-blue">הודעה חדשה מ{msg.sender_name}</div>
+                <div className="text-sm text-slate-700">{msg.text.length > 50 ? msg.text.substring(0, 50) + '...' : msg.text}</div>
+                <div className="flex gap-2 mt-2">
+                  <button 
+                    onClick={() => {
+                      toast.dismiss(t.id);
+                      openChat({ id: msg.sender_id, name: msg.sender_name });
+                    }}
+                    className="text-xs font-bold text-white bg-luxury-blue px-3 py-1.5 rounded-lg"
+                  >
+                    פתח שיחה
+                  </button>
+                  <button 
+                    onClick={() => toast.dismiss(t.id)}
+                    className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg"
+                  >
+                    סגור
+                  </button>
+                </div>
               </div>
-            </div>
-          ), { duration: 5000, position: 'bottom-right' });
+            ), { duration: 5000, position: 'bottom-right' });
+          }
         }
       )
       .subscribe();
@@ -593,16 +627,65 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Global Internal Chat */}
-      <AnimatePresence>
-        {showChat && (
-          <InternalChat 
-            otherUser={showChat} 
-            onClose={() => setShowChat(null)} 
-          />
-        )}
-      </AnimatePresence>
+      <div className="fixed bottom-4 left-4 z-[110] flex flex-row-reverse items-end gap-4 pointer-events-none">
+        <AnimatePresence>
+          {multiChatMode ? (
+            activeChats.map((chat) => (
+              <div key={chat.id} className="pointer-events-auto">
+                <InternalChat 
+                  otherUser={chat} 
+                  onClose={() => closeChat(chat.id)} 
+                />
+              </div>
+            ))
+          ) : (
+            activeChats.length > 0 && (
+              <div className="pointer-events-auto flex flex-row-reverse items-end">
+                {activeChats.length > 1 && (
+                  <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 mb-4 ml-2 flex flex-col gap-2 max-h-[400px] overflow-y-auto">
+                    {activeChats.map(chat => (
+                      <button 
+                        key={chat.id}
+                        onClick={() => setSelectedChatId(chat.id)}
+                        className={`p-2 rounded-xl transition-all text-right text-xs font-black ${selectedChatId === chat.id ? 'bg-luxury-blue text-white' : 'hover:bg-slate-50 text-slate-600'}`}
+                      >
+                        {chat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedChatId && (
+                  <InternalChat 
+                    otherUser={activeChats.find(c => c.id === selectedChatId)!} 
+                    onClose={() => closeChat(selectedChatId)} 
+                  />
+                )}
+              </div>
+            )
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Auto Popup Toggle Floating Button removed from here, moved to ConnectedAdmins.tsx */}
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
+        <button 
+          onClick={() => setMultiChatMode(!multiChatMode)}
+          className={`p-3 rounded-2xl shadow-lg border transition-all flex items-center gap-2 ${
+            multiChatMode 
+              ? 'bg-purple-600 text-white border-purple-700' 
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+          title={multiChatMode ? 'עבור למצב חלון בודד' : 'עבור למצב חלונות מרובים'}
+        >
+          <div className="flex -space-x-1">
+            <MessageSquare size={16} />
+            <MessageSquare size={16} className="opacity-50" />
+          </div>
+          <span className="text-xs font-bold hidden md:inline">
+            {multiChatMode ? 'ריבוי חלונות: פעיל' : 'ריבוי חלונות: כבוי'}
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

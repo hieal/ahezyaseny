@@ -643,6 +643,67 @@ class DataService {
     }
   }
 
+  async getImageSyncInventory(): Promise<{
+    id: string;
+    name: string;
+    type: 'admin' | 'candidate';
+    url: string;
+    isSynced: boolean;
+  }[]> {
+    const [admins, candidates] = await Promise.all([
+      supabase.from('admins').select('id, name, avatar_url').is('deleted_at', null),
+      supabase.from('candidates').select('id, name, image_url').is('deleted_at', null)
+    ]);
+
+    const inventory: any[] = [];
+
+    if (admins.data) {
+      admins.data.forEach(a => {
+        if (a.avatar_url) {
+          inventory.push({
+            id: a.id,
+            name: a.name,
+            type: 'admin',
+            url: a.avatar_url,
+            isSynced: a.avatar_url.includes('supabase.co')
+          });
+        }
+      });
+    }
+
+    if (candidates.data) {
+      candidates.data.forEach(c => {
+        if (c.image_url) {
+          inventory.push({
+            id: c.id,
+            name: c.name,
+            type: 'candidate',
+            url: c.image_url,
+            isSynced: c.image_url.includes('supabase.co')
+          });
+        }
+      });
+    }
+
+    return inventory;
+  }
+
+  async mirrorSingleImage(id: string, type: 'admin' | 'candidate', url: string): Promise<string | null> {
+    const mirroredUrl = await this.mirrorImage(url);
+    if (!mirroredUrl) return null;
+
+    const table = type === 'admin' ? 'admins' : 'candidates';
+    const column = type === 'admin' ? 'avatar_url' : 'image_url';
+
+    const { error } = await supabase
+      .from(table)
+      .update({ [column]: mirroredUrl })
+      .eq('id', id);
+
+    if (error) throw error;
+    return mirroredUrl;
+  }
+
   async mirrorAllExternalImages(): Promise<{ success: number; failed: number }> {
     try {
       // Fetch all candidates with external images (not hosted on supabase)

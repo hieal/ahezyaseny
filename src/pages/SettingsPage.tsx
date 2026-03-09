@@ -7,6 +7,7 @@ import { WhatsAppWidget } from '../components/WhatsAppWidget';
 
 import { WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
+import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
 
 export default function SettingsPage() {
   const [template, setTemplate] = useState('');
@@ -16,6 +17,7 @@ export default function SettingsPage() {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
+  const [showImageSync, setShowImageSync] = useState(false);
   
   // Modals state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -443,18 +445,10 @@ export default function SettingsPage() {
               </p>
             </div>
             <button 
-              onClick={async () => {
-                const toastId = toast.loading('מסנכרן תמונות... אנא המתן');
-                try {
-                  const result = await dataService.mirrorAllExternalImages();
-                  toast.success(`סנכרון הושלם: ${result.success} תמונות סונכרנו בהצלחה, ${result.failed} נכשלו`, { id: toastId });
-                } catch (err) {
-                  toast.error('שגיאה בסנכרון תמונות', { id: toastId });
-                }
-              }}
+              onClick={() => setShowImageSync(true)}
               className="px-6 py-3 bg-white border-2 border-luxury-blue text-luxury-blue hover:bg-blue-50 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap"
             >
-              סנכרן עכשיו
+              פתח מרכז סנכרון
             </button>
           </div>
         </div>
@@ -611,6 +605,13 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Image Sync Dashboard Modal */}
+      <AnimatePresence>
+        {showImageSync && (
+          <ImageSyncDashboard onClose={() => setShowImageSync(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Test Chat Modal */}
       {testGroup && (

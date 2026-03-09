@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, X, Smile, Paperclip, User, Trash2 } from 'lucide-react';
+import { Send, X, Smile, Paperclip, User, Trash2, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -32,7 +32,20 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
   const [loading, setLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [matches, setMatches] = useState<any[]>([]);
+  const [otherUserDetails, setOtherUserDetails] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchOtherUser = async () => {
+      try {
+        const data = await dataService.getUserById(otherUser.id);
+        setOtherUserDetails(data);
+      } catch (err) {
+        console.error('Failed to fetch other user details:', err);
+      }
+    };
+    fetchOtherUser();
+  }, [otherUser.id]);
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -132,7 +145,8 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     try {
       if (!newMsg.sender_id) throw new Error('Missing sender ID');
       const savedMsg = await dataService.sendInternalMessage(newMsg);
-      setMessages(prev => [...prev, savedMsg]);
+      // Real-time listener will add it, but we can add it optimistically or wait for listener
+      // setMessages(prev => [...prev, savedMsg]); 
       setNewMessage('');
       setShowPicker(false);
     } catch (err: any) {
@@ -155,6 +169,13 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
     setShowEmojis(false);
   };
 
+  const isFemale = otherUserDetails?.gender === 'female';
+  const themeColor = isFemale ? 'from-pink-600 to-pink-800' : 'from-luxury-blue to-blue-800';
+  const bubbleColor = isFemale ? 'bg-pink-600' : 'bg-luxury-blue';
+  const lightBg = isFemale ? 'bg-pink-50' : 'bg-blue-50';
+  const textColor = isFemale ? 'text-pink-600' : 'text-luxury-blue';
+  const ringColor = isFemale ? 'focus:ring-pink-500' : 'focus:ring-luxury-blue';
+
   return (
     <motion.div 
       initial={{ y: 100, opacity: 0 }}
@@ -162,17 +183,28 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
       exit={{ y: 100, opacity: 0 }}
       className="fixed bottom-4 left-4 w-85 h-[500px] bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col z-[110] overflow-hidden"
     >
-      <div className="p-4 bg-gradient-to-r from-luxury-blue to-blue-800 text-white flex items-center justify-between shadow-lg">
+      <div className={`p-4 bg-gradient-to-r ${themeColor} text-white flex items-center justify-between shadow-lg`}>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center border border-white/30">
-              <User size={20} />
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center border border-white/30 overflow-hidden relative">
+              {otherUserDetails?.avatar_url ? (
+                <>
+                  <img src={otherUserDetails.avatar_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  {otherUserDetails.avatar_url.includes('supabase.co') && (
+                    <div className="absolute top-0 right-0 bg-green-500 text-white p-0.5 rounded-full border border-white shadow-sm" title="תמונה מסונכרנת">
+                      <CheckCircle size={8} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <User size={20} />
+              )}
             </div>
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
           <div>
-            <p className="text-sm font-bold leading-tight">{otherUser.name}</p>
-            <p className="text-[10px] opacity-80 font-medium">שיחה בין המנהל/ת {user?.name} למנהל/ת {otherUser.name}</p>
+            <p className="text-sm font-black leading-tight">{otherUser.name}</p>
+            <p className="text-[10px] opacity-80 font-bold">שיחה בין המנהל/ת <span className="underline">{user?.name}</span> למנהל/ת <span className="underline">{otherUser.name}</span></p>
           </div>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all">
@@ -183,7 +215,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="w-8 h-8 border-3 border-luxury-blue border-t-transparent rounded-full animate-spin"></div>
+            <div className={`w-8 h-8 border-3 ${textColor} border-t-transparent rounded-full animate-spin`}></div>
           </div>
         ) : (
           messages.map((msg) => (
@@ -193,38 +225,38 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
             >
               <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm shadow-sm transition-all relative group ${
                 msg.sender_id === user?.id 
-                  ? 'bg-luxury-blue text-white rounded-br-none' 
+                  ? `${bubbleColor} text-white rounded-br-none` 
                   : 'bg-white text-slate-900 rounded-bl-none border border-slate-100'
               }`}>
+                <div className="font-bold text-[10px] mb-1 opacity-70">
+                  {msg.sender_name}
+                </div>
                 {msg.match_id ? (
                   <div className="space-y-2">
-                    <p className="font-bold text-xs opacity-80 mb-1">הצעה למשודך:</p>
+                    <p className="font-black text-xs opacity-80 mb-1">הצעה למשודך:</p>
                     <div className={`p-3 rounded-xl border ${msg.sender_id === user?.id ? 'bg-white/10 border-white/20' : 'bg-slate-50 border-slate-100'}`}>
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.match_type === 'male' ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600'}`}>
                           <User size={20} />
                         </div>
                         <div>
-                          <p className="font-bold">{msg.match_name}</p>
-                          <p className="text-[10px] opacity-70">{msg.match_age} שנים • {msg.match_city}</p>
+                          <p className="font-black">{msg.match_name}</p>
+                          <p className="text-[10px] opacity-70 font-bold">{msg.match_age} שנים • {msg.match_city}</p>
                         </div>
                       </div>
                     </div>
-                    <p>{msg.text}</p>
+                    <p className="font-medium">{msg.text}</p>
                   </div>
                 ) : (
-                  msg.text
+                  <p className="font-medium">{msg.text}</p>
                 )}
                 {msg.sender_id === user?.id && (
                   <button 
                     onClick={async () => {
                       if (!window.confirm('למחוק הודעה זו?')) return;
                       try {
-                        // const res = await fetch(`/api/internal-messages/${msg.id}`, { method: 'DELETE' });
-                        // if (res.ok) {
-                          setMessages(prev => prev.filter(m => m.id !== msg.id));
-                          toast.success('הודעה נמחקה');
-                        // }
+                        setMessages(prev => prev.filter(m => m.id !== msg.id));
+                        toast.success('הודעה נמחקה');
                       } catch (e) {
                         toast.error('שגיאה במחיקה');
                       }
@@ -236,11 +268,11 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                 )}
               </div>
               <div className="flex items-center gap-1.5 mt-1 px-1">
-                <span className="text-[9px] text-slate-400 font-medium">
+                <span className="text-[9px] text-slate-400 font-bold">
                   {new Date(msg.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                 </span>
                 {msg.sender_id === user?.id && (
-                  <span className="text-[9px] text-slate-300 font-bold">נשלח</span>
+                  <span className="text-[9px] text-slate-300 font-black">נשלח</span>
                 )}
               </div>
             </div>
@@ -280,7 +312,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
               className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-100 shadow-2xl rounded-2xl p-4 z-20 max-h-64 overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-black text-slate-400 uppercase">בחר משודך להצעה</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-tighter">בחר משודך להצעה</p>
                 <button onClick={() => setShowPicker(false)}><X size={14} /></button>
               </div>
               <div className="space-y-2">
@@ -290,12 +322,12 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
                     onClick={() => handleSend(undefined, m.id)}
                     className="w-full text-right p-2 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors"
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${m.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${m.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
                       {m.name[0]}
                     </div>
                     <div>
-                      <p className="text-xs font-bold">{m.name}</p>
-                      <p className="text-[9px] text-slate-400">{m.age} שנים • {m.city}</p>
+                      <p className="text-xs font-black">{m.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold">{m.age} שנים • {m.city}</p>
                     </div>
                   </button>
                 ))}
@@ -310,14 +342,14 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
               <button 
                 type="button"
                 onClick={() => setShowEmojis(!showEmojis)}
-                className={`p-2 rounded-xl transition-all ${showEmojis ? 'bg-blue-50 text-luxury-blue' : 'text-slate-400 hover:bg-slate-50'}`}
+                className={`p-2 rounded-xl transition-all ${showEmojis ? `${lightBg} ${textColor}` : 'text-slate-400 hover:bg-slate-50'}`}
               >
                 <Smile size={20} />
               </button>
               <button 
                 type="button"
                 onClick={() => setShowPicker(!showPicker)}
-                className={`p-2 rounded-xl transition-all ${showPicker ? 'bg-blue-50 text-luxury-blue' : 'text-slate-400 hover:bg-slate-50'}`}
+                className={`p-2 rounded-xl transition-all ${showPicker ? `${lightBg} ${textColor}` : 'text-slate-400 hover:bg-slate-50'}`}
                 title="הצע משודך"
               >
                 <Paperclip size={20} />
@@ -328,12 +360,12 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose }
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="הקלד הודעה..."
-              className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-luxury-blue outline-none transition-all"
+              className={`flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2.5 text-sm font-bold focus:ring-2 ${ringColor} outline-none transition-all`}
             />
             <button 
               type="submit"
               disabled={!newMessage.trim()}
-              className="p-2.5 bg-luxury-blue text-white rounded-2xl hover:bg-blue-700 transition-all disabled:opacity-50 shadow-md active:scale-95"
+              className={`p-2.5 ${bubbleColor} text-white rounded-2xl hover:opacity-90 transition-all disabled:opacity-50 shadow-md active:scale-95`}
             >
               <Send size={20} />
             </button>

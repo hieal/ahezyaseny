@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { User } from '../types';
-import { Users, Phone, MessageSquare, User as UserIcon, Search } from 'lucide-react';
+import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { InternalChat } from '../components/InternalChat';
@@ -193,7 +193,14 @@ export default function ConnectedAdmins() {
                           <div className="flex items-center gap-3">
                             <div className="relative">
                               {admin.avatar_url ? (
-                                <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                <div className="relative">
+                                  <img src={admin.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                  {admin.avatar_url.includes('supabase.co') && (
+                                    <div className="absolute -top-1 -right-1 bg-green-500 text-white p-0.5 rounded-full border border-white shadow-sm" title="תמונה מסונכרנת">
+                                      <CheckCircle size={10} />
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
                                   <UserIcon size={20} />
