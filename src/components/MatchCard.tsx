@@ -1,6 +1,6 @@
 import React from 'react';
 import { Match, WhatsAppGroup } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users } from 'lucide-react';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
@@ -19,6 +19,7 @@ interface MatchCardProps {
    onQuickUpdate?: (id: string, updates: Partial<Match>) => void;
    onSuggest?: (match: Match) => void;
    onNotes?: (match: Match) => void;
+   onDesignedCard?: (match: Match) => void;
    showCreator?: boolean;
    minimal?: boolean;
    selected?: boolean;
@@ -26,13 +27,15 @@ interface MatchCardProps {
    isViewer?: boolean;
  }
 
-export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
   const [isAdjusting, setIsAdjusting] = React.useState(false);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
   const [showViewerSelector, setShowViewerSelector] = React.useState(false);
   const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
 
@@ -68,12 +71,49 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   }, [match.crop_config, isAdjusting]);
 
   const handleAdjust = (e: React.MouseEvent, updates: any) => {
+    if (isViewer) return;
     e.stopPropagation();
     setIsAdjusting(true);
     setLocalCropConfig(prev => ({ ...prev, ...updates }));
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!isAdjusting) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY,
+      cropX: localCropConfig.x,
+      cropY: localCropConfig.y
+    });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    
+    // Sensitivity factor - adjust based on container size and zoom
+    const sensitivity = 0.15 / localCropConfig.zoom; 
+    
+    setLocalCropConfig(prev => ({
+      ...prev,
+      x: Math.max(0, Math.min(100, dragStart.cropX - (dx * sensitivity * 100 / 20))), // Rough mapping
+      y: Math.max(0, Math.min(100, dragStart.cropY - (dy * sensitivity * 100 / 20)))
+    }));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
   const saveAdjustment = async (e: React.MouseEvent) => {
+    if (isViewer) return;
     e.stopPropagation();
     try {
       if (onQuickUpdate) {
@@ -123,6 +163,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   const viewerGroups = allGroups.filter(g => viewerGroupIds.includes(g.id));
 
   const toggleViewerGroup = async (groupId: string) => {
+    if (isViewer) return;
     const newIds = viewerGroupIds.includes(groupId) 
       ? viewerGroupIds.filter(id => id !== groupId)
       : [...viewerGroupIds, groupId];
@@ -159,14 +200,18 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {match.image_url && !minimal && (
         <div 
-          className="relative h-48 w-full overflow-hidden cursor-pointer bg-slate-100"
-          onClick={() => onImageClick?.(match)}
+          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? 'cursor-pointer' : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : isAdjusting ? 'cursor-grab' : ''}`}
+          onClick={() => !isViewer && !isAdjusting && onImageClick?.(match)}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
           <img 
             src={dataService.getPublicImageUrl(match.image_url)} 
             alt={match.name} 
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover transition-all" 
+            className="w-full h-full object-cover transition-all pointer-events-none select-none" 
             style={{
               objectPosition: `${localCropConfig.x}% ${localCropConfig.y}%`,
               transform: `scale(${localCropConfig.zoom})`
@@ -183,18 +228,29 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           {/* Adjustment Controls Overlay */}
           {!isViewer && (
             <div className={`absolute inset-0 bg-black/0 hover:bg-black/20 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100 bg-black/20' : 'opacity-0 hover:opacity-100'}`}>
-              <div className="flex flex-col items-center gap-1 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-xl scale-90" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col items-center gap-1 bg-white/40 backdrop-blur-md p-2 rounded-2xl shadow-xl scale-90" onClick={e => e.stopPropagation()}>
                 <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronUp size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronUp size={16} /></button>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronRight size={16} /></button>
-                  <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-luxury-blue"><ZoomIn size={16} /></button>
-                  <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-luxury-blue"><ZoomOut size={16} /></button>
-                  <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronLeft size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronRight size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-1.5 hover:bg-white/50 rounded-lg text-luxury-blue"><ZoomIn size={16} /></button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsAdjusting(true);
+                      toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
+                    }} 
+                    className={`p-1.5 hover:bg-white/50 rounded-lg ${isAdjusting ? 'text-green-600 bg-white/50' : 'text-slate-900'}`}
+                    title="הזזה חופשית עם העכבר"
+                  >
+                    <Move size={16} />
+                  </button>
+                  <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-1.5 hover:bg-white/50 rounded-lg text-luxury-blue"><ZoomOut size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronLeft size={16} /></button>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-700"><ChevronDown size={16} /></button>
+                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronDown size={16} /></button>
                 </div>
                 
                 {isAdjusting ? (
@@ -232,10 +288,10 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {!match.image_url && !minimal && (
         <div 
-          className={`relative h-48 w-full overflow-hidden cursor-pointer flex items-center justify-center ${
+          className={`relative h-48 w-full overflow-hidden flex items-center justify-center ${
             match.type === 'male' ? 'bg-blue-50' : 'bg-pink-50'
-          }`}
-          onClick={() => onImageClick?.(match)}
+          } ${!isViewer ? 'cursor-pointer' : 'cursor-default'}`}
+          onClick={() => !isViewer && onImageClick?.(match)}
         >
           <div className="text-center space-y-2">
             <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center ${
@@ -243,9 +299,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
             }`}>
               {match.type === 'male' ? <User size={32} /> : <Heart size={32} fill="currentColor" />}
             </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">לחץ להוספת תמונה</p>
+            {!isViewer && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">לחץ להוספת תמונה</p>}
           </div>
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors" />
+          {!isViewer && <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors" />}
         </div>
       )}
       
@@ -281,7 +337,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           <div className="flex items-center gap-3">
             {showCreator && match.creator_name && (
               <div className="absolute top-2 left-2 bg-luxury-blue/90 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg z-30 border border-white/20">
-                מנהל: {match.creator_name}
+                מנהל: {match.creator_name} | קבוצה: {match.creator_category || 'ללא'}
               </div>
             )}
             <div>
@@ -337,9 +393,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                 </div>
               )}
               {viewerGroups.length > 0 && (
-                <div className="flex gap-1">
+                <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
                   {viewerGroups.map(vg => (
-                    <div key={vg.id} className="px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100" title={`צופה בקבוצת ${vg.name}`}>
+                    <div key={vg.id} className="px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap" title={`צופה בקבוצת ${vg.name}`}>
                       <Eye size={10} />
                       <span>{vg.name}</span>
                     </div>
@@ -364,30 +420,40 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           </div>
         </div>
           <div className="flex items-center gap-1 shrink-0">
-            {onEdit && (
+            {onEdit && !isViewer && (
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(match.id);
                 }} 
-                disabled={isViewer}
-                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all"
                 title="ערוך כרטיס"
               >
                 <Edit size={18} />
               </button>
             )}
-            {onDelete && (
+            {onDelete && !isViewer && (
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(match.id);
                 }} 
-                disabled={isViewer}
-                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                 title="מחק כרטיס"
               >
                 <Trash2 size={18} />
+              </button>
+            )}
+            {onDesignedCard && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDesignedCard(match);
+                }}
+                className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all"
+                title="צפה בכרטיס מעוצב"
+              >
+                <ImageIcon size={18} />
               </button>
             )}
             {!isViewer && (

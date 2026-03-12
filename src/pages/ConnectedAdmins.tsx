@@ -5,27 +5,32 @@ import { User } from '../types';
 import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
-import { InternalChat } from '../components/InternalChat';
+import { useChat } from '../contexts/ChatContext';
 
 export default function ConnectedAdmins() {
   const { user } = useAuth();
+  const { openChat } = useChat();
   const [allAdmins, setAllAdmins] = useState<User[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showChat, setShowChat] = useState<{id: string, name: string} | null>(null);
   const [showList, setShowList] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [autoPopup, setAutoPopup] = useState(() => {
     return localStorage.getItem('chat_auto_popup') !== 'false';
   });
+  const [multiChatMode, setMultiChatMode] = useState(() => {
+    return localStorage.getItem('multi_chat_mode') === 'true';
+  });
 
   useEffect(() => {
     localStorage.setItem('chat_auto_popup', autoPopup.toString());
-    // Dispatch event to notify App.tsx if needed, but since it reads from localStorage on render it might be fine.
-    // Actually, App.tsx listener uses state. We should probably use a custom event or just let the user refresh.
-    // But better: App.tsx listener should read from localStorage directly inside the callback.
     window.dispatchEvent(new Event('storage')); 
   }, [autoPopup]);
+
+  useEffect(() => {
+    localStorage.setItem('multi_chat_mode', multiChatMode.toString());
+    window.dispatchEvent(new Event('storage'));
+  }, [multiChatMode]);
 
   const fetchAdmins = async () => {
     try {
@@ -95,7 +100,20 @@ export default function ConnectedAdmins() {
           <p className="text-slate-500 mt-2 font-medium">צפה במנהלים המחוברים כעת למערכת וצור איתם קשר</p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-4 bg-white p-2 px-4 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={16} className="text-purple-600" />
+              <span className="text-sm font-bold text-slate-600">ריבוי חלונות צ'אט</span>
+            </div>
+            <button 
+              onClick={() => setMultiChatMode(!multiChatMode)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${multiChatMode ? 'bg-purple-600' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${multiChatMode ? '-translate-x-6' : '-translate-x-1'}`} />
+            </button>
+          </div>
+
           <div className="flex items-center gap-4 bg-white p-2 px-4 rounded-2xl border border-slate-100 shadow-sm">
             <div className="flex items-center gap-2">
               <MessageSquare size={16} className="text-luxury-blue" />
@@ -240,7 +258,7 @@ export default function ConnectedAdmins() {
                               </button>
                             )}
                             <button 
-                              onClick={() => setShowChat({ id: admin.id, name: admin.name })} 
+                              onClick={() => openChat({ id: admin.id, name: admin.name })} 
                               className="p-2 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" 
                               title="שלח הודעת צ'אט"
                             >
@@ -265,15 +283,7 @@ export default function ConnectedAdmins() {
         )}
       </AnimatePresence>
 
-      {/* Internal Chat */}
-      <AnimatePresence>
-        {showChat && (
-          <InternalChat 
-            otherUser={showChat} 
-            onClose={() => setShowChat(null)} 
-          />
-        )}
-      </AnimatePresence>
+      {/* Internal Chat rendering removed, now handled globally by App.tsx */}
     </div>
   );
 }

@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   
   const envUrl = import.meta.env.VITE_SUPABASE_URL;
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -156,10 +158,12 @@ export default function LoginPage() {
         toast.success('ברוך הבא!');
         navigate('/');
       } else {
-        toast.error('שם משתמש או סיסמה שגויים');
+        setErrorMessage('שם משתמש או סיסמה שגויים. אנא נסה שוב.');
+        setShowErrorModal(true);
       }
     } catch (err: any) {
-      toast.error(err.message || 'שגיאה בחיבור למסד הנתונים');
+      setErrorMessage(err.message || 'שגיאה בחיבור למסד הנתונים');
+      setShowErrorModal(true);
     } finally {
       setLoading(false);
     }
@@ -396,6 +400,34 @@ export default function LoginPage() {
         <p className="text-center text-slate-400 text-sm mt-10 font-medium">
           &copy; 2026 {APP_NAME}
         </p>
+
+        {/* Login Error Modal */}
+        <AnimatePresence>
+          {showErrorModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white rounded-[2.5rem] p-8 shadow-2xl max-w-md w-full text-center space-y-6 border border-slate-100"
+              >
+                <div className="w-20 h-20 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+                  <ShieldCheck size={40} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-slate-900">שגיאת התחברות</h3>
+                  <p className="text-slate-500 font-bold">{errorMessage}</p>
+                </div>
+                <button 
+                  onClick={() => setShowErrorModal(false)}
+                  className="w-full py-4 bg-luxury-blue text-white rounded-2xl font-black hover:opacity-90 transition-all shadow-lg active:scale-95"
+                >
+                  נסה שוב
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

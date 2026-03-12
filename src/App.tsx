@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
+import DailySuggestionsPage from './pages/DailySuggestionsPage';
 import MatchForm from './pages/MatchForm';
 import AdminManagement from './pages/AdminManagement';
 import RoleManagement from './pages/RoleManagement';
@@ -12,7 +13,7 @@ import SettingsPage from './pages/SettingsPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
 import ConnectedAdmins from './pages/ConnectedAdmins';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { toast } from 'react-hot-toast';
@@ -20,6 +21,7 @@ import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
 import { supabase } from './services/supabase';
 import { InternalChat } from './components/InternalChat';
+import { ChatProvider } from './contexts/ChatContext';
 
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -132,8 +134,36 @@ function Sidebar() {
     reader.readAsDataURL(file);
   };
 
+  const [timeLeft, setTimeLeft] = React.useState(0);
+
+  React.useEffect(() => {
+    const updateTimer = () => {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setHours(24, 0, 0, 0);
+      const diff = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
+      setTimeLeft(diff);
+    };
+    updateTimer();
+    const timer = setInterval(updateTimer, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+    { 
+      path: '/suggestions', 
+      label: 'הצעות יומיות', 
+      icon: <Sparkles size={20} />,
+      badge: formatTime(timeLeft)
+    },
     { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
     { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
     { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
@@ -222,6 +252,11 @@ function Sidebar() {
                   >
                     {item.icon}
                     <span className="font-medium flex-1">{item.label}</span>
+                    {item.badge && (
+                      <span className="text-[9px] font-black bg-luxury-blue/10 text-luxury-blue px-2 py-0.5 rounded-full border border-luxury-blue/20">
+                        {item.badge}
+                      </span>
+                    )}
                     {item.path === '/connected-admins' && (
                       <button 
                         onClick={(e) => {
@@ -447,6 +482,17 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const [autoPopup, setAutoPopup] = React.useState(() => {
     return localStorage.getItem('chat_auto_popup') !== 'false';
   });
+  const [showLimitModal, setShowLimitModal] = React.useState(false);
+  const [showMoveLimitModal, setShowMoveLimitModal] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleStorage = () => {
+      setMultiChatMode(localStorage.getItem('multi_chat_mode') === 'true');
+      setAutoPopup(localStorage.getItem('chat_auto_popup') !== 'false');
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('chat_auto_popup', autoPopup.toString());
@@ -462,6 +508,13 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         setSelectedChatId(otherUser.id);
         return prev;
       }
+      
+      // Limit to 5 chats in multi-chat mode
+      if (multiChatMode && prev.length >= 5) {
+        setShowLimitModal(true);
+        return prev;
+      }
+      
       setSelectedChatId(otherUser.id);
       return [...prev, otherUser];
     });
@@ -616,76 +669,108 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   if (!user) return <>{children}</>;
 
   return (
-    <div className="flex flex-col lg:flex-row min-h-screen bg-bg-gray">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header />
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
-      </div>
+    <ChatProvider value={{ openChat }}>
+      <div className="flex flex-col lg:flex-row min-h-screen bg-bg-gray">
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header />
+          <main className="flex-1 overflow-y-auto">
+            {children}
+          </main>
+        </div>
 
-      {/* Global Internal Chat */}
-      <div className="fixed bottom-4 left-4 z-[110] flex flex-row-reverse items-end gap-4 pointer-events-none">
-        <AnimatePresence>
-          {multiChatMode ? (
-            activeChats.map((chat) => (
-              <div key={chat.id} className="pointer-events-auto">
-                <InternalChat 
-                  otherUser={chat} 
-                  onClose={() => closeChat(chat.id)} 
-                />
-              </div>
-            ))
-          ) : (
-            activeChats.length > 0 && (
-              <div className="pointer-events-auto flex flex-row-reverse items-end">
-                {activeChats.length > 1 && (
-                  <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 mb-4 ml-2 flex flex-col gap-2 max-h-[400px] overflow-y-auto">
-                    {activeChats.map(chat => (
-                      <button 
-                        key={chat.id}
-                        onClick={() => setSelectedChatId(chat.id)}
-                        className={`p-2 rounded-xl transition-all text-right text-xs font-black ${selectedChatId === chat.id ? 'bg-luxury-blue text-white' : 'hover:bg-slate-50 text-slate-600'}`}
-                      >
-                        {chat.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {selectedChatId && (
+        {/* Global Internal Chat */}
+        <div className="fixed bottom-4 left-4 z-[110] flex flex-row items-end gap-4 pointer-events-none">
+          <AnimatePresence>
+            {multiChatMode ? (
+              activeChats.map((chat) => (
+                <div key={chat.id} className="pointer-events-auto">
+                  <InternalChat 
+                    otherUser={chat} 
+                    onClose={() => closeChat(chat.id)} 
+                    isMultiMode={true}
+                    activeChats={activeChats}
+                    onDragDisabled={() => setShowMoveLimitModal(true)}
+                  />
+                </div>
+              ))
+            ) : (
+              activeChats.length > 0 && selectedChatId && (
+                <div className="pointer-events-auto">
                   <InternalChat 
                     otherUser={activeChats.find(c => c.id === selectedChatId)!} 
                     onClose={() => closeChat(selectedChatId)} 
+                    activeChats={activeChats}
+                    onSelectChat={setSelectedChatId}
+                    selectedChatId={selectedChatId}
+                    isMultiMode={false}
+                    onDragDisabled={() => setShowMoveLimitModal(true)}
                   />
-                )}
-              </div>
-            )
+                </div>
+              )
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Auto Popup Toggle Floating Button removed from here, moved to ConnectedAdmins.tsx */}
+
+        {/* Chat Limit Modal */}
+        <AnimatePresence>
+          {showLimitModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white rounded-[2.5rem] p-8 shadow-2xl max-w-md w-full text-center space-y-6 border border-slate-100"
+              >
+                <div className="w-20 h-20 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+                  <X size={40} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-slate-900">הגעת לגבול המקסימלי</h3>
+                  <p className="text-slate-500 font-bold">לא ניתן לנהל צ'אט עם יותר מ-5 מנהלים במקביל במצב ריבוי חלונות.</p>
+                </div>
+                <button 
+                  onClick={() => setShowLimitModal(false)}
+                  className="w-full py-4 bg-luxury-blue text-white rounded-2xl font-black hover:opacity-90 transition-all shadow-lg active:scale-95"
+                >
+                  הבנתי, תודה
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Move Limit Modal */}
+        <AnimatePresence>
+          {showMoveLimitModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white rounded-[2.5rem] p-8 shadow-2xl max-w-md w-full text-center space-y-6 border border-slate-100"
+              >
+                <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+                  <ShieldAlert size={40} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-slate-900">הגבלת הזזה</h3>
+                  <p className="text-slate-500 font-bold">לא ניתן להזיז את חלוניות הצ'אט כאשר יש יותר מ-2 חלונות פעילים במקביל.</p>
+                </div>
+                <button 
+                  onClick={() => setShowMoveLimitModal(false)}
+                  className="w-full py-4 bg-luxury-blue text-white rounded-2xl font-black hover:opacity-90 transition-all shadow-lg active:scale-95"
+                >
+                  הבנתי
+                </button>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
       </div>
-
-      {/* Auto Popup Toggle Floating Button removed from here, moved to ConnectedAdmins.tsx */}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
-        <button 
-          onClick={() => setMultiChatMode(!multiChatMode)}
-          className={`p-3 rounded-2xl shadow-lg border transition-all flex items-center gap-2 ${
-            multiChatMode 
-              ? 'bg-purple-600 text-white border-purple-700' 
-              : 'bg-white text-slate-600 border-slate-200'
-          }`}
-          title={multiChatMode ? 'עבור למצב חלון בודד' : 'עבור למצב חלונות מרובים'}
-        >
-          <div className="flex -space-x-1">
-            <MessageSquare size={16} />
-            <MessageSquare size={16} className="opacity-50" />
-          </div>
-          <span className="text-xs font-bold hidden md:inline">
-            {multiChatMode ? 'ריבוי חלונות: פעיל' : 'ריבוי חלונות: כבוי'}
-          </span>
-        </button>
-      </div>
-    </div>
+    </ChatProvider>
   );
 }
 
@@ -699,6 +784,7 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
               <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
               <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />

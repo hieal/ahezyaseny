@@ -2,17 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
 import MatchCard from '../components/MatchCard';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
+import { MatchSuggestions } from '../components/MatchSuggestions';
 
 import { dataService } from '../services/dataService';
+import { useChat } from '../contexts/ChatContext';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
+  const { openChat } = useChat();
   const { type } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -66,27 +69,31 @@ export default function Dashboard() {
   const [showWhatsAppFloating, setShowWhatsAppFloating] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showConnectedAdminsModal, setShowConnectedAdminsModal] = useState(false);
-  const [showChat, setShowChat] = useState<any>(null);
-  const [dailySuggestions, setDailySuggestions] = useState<any[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [sortAlphabetically, setSortAlphabetically] = useState(false);
+  const [sortByDate, setSortByDate] = useState(true); // Default newest first
   const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
+
+  const [showGlobalBreakdownModal, setShowGlobalBreakdownModal] = useState(false);
+  const [globalBreakdownData, setGlobalBreakdownData] = useState<any>(null);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [loadingGlobalBreakdown, setLoadingGlobalBreakdown] = useState(false);
+
+  const fetchGlobalBreakdown = async () => {
+    setLoadingGlobalBreakdown(true);
+    try {
+      const data = await dataService.getGlobalStatsBreakdown();
+      setGlobalBreakdownData(data);
+    } catch (err) {
+      console.error('Failed to fetch global breakdown:', err);
+      toast.error('שגיאה בטעינת נתוני אתר');
+    } finally {
+      setLoadingGlobalBreakdown(false);
+    }
+  };
 
   const handleSuggest = (match: Match) => {
     setShowConnectedAdminsModal(true);
     toast(`בחר מנהל להציע לו את ${match.name}`, { icon: '💬' });
-  };
-
-  const fetchDailySuggestions = async () => {
-    setLoadingSuggestions(true);
-    try {
-      const suggestions = await dataService.getDailySuggestions(3);
-      setDailySuggestions(suggestions.map(match => ({ match, potentialMatches: [] })));
-    } catch (err) {
-      console.error('Failed to fetch daily suggestions:', err);
-    } finally {
-      setLoadingSuggestions(false);
-    }
   };
 
   const [showManagersViewerModal, setShowManagersViewerModal] = useState(false);
@@ -97,6 +104,9 @@ export default function Dashboard() {
   const [viewerGenderFilter, setViewerGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [viewerCardView, setViewerCardView] = useState<'full' | 'designed'>('full');
   const [showSameGroupsAdminsModal, setShowSameGroupsAdminsModal] = useState(false);
+  const [cardsPerRow, setCardsPerRow] = useState(3);
+  const [sliderViewEnabled, setSliderViewEnabled] = useState(false);
+  const [currentSliderIndex, setCurrentSliderIndex] = useState(0);
   const [managerCounts, setManagerCounts] = useState<Record<string, number>>({});
 
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -605,9 +615,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData();
-    if (user) {
-      fetchDailySuggestions();
-    }
   }, [user]);
 
   const handleDelete = async (id: string) => {
@@ -890,6 +897,14 @@ export default function Dashboard() {
                              (completionFilter === 'incomplete' && missing.length > 0);
 
     return matchesSearch && matchesType && matchesGroupType && matchesManager && matchesMultiGroup && matchesMultiManager && matchesCompletion;
+  }).sort((a, b) => {
+    if (sortAlphabetically) {
+      return a.name.localeCompare(b.name, 'he');
+    }
+    if (sortByDate) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    return 0;
   });
 
   const handleSelectMatch = (id: string, selected: boolean) => {
@@ -917,67 +932,9 @@ export default function Dashboard() {
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
       {/* Daily Suggestions Section */}
-      {!isViewer && dailySuggestions.length > 0 && (
+      {!isViewer && (
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-black text-text-main flex items-center gap-2">
-              <Sparkles className="text-yellow-500" size={24} />
-              הצעות יומיות חכמות בשבילך
-            </h2>
-            <button 
-              onClick={fetchDailySuggestions}
-              className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
-            >
-              <RefreshCw size={12} className={loadingSuggestions ? 'animate-spin' : ''} />
-              רענן הצעות
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {dailySuggestions.map((item, idx) => (
-              <motion.div 
-                key={idx}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4"
-              >
-                <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
-                    {item.match.type === 'male' ? <User size={20} /> : <Heart size={20} />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{item.match.name}</p>
-                    <p className="text-[10px] text-slate-500">{item.match.age} שנים • {item.match.city}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">התאמות פוטנציאליות:</p>
-                  {item.potentialMatches.map((pot: any) => (
-                    <div key={pot.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all group">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${pot.type === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                          {pot.name[0]}
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">{pot.name}</p>
-                          <p className="text-[9px] text-slate-500">מנהל: {pot.creator_name}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          toast(`פנה למנהל ${pot.creator_name} לגבי הצעה זו`, { icon: '💬' });
-                        }}
-                        className="p-1.5 text-luxury-blue opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <MessageSquare size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
+          <MatchSuggestions />
         </section>
       )}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -990,7 +947,24 @@ export default function Dashboard() {
             </div>
           )}
           <div>
-            <h1 className="text-4xl font-extrabold text-text-main tracking-tight">{pageTitle}</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-4xl font-extrabold text-text-main tracking-tight">{pageTitle}</h1>
+              {stats?.totalMatchesSite !== undefined && (
+                <button 
+                  onClick={() => {
+                    fetchGlobalBreakdown();
+                    setShowGlobalBreakdownModal(true);
+                  }}
+                  className="bg-white text-luxury-blue px-4 py-2 rounded-2xl flex items-center gap-2 hover:bg-slate-50 transition-all shadow-lg group border border-luxury-blue"
+                >
+                  <Globe size={18} className="group-hover:rotate-12 transition-transform" />
+                  <div className="flex flex-col items-start leading-none">
+                    <span className="text-[10px] font-bold opacity-80 uppercase tracking-wider">סה"כ משודכים</span>
+                    <span className="text-lg font-black">{stats.totalMatchesSite}</span>
+                  </div>
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <p className="text-text-secondary font-medium">ניהול ופרסום כרטיסים במערכת {APP_NAME}</p>
               {user?.category && (
@@ -1247,7 +1221,7 @@ export default function Dashboard() {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setShowChat({ id: m.id, name: displayName });
+                                openChat({ id: m.id, name: displayName });
                               }}
                               className="p-2 bg-luxury-blue text-white rounded-xl hover:scale-110 transition-transform shadow-lg"
                             >
@@ -1322,7 +1296,22 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="mb-8 p-6 bg-slate-50/50 rounded-[3rem] border-2 border-dashed border-slate-200">
+                    <MatchSuggestions />
+                  </div>
+
+                  <div 
+                    className={sliderViewEnabled ? "relative grid items-center justify-center w-full gap-6 px-12" : "grid grid-cols-1 sm:grid-cols-2 gap-6"}
+                    style={sliderViewEnabled ? { gridTemplateColumns: `repeat(${cardsPerRow}, minmax(0, 1fr))` } : {}}
+                  >
+                    {sliderViewEnabled && (
+                      <button 
+                        onClick={() => setCurrentSliderIndex(prev => Math.max(0, prev - cardsPerRow))}
+                        className="p-3 bg-white/20 backdrop-blur-md rounded-full shadow-lg hover:bg-white/40 transition-all text-luxury-blue z-20 border border-white/20"
+                      >
+                        <ChevronRight size={24} />
+                      </button>
+                    )}
                     {matches
                       .filter(m => {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
@@ -1331,6 +1320,7 @@ export default function Dashboard() {
                         const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
                         return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                       })
+                      .slice(sliderViewEnabled ? currentSliderIndex : 0, sliderViewEnabled ? currentSliderIndex + cardsPerRow : matches.length)
                       .map(match => (
                         <div key={match.id} className="relative group">
                           <MatchCard 
@@ -1343,6 +1333,11 @@ export default function Dashboard() {
                               setNotesMatch(m);
                               fetchNotes(m.id);
                               setShowNotesModal(true);
+                            }}
+                            onDesignedCard={(m) => {
+                              setSelectedMatch(m);
+                              generateDesignedImage(m);
+                              setShowDesignedCardModal(true);
                             }}
                             showCreator
                             isViewer={true}
@@ -1373,6 +1368,14 @@ export default function Dashboard() {
                         </div>
                       ))
                     }
+                    {sliderViewEnabled && (
+                      <button 
+                        onClick={() => setCurrentSliderIndex(prev => prev + cardsPerRow)}
+                        className="p-3 bg-white/20 backdrop-blur-md rounded-full shadow-lg hover:bg-white/40 transition-all text-luxury-blue z-20 border border-white/20"
+                      >
+                        <ChevronLeft size={24} />
+                      </button>
+                    )}
                   </div>
                   {matches.filter(m => {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
@@ -1583,58 +1586,75 @@ export default function Dashboard() {
 
       {/* Stats */}
       {!type && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          <div className="cursor-pointer" onClick={() => { setStatsModalType('males'); setShowStatsModal(true); }}>
-            <StatCard 
-              icon={<UserCheck className="text-luxury-blue" />} 
-              label="סה״כ בנים" 
-              value={stats?.males || 0} 
-              color="border-blue-100 bg-blue-50/30"
-            />
-          </div>
-          <div className="cursor-pointer" onClick={() => { setStatsModalType('females'); setShowStatsModal(true); }}>
-            <StatCard 
-              icon={<Heart className="text-pink-600" fill="currentColor" />} 
-              label="סה״כ בנות" 
-              value={stats?.females || 0} 
-              color="border-pink-100 bg-pink-50/30"
-            />
-          </div>
-          <div className="cursor-pointer" onClick={() => { 
-            if (user?.role === 'super_admin') {
-              setStatsModalType('publishedToday'); 
-              setShowStatsModal(true); 
-            } else {
-              setStatsViewMode('me');
-              setStatsModalType('publishedThisMonthMe');
-              setShowStatsModal(true);
-            }
-          }}>
-            <StatCard 
-              icon={<Send className="text-green-600" />} 
-              label="פורסמו החודש" 
-              value={user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (stats?.publishedThisMonthMe || 0)} 
-              color="border-green-100 bg-green-50/30"
-            />
-          </div>
-          <div className="cursor-pointer" onClick={() => { setStatsModalType('neverPublished'); setShowStatsModal(true); }}>
-            <StatCard 
-              icon={<Clock className="text-orange-600" />} 
-              label="טרם פורסמו" 
-              value={stats?.neverPublished || 0} 
-              color="border-orange-100 bg-orange-50/30"
-            />
-          </div>
-          <div 
-            className="relative cursor-pointer"
-            onClick={() => setShowSameGroupsAdminsModal(true)}
-          >
-            <StatCard 
-              icon={<Users className="text-purple-600" />} 
-              label="מנהלים בקבוצות שלי" 
-              value={adminsInSameGroups.length} 
-              color="border-purple-100 bg-purple-50/30"
-            />
+        <div className="space-y-4">
+          {user?.role !== 'super_admin' && (
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
+              <button 
+                onClick={() => setStatsViewMode('me')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'me' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+              >
+                המשודכים שלי
+              </button>
+              <button 
+                onClick={() => setStatsViewMode('group')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'group' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+              >
+                המשודכים בקבוצה שלי
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+            <div className="cursor-pointer" onClick={() => { setStatsModalType('males'); setShowStatsModal(true); }}>
+              <StatCard 
+                icon={<UserCheck className="text-luxury-blue" />} 
+                label="סה״כ בנים" 
+                value={user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.males || 0) : (stats?.malesGroup || 0))} 
+                color="border-blue-100 bg-blue-50/30"
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => { setStatsModalType('females'); setShowStatsModal(true); }}>
+              <StatCard 
+                icon={<Heart className="text-pink-600" fill="currentColor" />} 
+                label="סה״כ בנות" 
+                value={user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.females || 0) : (stats?.femalesGroup || 0))} 
+                color="border-pink-100 bg-pink-50/30"
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => { 
+              if (user?.role === 'super_admin') {
+                setStatsModalType('publishedToday'); 
+                setShowStatsModal(true); 
+              } else {
+                setStatsModalType(statsViewMode === 'me' ? 'publishedThisMonthMe' : 'publishedThisMonthGroup');
+                setShowStatsModal(true);
+              }
+            }}>
+              <StatCard 
+                icon={<Send className="text-green-600" />} 
+                label="פורסמו החודש" 
+                value={user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (statsViewMode === 'me' ? (stats?.publishedThisMonthMe || 0) : (stats?.publishedThisMonthGroup || 0))} 
+                color="border-green-100 bg-green-50/30"
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => { setStatsModalType('neverPublished'); setShowStatsModal(true); }}>
+              <StatCard 
+                icon={<Clock className="text-orange-600" />} 
+                label="טרם פורסמו" 
+                value={stats?.neverPublished || 0} 
+                color="border-orange-100 bg-orange-50/30"
+              />
+            </div>
+            <div 
+              className="relative cursor-pointer"
+              onClick={() => setShowSameGroupsAdminsModal(true)}
+            >
+              <StatCard 
+                icon={<Users className="text-purple-600" />} 
+                label="מנהלים בקבוצות שלי" 
+                value={adminsInSameGroups.length} 
+                color="border-purple-100 bg-purple-50/30"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1656,10 +1676,25 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
               <span className="text-xs font-bold text-slate-500">מיון א-ב</span>
               <button 
-                onClick={() => setSortAlphabetically(!sortAlphabetically)}
+                onClick={() => {
+                  setSortAlphabetically(!sortAlphabetically);
+                  if (!sortAlphabetically) setSortByDate(false);
+                }}
                 className={`w-10 h-5 rounded-full transition-all relative ${sortAlphabetically ? 'bg-luxury-blue' : 'bg-slate-200'}`}
               >
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${sortAlphabetically ? 'left-5.5' : 'left-0.5'}`} />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-500">מיון תאריך</span>
+              <button 
+                onClick={() => {
+                  setSortByDate(!sortByDate);
+                  if (!sortByDate) setSortAlphabetically(false);
+                }}
+                className={`w-10 h-5 rounded-full transition-all relative ${sortByDate ? 'bg-luxury-blue' : 'bg-slate-200'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${sortByDate ? 'left-5.5' : 'left-0.5'}`} />
               </button>
             </div>
             {user?.role === 'super_admin' && (
@@ -1805,6 +1840,34 @@ export default function Dashboard() {
             תצוגה מצומצמת
           </button>
         </div>
+
+        <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
+          <label className="flex items-center gap-2 px-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={sliderViewEnabled} 
+              onChange={(e) => setSliderViewEnabled(e.target.checked)}
+              className="w-4 h-4 text-luxury-blue rounded focus:ring-luxury-blue"
+            />
+            <span className="text-xs font-bold text-text-secondary">מצב סליידר</span>
+          </label>
+          {sliderViewEnabled && (
+            <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
+              <span className="text-xs font-bold text-text-secondary px-2">כרטיסים:</span>
+              {[1, 2, 3].map((count) => (
+                <button
+                  key={count}
+                  onClick={() => setCardsPerRow(count)}
+                  className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                    cardsPerRow === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
+                  }`}
+                >
+                  {count}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bulk Actions */}
@@ -1862,6 +1925,11 @@ export default function Dashboard() {
                   setNotesMatch(m);
                   fetchNotes(m.id);
                   setShowNotesModal(true);
+                }}
+                onDesignedCard={(m) => {
+                  setSelectedMatch(m);
+                  generateDesignedImage(m);
+                  setShowDesignedCardModal(true);
                 }}
                 showCreator={user?.role === 'super_admin'}
                 selected={selectedMatchIds.includes(match.id)}
@@ -2122,8 +2190,13 @@ export default function Dashboard() {
                   fetchNotes(m.id);
                   setShowNotesModal(true);
                 }}
+                onDesignedCard={(m) => {
+                  setSelectedMatch(m);
+                  generateDesignedImage(m);
+                  setShowDesignedCardModal(true);
+                }}
                 showCreator={user?.role === 'super_admin'}
-                isViewer={user?.role === 'viewer' && viewingMatch.created_by !== user?.id}
+                isViewer={user?.role !== 'super_admin' && viewingMatch.created_by !== user?.id}
                 minimal={false}
               />
               <div className="mt-4 flex justify-center">
@@ -2485,18 +2558,28 @@ export default function Dashboard() {
               </div>
               
               <div className="flex gap-6 w-full max-w-md">
-                <button 
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = generatedImageUrl;
-                    link.download = `match-${selectedMatch?.name || 'card'}.png`;
-                    link.click();
-                  }}
-                  className="flex-1 py-4 bg-white text-luxury-blue rounded-2xl font-black shadow-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3 text-lg"
-                >
-                  <ImageIcon size={24} />
-                  הורד תמונה למכשיר
-                </button>
+                {selectedMatch && getMissingFields(selectedMatch).length > 0 ? (
+                  <div className="flex-1 p-4 bg-red-50 border border-red-100 rounded-2xl text-center">
+                    <p className="text-red-600 font-bold text-sm flex items-center justify-center gap-2">
+                      <AlertTriangle size={16} />
+                      לא ניתן להוריד כרטיס עם פרטים חסרים
+                    </p>
+                    <p className="text-red-400 text-[10px] mt-1">חסר: {getMissingFields(selectedMatch).join(', ')}</p>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = generatedImageUrl;
+                      link.download = `match-${selectedMatch?.name || 'card'}.png`;
+                      link.click();
+                    }}
+                    className="flex-1 py-4 bg-white text-luxury-blue rounded-2xl font-black shadow-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3 text-lg"
+                  >
+                    <ImageIcon size={24} />
+                    הורד תמונה למכשיר
+                  </button>
+                )}
                 <button 
                   onClick={() => setShowDesignedCardModal(false)}
                   className="px-10 py-4 bg-white/10 text-white border-2 border-white/20 rounded-2xl font-black hover:bg-white/20 transition-all text-lg"
@@ -2540,7 +2623,7 @@ export default function Dashboard() {
                       </button>
                       <button onClick={() => {
                         setShowSameGroupsAdminsModal(false);
-                        setShowChat({ id: u.id, name: u.name });
+                        openChat({ id: u.id, name: u.name });
                       }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
                         <MessageSquare size={18} />
                       </button>
@@ -2586,7 +2669,10 @@ export default function Dashboard() {
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
                         <Phone size={18} />
                       </button>
-                      <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                      <button onClick={() => {
+                        setShowConnectedAdminsModal(false);
+                        openChat({ id: u.id, name: u.name });
+                      }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
                         <MessageSquare size={18} />
                       </button>
                     </div>
@@ -2672,8 +2758,20 @@ export default function Dashboard() {
                         const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
                         const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-                        if (statsModalType === 'males') return m.type === 'male';
-                        if (statsModalType === 'females') return m.type === 'female';
+                        if (statsModalType === 'males') {
+                          if (user?.role !== 'super_admin') {
+                            const myCategories = [user?.category, user?.secondary_category].filter(Boolean);
+                            return m.type === 'male' && m.creator_category && myCategories.includes(m.creator_category);
+                          }
+                          return m.type === 'male';
+                        }
+                        if (statsModalType === 'females') {
+                          if (user?.role !== 'super_admin') {
+                            const myCategories = [user?.category, user?.secondary_category].filter(Boolean);
+                            return m.type === 'female' && m.creator_category && myCategories.includes(m.creator_category);
+                          }
+                          return m.type === 'female';
+                        }
                         if (statsModalType === 'publishedToday' || statsModalType === 'publishedThisMonthMe' || statsModalType === 'publishedThisMonthGroup') {
                           const now = new Date();
                           const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2720,6 +2818,118 @@ export default function Dashboard() {
                 <button 
                   onClick={() => setShowStatsModal(false)}
                   className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  סגור
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Breakdown Modal */}
+      <AnimatePresence>
+        {showGlobalBreakdownModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-8 bg-luxury-blue text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white/20 rounded-2xl">
+                    <Globe size={32} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black">סטטיסטיקת משודכים באתר</h2>
+                    <p className="text-sm opacity-80 font-bold">פירוט לפי קבוצות ומנהלים</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowGlobalBreakdownModal(false)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-all"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                {loadingGlobalBreakdown ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <RefreshCw size={40} className="text-luxury-blue animate-spin" />
+                    <p className="font-black text-slate-400">טוען נתונים מהאתר...</p>
+                  </div>
+                ) : globalBreakdownData ? (
+                  <div className="space-y-4">
+                    {Object.entries(globalBreakdownData).map(([category, data]: [string, any]) => (
+                      <div key={category} className="border border-slate-100 rounded-3xl overflow-hidden bg-slate-50/50">
+                        <button 
+                          onClick={() => setExpandedCategory(expandedCategory === category ? null : category)}
+                          className="w-full p-5 flex items-center justify-between hover:bg-slate-100 transition-all"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100">
+                              <Users size={24} className="text-luxury-blue" />
+                            </div>
+                            <div className="text-right">
+                              <h3 className="font-black text-slate-900">{category}</h3>
+                              <p className="text-xs text-slate-500 font-bold">{data.total} משודכים • {data.males} בנים • {data.females} בנות</p>
+                            </div>
+                          </div>
+                          {expandedCategory === category ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                        </button>
+
+                        <AnimatePresence>
+                          {expandedCategory === category && (
+                            <motion.div 
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden bg-white border-t border-slate-100"
+                            >
+                              <div className="p-4 space-y-2">
+                                {Object.entries(data.managers).map(([managerId, mData]: [string, any]) => (
+                                  <div key={managerId} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 bg-luxury-blue/10 text-luxury-blue rounded-full flex items-center justify-center text-[10px] font-black">
+                                        {mData.name[0]}
+                                      </div>
+                                      <span className="text-sm font-black text-slate-800">{mData.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase">בנים</span>
+                                        <span className="text-xs font-black text-blue-600">{mData.males}</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase">בנות</span>
+                                        <span className="text-xs font-black text-pink-600">{mData.females}</span>
+                                      </div>
+                                      <div className="flex flex-col items-center bg-white px-3 py-1 rounded-lg border border-slate-100 shadow-sm">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase">סה"כ</span>
+                                        <span className="text-xs font-black text-slate-900">{mData.total}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-slate-400 font-bold">אין נתונים זמינים</div>
+                )}
+              </div>
+
+              <div className="p-8 border-t border-slate-100 bg-slate-50 shrink-0">
+                <button 
+                  onClick={() => setShowGlobalBreakdownModal(false)}
+                  className="w-full py-4 bg-white text-slate-900 border-2 border-slate-200 rounded-2xl font-black hover:bg-slate-100 transition-all shadow-sm"
                 >
                   סגור
                 </button>
@@ -2839,9 +3049,12 @@ function DetailItem({ label, value }: { label: string, value: string | number | 
   );
 }
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode, label: string, value: number, color: string }) {
+function StatCard({ icon, label, value, color, onClick }: { icon: React.ReactNode, label: string, value: number, color: string, onClick?: () => void }) {
   return (
-    <div className={`card p-8 flex items-center gap-6 border-2 ${color} hover:scale-[1.02] transition-transform cursor-default`}>
+    <div 
+      onClick={onClick}
+      className={`card p-8 flex items-center gap-6 border-2 ${color} hover:scale-[1.02] transition-transform ${onClick ? 'cursor-pointer' : 'cursor-default'}`}
+    >
       <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-50">
         {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 28 })}
       </div>

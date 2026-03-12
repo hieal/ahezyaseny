@@ -77,6 +77,9 @@ export interface Match {
 export interface Stats {
   males: number;
   females: number;
+  malesGroup?: number;
+  femalesGroup?: number;
+  totalMatchesSite?: number;
   publishedToday: number;
   publishedThisMonth?: number;
   publishedThisMonthMe?: number;

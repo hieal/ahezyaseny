@@ -495,6 +495,40 @@ class DataService {
     return counts;
   }
 
+  async getGlobalStatsBreakdown() {
+    const { data: matches } = await supabase.from('candidates').select('type, creator_category, created_by, creator_name').is('deleted_at', null);
+    if (!matches) return {};
+
+    const breakdown: Record<string, { 
+      total: number, 
+      males: number, 
+      females: number, 
+      managers: Record<string, { name: string, total: number, males: number, females: number }> 
+    }> = {};
+
+    matches.forEach(m => {
+      const cat = m.creator_category || 'אחר';
+      if (!breakdown[cat]) {
+        breakdown[cat] = { total: 0, males: 0, females: 0, managers: {} };
+      }
+      
+      breakdown[cat].total++;
+      if (m.type === 'male') breakdown[cat].males++;
+      else breakdown[cat].females++;
+
+      const managerId = m.created_by;
+      if (!breakdown[cat].managers[managerId]) {
+        breakdown[cat].managers[managerId] = { name: m.creator_name || 'מנהל לא ידוע', total: 0, males: 0, females: 0 };
+      }
+      
+      breakdown[cat].managers[managerId].total++;
+      if (m.type === 'male') breakdown[cat].managers[managerId].males++;
+      else breakdown[cat].managers[managerId].females++;
+    });
+
+    return breakdown;
+  }
+
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
     let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);
@@ -1011,15 +1045,21 @@ class DataService {
         }
       }
 
-      const [matchesData, adminsData, publishLogsData] = await Promise.all([
+      const [matchesData, adminsData, publishLogsData, totalMatchesRes, groupMatchesRes] = await Promise.all([
         matchesQuery,
         adminsQuery,
-        publishLogsQuery
+        publishLogsQuery,
+        supabase.from('candidates').select('*', { count: 'exact', head: true }).is('deleted_at', null),
+        groupAdminIds.length > 0 
+          ? supabase.from('candidates').select('type').in('created_by', groupAdminIds).is('deleted_at', null)
+          : Promise.resolve({ data: [] })
       ]);
 
       const matches = matchesData.data || [];
       const admins = adminsData.data || [];
       const publishLogs = publishLogsData.data || [];
+      const totalMatchesSite = totalMatchesRes.count || 0;
+      const groupMatches = (groupMatchesRes as any).data || [];
 
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1048,6 +1088,9 @@ class DataService {
       return {
         males: matches.filter(m => m.type === 'male').length,
         females: matches.filter(m => m.type === 'female').length,
+        malesGroup: groupMatches.filter((m: any) => m.type === 'male').length,
+        femalesGroup: groupMatches.filter((m: any) => m.type === 'female').length,
+        totalMatchesSite,
         publishedToday: publishedTodayCount,
         publishedThisMonth: publishedThisMonthCount,
         publishedThisMonthMe: publishedThisMonthMeCount,
