@@ -103,7 +103,8 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
       await dataService.sendInternalMessage({
         receiver_id: chatId,
         content: surveyMessage,
-        sender_type: 'system'
+        sender_id: 'system',
+        sender_name: 'מערכת'
       });
       toast.success('הסקר נשלח לצ\'אט הפנימי');
     } catch (err) {
@@ -124,7 +125,8 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
       await dataService.sendInternalMessage({
         receiver_id: match.created_by,
         content: message,
-        sender_type: user?.id || 'unknown'
+        sender_id: user?.id || 'unknown',
+        sender_name: user?.name || 'מנהל'
       });
       toast.success('ההודעה נשלחה למנהל');
       onOpenChat(match.created_by, message);

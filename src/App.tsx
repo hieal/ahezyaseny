@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
@@ -16,6 +17,7 @@ import ConnectedAdmins from './pages/ConnectedAdmins';
 import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
+import { getGenderedText } from './utils/gender';
 import { toast } from 'react-hot-toast';
 import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
@@ -72,18 +74,18 @@ function Sidebar() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const superAdmin = allAdmins.find(a => a.role === 'super_admin');
-  const isSuperAdminOnline = superAdmin ? onlineUsers.includes(superAdmin.id) : false;
+  const { presenceState } = usePresence();
+  const isAnyAdminOnline = Object.values(presenceState).some(p => p.role === 'admin' || p.role === 'super_admin');
 
   React.useEffect(() => {
     if (allAdmins.length > 0) {
       const now = new Date().getTime();
-      const fiveMinutes = 5 * 60 * 1000;
+      const twoMinutes = 2 * 60 * 1000;
       
       const online = allAdmins.filter(a => {
         if (!a.last_seen || !a.is_online) return false;
         const lastSeen = new Date(a.last_seen).getTime();
-        return (now - lastSeen) < fiveMinutes;
+        return (now - lastSeen) < twoMinutes;
       }).map(a => a.id);
       
       setOnlineUsers(online);
@@ -100,7 +102,19 @@ function Sidebar() {
           console.error('Failed to fetch admins:', err);
         }
       };
+      
       fetchAdmins();
+      const interval = setInterval(fetchAdmins, 15000);
+      
+      const handleBeforeUnload = () => {
+        // Presence will automatically handle offline status
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      };
     }
   }, [user]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -197,9 +211,9 @@ function Sidebar() {
           )}
           <div className="flex items-center gap-2">
             <Logo size={24} />
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-              <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-              {isSuperAdminOnline ? `${superAdmin?.name || 'ראשי'} מחובר` : `${superAdmin?.name || 'ראשי'} לא מחובר`}
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isAnyAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+              <div className={`w-1 h-1 rounded-full ${isAnyAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+              {isAnyAdminOnline ? 'מנהל מחובר' : 'אין מנהלים מחוברים'}
             </div>
           </div>
         </div>
@@ -231,9 +245,9 @@ function Sidebar() {
               <div className="flex items-center justify-between">
                 <Logo size={40} />
                 <div className="flex flex-col items-end">
-                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
-                    {isSuperAdminOnline ? `${superAdmin?.name || 'מנהל ראשי'} מחובר` : `${superAdmin?.name || 'מנהל ראשי'} לא מחובר`}
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isAnyAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isAnyAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                    {isAnyAdminOnline ? 'מנהל מחובר' : 'אין מנהלים מחוברים'}
                   </div>
                 </div>
               </div>
@@ -448,7 +462,7 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>ברוך הבא,</span>
+          <span>{getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
           <span className="text-text-main font-bold">{user?.name}</span>
         </div>
       </div>
@@ -786,11 +800,17 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+const PresenceWrapper = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth();
+  return <PresenceProvider user={user}>{children}</PresenceProvider>;
+};
+
 export default function App() {
   return (
     <BackendProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <PresenceWrapper>
+          <BrowserRouter>
           <Toaster position="top-center" />
           <MainLayout>
             <Routes>
@@ -810,7 +830,8 @@ export default function App() {
             </Routes>
           </MainLayout>
         </BrowserRouter>
-      </AuthProvider>
-    </BackendProvider>
-  );
+      </PresenceWrapper>
+    </AuthProvider>
+  </BackendProvider>
+);
 }

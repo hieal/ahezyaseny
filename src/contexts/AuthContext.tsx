@@ -107,10 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (user) {
-      const interval = setInterval(() => {
-        dataService.updateOnlineStatus(user);
-      }, 60000); // Update every minute
-      return () => clearInterval(interval);
+      // Online status is now handled by PresenceProvider
     }
   }, [user]);
 

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, Smile, Paperclip, User, Trash2, CheckCircle, ChevronDown, ChevronUp, ZoomIn, ZoomOut, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePresence } from '../contexts/PresenceContext';
+import { OnlineIndicator } from './OnlineIndicator';
 import { toast } from 'react-hot-toast';
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
@@ -34,6 +36,8 @@ interface InternalChatProps {
 
 export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, activeChats, onSelectChat, selectedChatId, isMultiMode, onDragDisabled, onReset, initialMessage }) => {
   const { user } = useAuth();
+  const { presenceState } = usePresence();
+  const isOnline = !!presenceState[otherUser.id];
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState(initialMessage || '');
   const [loading, setLoading] = useState(true);
@@ -155,11 +159,12 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
     const newMsg = {
       receiver_id: otherUser.id,
       content: newMessage || 'שלחתי לך הצעה למשודך',
-      sender_type: user?.id || 'unknown'
+      sender_id: user?.id || 'unknown',
+      sender_name: user?.name || 'מנהל'
     };
     
     try {
-      if (!newMsg.sender_type) throw new Error('Missing sender ID');
+      if (!newMsg.sender_id) throw new Error('Missing sender ID');
       const savedMsg = await dataService.sendInternalMessage(newMsg);
       // Real-time listener will add it, but we can add it optimistically or wait for listener
       // setMessages(prev => [...prev, savedMsg]); 
@@ -251,7 +256,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
                 <User size={20} />
               )}
             </div>
-            <div className={`absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full ${otherUserDetails?.is_online ? 'opacity-100' : 'opacity-0'}`}></div>
+            <OnlineIndicator isOnline={isOnline} className="absolute bottom-0 right-0" />
           </div>
           <div>
             <p className="text-sm font-black leading-tight">צ'אט עם: {otherUser.name}</p>

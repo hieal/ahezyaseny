@@ -409,28 +409,8 @@ class DataService {
   }
 
   async logout(): Promise<void> {
-    const userJson = localStorage.getItem('current_user');
-    if (userJson) {
-      try {
-        const user = JSON.parse(userJson);
-        await supabase.from('admins').update({ 
-          is_online: false,
-          last_seen: new Date().toISOString()
-        }).eq('id', user.id);
-      } catch (err) {
-        console.error('Error updating online status on logout', err);
-      }
-    }
     localStorage.removeItem('current_user');
     sessionStorage.removeItem('current_user');
-  }
-
-  async updateOnlineStatus(user: User): Promise<void> {
-    const now = new Date().toISOString();
-    await supabase.from('admins').update({ 
-      last_seen: now,
-      is_online: true 
-    }).eq('id', user.id);
   }
 
   private sanitizeAdmin(user: any): any {
@@ -1342,14 +1322,15 @@ class DataService {
     return data || [];
   }
 
-  async sendInternalMessage(message: { receiver_id: string, content: string, sender_type: string }): Promise<any> {
+  async sendInternalMessage(message: { receiver_id: string, content: string, sender_id: string, sender_name: string }): Promise<any> {
     const data = await this.handleSupabase(
       supabase
         .from('internal_messages')
         .insert({
           receiver_id: message.receiver_id,
-          text: message.content, // Assuming 'text' is the column name for content
-          sender_id: message.sender_type, // Mapping sender_type to sender_id column as per request
+          text: message.content,
+          sender_id: message.sender_id,
+          sender_name: message.sender_name,
           id: this.generateUUID(),
           created_at: new Date().toISOString(),
           is_read: false

@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 import { LogIn, User, Lock, Heart, ShieldCheck, ShieldAlert, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud, Settings, RefreshCw, Copy, X, Zap, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
+import { getGenderedText } from '../utils/gender';
 import { Logo } from '../components/Logo';
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
@@ -155,7 +156,7 @@ export default function LoginPage() {
       const user = await dataService.login(username, password);
       if (user) {
         login(user);
-        toast.success('ברוך הבא!');
+        toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
         navigate('/');
       } else {
         setErrorMessage('שם משתמש או סיסמה שגויים. אנא נסה שוב.');

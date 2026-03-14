@@ -14,10 +14,13 @@ import { MatchSuggestions } from '../components/MatchSuggestions';
 
 import { dataService } from '../services/dataService';
 import { useChat } from '../contexts/ChatContext';
+import { usePresence } from '../contexts/PresenceContext';
+import { OnlineIndicator } from '../components/OnlineIndicator';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
   const { openChat } = useChat();
+  const { presenceState } = usePresence();
   const { type } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -2803,10 +2806,10 @@ export default function Dashboard() {
                 {allUsers.filter(u => u.status === 'active').map(u => (
                   <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                      <OnlineIndicator isOnline={!!presenceState[u.id]} />
                       <div>
                         <p className="font-bold text-slate-800">{u.name}</p>
-                        <p className="text-xs text-slate-500">{u.is_online ? 'מחובר' : 'לא מחובר'}</p>
+                        <p className="text-xs text-slate-500">{!!presenceState[u.id] ? 'מחובר' : 'לא מחובר'}</p>
                       </div>
                     </div>
                     <div className="flex gap-2">

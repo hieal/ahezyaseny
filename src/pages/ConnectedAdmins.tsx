@@ -6,13 +6,15 @@ import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle, Fil
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChat } from '../contexts/ChatContext';
+import { usePresence } from '../contexts/PresenceContext';
+import { OnlineIndicator } from '../components/OnlineIndicator';
 import { CATEGORIES } from '../constants';
 
 export default function ConnectedAdmins() {
   const { user } = useAuth();
   const { openChat } = useChat();
+  const { presenceState } = usePresence();
   const [allAdmins, setAllAdmins] = useState<User[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showList, setShowList] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,21 +46,8 @@ export default function ConnectedAdmins() {
       const data = await dataService.getUsers();
       console.log('Fetched admins count:', data.length);
       setAllAdmins(data);
-      
-      const now = new Date().getTime();
-      const fiveMinutes = 5 * 60 * 1000;
-      
-      const online = data.filter(a => {
-        if (!a.last_seen || !a.is_online) return false;
-        const lastSeen = new Date(a.last_seen).getTime();
-        return (now - lastSeen) < fiveMinutes;
-      }).map(a => a.id);
-      
-      setOnlineUsers(online);
     } catch (err: any) {
       console.error('CRITICAL: Failed to fetch admins in ConnectedAdmins.tsx:', err.message || err);
-      if (err.details) console.error('Error details:', err.details);
-      if (err.hint) console.error('Error hint:', err.hint);
       toast.error('שגיאה בטעינת מנהלים. בדוק את ה-Console לפרטים.');
     } finally {
       setLoading(false);
@@ -67,8 +56,6 @@ export default function ConnectedAdmins() {
 
   useEffect(() => {
     fetchAdmins();
-    const interval = setInterval(fetchAdmins, 15000); // Refresh every 15 seconds for more real-time
-    return () => clearInterval(interval);
   }, []);
 
   if (loading) {
@@ -79,8 +66,9 @@ export default function ConnectedAdmins() {
     );
   }
 
-  const onlineMales = allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'male').length;
-  const onlineFemales = allAdmins.filter(a => onlineUsers.includes(a.id) && a.gender === 'female').length;
+  const onlineAdmins = allAdmins.filter(a => !!presenceState[a.id]);
+  const onlineMales = onlineAdmins.filter(a => a.gender === 'male').length;
+  const onlineFemales = onlineAdmins.filter(a => a.gender === 'female').length;
 
   const filteredAdmins = allAdmins
     .filter(a => {
@@ -103,7 +91,7 @@ export default function ConnectedAdmins() {
       }
 
       const matchesSearch = a.name?.toLowerCase().includes(searchTerm.toLowerCase());
-      const isOnline = onlineUsers.includes(a.id);
+      const isOnline = !!presenceState[a.id];
       const matchesStatus = statusFilter === 'all' || (statusFilter === 'online' ? isOnline : !isOnline);
       const matchesGender = genderFilter === 'all' || a.gender === genderFilter;
       const matchesGroup = groupFilter === 'all' || a.category === groupFilter || a.secondary_category === groupFilter;
@@ -112,12 +100,15 @@ export default function ConnectedAdmins() {
       return matchesSearch && matchesStatus && matchesGender && matchesGroup && matchesSpecificAdmin;
     })
     .sort((a, b) => {
-      // 'good' or 'god' always at the top
-      if (a.username === 'good' || a.username === 'god') return -1;
-      if (b.username === 'good' || b.username === 'god') return 1;
+      // Admin/SuperAdmin first
+      const aIsAdmin = a.role === 'admin' || a.role === 'super_admin';
+      const bIsAdmin = b.role === 'admin' || b.role === 'super_admin';
+      if (aIsAdmin && !bIsAdmin) return -1;
+      if (!aIsAdmin && bIsAdmin) return 1;
 
-      const aOnline = onlineUsers.includes(a.id);
-      const bOnline = onlineUsers.includes(b.id);
+      // Then Online
+      const aOnline = !!presenceState[a.id];
+      const bOnline = !!presenceState[b.id];
       if (aOnline && !bOnline) return -1;
       if (!aOnline && bOnline) return 1;
       return 0;
@@ -129,7 +120,7 @@ export default function ConnectedAdmins() {
         <div>
           <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
             <Users className="text-luxury-blue" size={32} />
-            מנהלים מחוברים
+            מנהלים מחוברים ({Object.keys(presenceState).length})
           </h1>
           <p className="text-slate-500 mt-2 font-medium">צפה במנהלים המחוברים כעת למערכת וצור איתם קשר</p>
         </div>
@@ -381,7 +372,7 @@ export default function ConnectedAdmins() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredAdmins.map(admin => {
-                    const isOnline = onlineUsers.includes(admin.id);
+                    const isOnline = !!presenceState[admin.id];
                     return (
                       <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
@@ -401,7 +392,7 @@ export default function ConnectedAdmins() {
                                   <UserIcon size={20} />
                                 </div>
                               )}
-                              {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                              {isOnline && <OnlineIndicator isOnline={true} className="absolute bottom-0 right-0" />}
                             </div>
                             <div className="font-bold text-slate-900">{admin.name}</div>
                           </div>

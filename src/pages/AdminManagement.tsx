@@ -5,13 +5,16 @@ import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, Use
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { usePresence } from '../contexts/PresenceContext';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
+import { getGenderedText } from '../utils/gender';
 
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
 
 export default function AdminManagement() {
   const { user: currentUser } = useAuth();
+  const { presenceState } = usePresence();
   const [users, setUsers] = useState<User[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -426,8 +429,8 @@ export default function AdminManagement() {
                             (u.category && filterCategory.includes(u.category)) ||
                             (u.secondary_category && filterCategory.includes(u.secondary_category));
     const matchesConnection = filterConnection === 'all' || 
-                              (filterConnection === 'online' && u.is_online) || 
-                              (filterConnection === 'offline' && !u.is_online);
+                              (filterConnection === 'online' && !!presenceState[u.id]) || 
+                              (filterConnection === 'offline' && !presenceState[u.id]);
     return matchesSearch && matchesCategory && matchesConnection;
   }).sort((a, b) => {
     if (a.role === 'super_admin') return -1;
@@ -785,7 +788,7 @@ export default function AdminManagement() {
                 }`}
               >
                 <div className={`w-3 h-3 rounded-full ${connectionView === 'online' ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                מנהלים מחוברים ({users.filter(u => u.is_online).length})
+                מנהלים מחוברים ({Object.keys(presenceState).length})
               </button>
               <button 
                 onClick={() => setConnectionView('offline')}
@@ -796,7 +799,7 @@ export default function AdminManagement() {
                 }`}
               >
                 <div className={`w-3 h-3 rounded-full ${connectionView === 'offline' ? 'bg-slate-500' : 'bg-slate-300'}`}></div>
-                מנהלים לא מחוברים ({users.filter(u => !u.is_online).length})
+                מנהלים לא מחוברים ({users.length - Object.keys(presenceState).length})
               </button>
             </div>
 
@@ -806,7 +809,7 @@ export default function AdminManagement() {
               animate={{ opacity: 1, y: 0 }}
               className="grid grid-cols-1 md:grid-cols-3 gap-4"
             >
-              {users.filter(u => connectionView === 'online' ? u.is_online : !u.is_online).map(u => (
+              {users.filter(u => connectionView === 'online' ? !!presenceState[u.id] : !presenceState[u.id]).map(u => (
                 <div key={u.id} className={`flex items-center justify-between p-4 rounded-2xl border ${
                   connectionView === 'online' ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
                 }`}>
@@ -819,7 +822,7 @@ export default function AdminManagement() {
                           <UserIcon size={20} />
                         </div>
                       )}
-                      {u.is_online && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                      {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{u.name}</p>
@@ -836,7 +839,7 @@ export default function AdminManagement() {
                   </div>
                 </div>
               ))}
-              {users.filter(u => connectionView === 'online' ? u.is_online : !u.is_online).length === 0 && (
+              {users.filter(u => connectionView === 'online' ? !!presenceState[u.id] : !presenceState[u.id]).length === 0 && (
                 <div className="col-span-full py-8 text-center text-slate-400 font-medium bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   אין מנהלים {connectionView === 'online' ? 'מחוברים' : 'לא מחוברים'} כרגע
                 </div>
@@ -891,7 +894,7 @@ export default function AdminManagement() {
                           <div className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url ? 'hidden' : ''}`}>
                             <UserCheck size={24} />
                           </div>
-                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`} title={u.is_online ? 'מחובר' : 'לא מחובר'}></div>
+                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${!!presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} title={!!presenceState[u.id] ? getGenderedText(u.gender, 'מחובר', 'מחוברת') : getGenderedText(u.gender, 'לא מחובר', 'לא מחוברת')}></div>
                           {u.role === 'super_admin' && (
                             <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center text-white border-2 border-white shadow-sm">
                               <ShieldAlert size={10} />
