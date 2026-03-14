@@ -90,8 +90,11 @@ export default function ConnectedAdmins() {
       const isSameCategory = user?.category && (a.category === user.category || a.secondary_category === user.category);
       const isCreator = a.created_by === user?.id;
       const isSelf = a.id === user?.id;
+      const isAdminRole = a.role === 'admin' || a.role === 'super_admin';
 
       if (!isSuperAdmin) {
+        if (isAdminRole) return true;
+        
         if (isTeamLeader) {
           if (!isSameCategory && !isCreator && !isSelf) return false;
         } else {

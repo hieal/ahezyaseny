@@ -138,6 +138,10 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
   const handleManualPublish = async () => {
     if (isViewer) return;
+    if (match.is_available === false) {
+      toast.error('כרטיס זה סומן כלא פנוי לפירסום יש לשנות את זה בהערות על מנת לפרסם');
+      return;
+    }
     try {
       await onQuickUpdate?.(match.id, { 
         manual_published_at: new Date(manualPublishDate).toISOString(),
@@ -166,6 +170,12 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
   const missingFields = getMissingFields(match);
   const isCsvMissing = match.creation_source === 'csv' && missingFields.length > 0;
+
+  const isRecentlyPublished = match.last_published_at 
+    ? new Date(match.last_published_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    : false;
+    
+  const isNotAvailable = match.is_available === false;
 
   const naturalCategory = dataService.getCategoryByAge(match.age);
   const naturalGroup = allGroups.find(g => g.category === naturalCategory && g.type === match.type);
@@ -199,7 +209,11 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`card flex flex-col h-full hover:shadow-md transition-all group border-slate-100 relative ${selected ? 'ring-2 ring-luxury-blue bg-blue-50/30' : ''} ${isCsvMissing ? 'border-red-200' : ''}`}
+      className={`card flex flex-col h-full hover:shadow-md transition-all group relative ${
+        isNotAvailable ? 'ring-2 ring-black ring-inset' : 
+        isRecentlyPublished ? 'ring-2 ring-orange-500 ring-inset' : 
+        ''
+      } ${selected ? 'ring-2 ring-luxury-blue bg-blue-50/30' : ''} ${isCsvMissing ? 'border-red-200' : ''}`}
     >
       {isCsvMissing && (
         <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-[10px] font-bold py-1 px-3 flex items-center justify-center gap-2 z-20 animate-pulse">
@@ -207,6 +221,21 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           <span>חסרים פרטים: {missingFields.join(', ')}</span>
         </div>
       )}
+      
+      {/* Status Badges */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-1 items-end">
+        {isNotAvailable && (
+          <span className="bg-black text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+            לא פנוי לפרסום
+          </span>
+        )}
+        {isRecentlyPublished && !isNotAvailable && (
+          <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+            פורסם לאחרונה
+          </span>
+        )}
+      </div>
+
       {onSelect && (
         <div className="absolute top-4 right-4 z-10">
           <input 
@@ -609,7 +638,13 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         {onPublish && (
           <div className="flex flex-[2] gap-1 items-center">
             <button 
-              onClick={() => onPublish(match)}
+              onClick={() => {
+                if (isNotAvailable) {
+                  toast.error('כרטיס זה סומן כלא פנוי לפירסום יש לשנות את זה בהערות על מנת לפרסם');
+                  return;
+                }
+                onPublish(match);
+              }}
               disabled={isViewer}
               className="btn-whatsapp flex-1 py-2.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             >

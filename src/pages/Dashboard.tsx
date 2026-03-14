@@ -37,15 +37,22 @@ export default function Dashboard() {
   const [showAdminBreakdown, setShowAdminBreakdown] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [showPersonalTemplateModal, setShowPersonalTemplateModal] = useState(false);
-  const [personalTemplate, setPersonalTemplate] = useState(user?.daily_message_template || '');
-  const [personalTemplateMale, setPersonalTemplateMale] = useState(user?.daily_message_template_male || '');
-  const [personalTemplateFemale, setPersonalTemplateFemale] = useState(user?.daily_message_template_female || '');
+  const [personalTemplate, setPersonalTemplate] = useState('');
+  const [personalTemplateMale, setPersonalTemplateMale] = useState('');
+  const [personalTemplateFemale, setPersonalTemplateFemale] = useState('');
 
   useEffect(() => {
     if (user) {
-      setPersonalTemplate(user.daily_message_template || '');
-      setPersonalTemplateMale(user.daily_message_template_male || '');
-      setPersonalTemplateFemale(user.daily_message_template_female || '');
+      try {
+        const parsed = JSON.parse(user.daily_message_template || '{}');
+        setPersonalTemplate(parsed.general || user.daily_message_template || '');
+        setPersonalTemplateMale(parsed.male || '');
+        setPersonalTemplateFemale(parsed.female || '');
+      } catch (e) {
+        setPersonalTemplate(user.daily_message_template || '');
+        setPersonalTemplateMale('');
+        setPersonalTemplateFemale('');
+      }
     }
   }, [user]);
   const [templateGender, setTemplateGender] = useState<'all' | 'male' | 'female'>('all');
@@ -169,6 +176,12 @@ export default function Dashboard() {
         is_available: isNoteAvailable
       });
       
+      // Update match availability in DB
+      await dataService.updateMatch(notesMatch.id, { is_available: isNoteAvailable });
+      
+      // Update local state
+      setMatches(matches.map(m => m.id === notesMatch.id ? { ...m, is_available: isNoteAvailable } : m));
+      
       setMatchNotes([note, ...matchNotes]);
       setNewNoteText('');
       toast.success('הערה נוספה בהצלחה');
@@ -186,7 +199,16 @@ export default function Dashboard() {
 
     try {
       await dataService.deleteMatchNote(noteId);
-      setMatchNotes(matchNotes.filter(n => n.id !== noteId));
+      const updatedNotes = matchNotes.filter(n => n.id !== noteId);
+      setMatchNotes(updatedNotes);
+      
+      // Update match availability based on the most recent remaining note
+      if (notesMatch) {
+        const newAvailability = updatedNotes.length > 0 ? updatedNotes[0].is_available : true;
+        await dataService.updateMatch(notesMatch.id, { is_available: newAvailability });
+        setMatches(matches.map(m => m.id === notesMatch.id ? { ...m, is_available: newAvailability } : m));
+      }
+      
       toast.success('הערה נמחקה');
     } catch (err) {
       console.error('Failed to delete note:', err);
@@ -512,7 +534,8 @@ export default function Dashboard() {
     const footerY = canvasHeight - 220; 
     
     // Decorative Box for Manager Label
-    const labelText = `נשלח על ידי ${match.type === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    const isCreatorFemale = match.creator_gender ? match.creator_gender === 'female' : user?.gender === 'female';
+    const labelText = `נשלח על ידי ${isCreatorFemale ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
     ctx.font = 'bold 60px sans-serif';
     const textWidth = ctx.measureText(labelText).width;
     const boxWidth = textWidth + 120;
@@ -700,6 +723,11 @@ export default function Dashboard() {
   };
 
   const handlePublish = async (match: Match) => {
+    if (match.is_available === false) {
+      toast.error('כרטיס זה סומן כלא פנוי לפירסום יש לשנות את זה בהערות על מנת לפרסם');
+      return;
+    }
+
     // 1. Validation Check
     const missing = getMissingFields(match);
     if (missing.length > 0) {
@@ -727,13 +755,13 @@ export default function Dashboard() {
 
   const proceedToPublish = (match: Match) => {
     setSelectedMatch(match);
-    let effectiveTemplate = user?.daily_message_template || template;
+    let effectiveTemplate = personalTemplate || template;
     
     // Use gender specific template if available
-    if (match.type === 'male' && user?.daily_message_template_male) {
-      effectiveTemplate = user.daily_message_template_male;
-    } else if (match.type === 'female' && user?.daily_message_template_female) {
-      effectiveTemplate = user.daily_message_template_female;
+    if (match.type === 'male' && personalTemplateMale) {
+      effectiveTemplate = personalTemplateMale;
+    } else if (match.type === 'female' && personalTemplateFemale) {
+      effectiveTemplate = personalTemplateFemale;
     }
 
     setCustomMessage(formatMatchMessage(match, effectiveTemplate));
@@ -809,7 +837,12 @@ export default function Dashboard() {
   const sendInitialMessage = async () => {
     if (!selectedMatch || !selectedGroupId) return;
     
-    const effectiveInitialMessage = user?.daily_message_template || initialMessage;
+    let effectiveInitialMessage = personalTemplate || initialMessage;
+    if (selectedMatch.type === 'male' && personalTemplateMale) {
+      effectiveInitialMessage = personalTemplateMale;
+    } else if (selectedMatch.type === 'female' && personalTemplateFemale) {
+      effectiveInitialMessage = personalTemplateFemale;
+    }
     
     // Copy to clipboard
     try {
@@ -849,9 +882,13 @@ export default function Dashboard() {
   const savePersonalTemplate = async () => {
     if (!user) return;
     try {
+      const templateData = JSON.stringify({
+        general: personalTemplate,
+        male: personalTemplateMale,
+        female: personalTemplateFemale
+      });
       await dataService.updateUser(user.id, { 
-        daily_message_template_male: personalTemplateMale,
-        daily_message_template_female: personalTemplateFemale
+        daily_message_template: templateData
       });
       toast.success('הודעות הפתיחה האישיות עודכנו');
       setShowPersonalTemplateModal(false);
@@ -1373,6 +1410,7 @@ export default function Dashboard() {
                         cols={cardsPerRow}
                         minimal={showMinimal}
                         displaySize={displaySize}
+                        isViewer={true}
                       />
                     </div>
                   ) : (
@@ -1386,55 +1424,63 @@ export default function Dashboard() {
                           return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                         })
                         .map(match => (
-                          <div key={match.id} className="relative group">
-                            <MatchCard 
-                              match={match} 
-                              allGroups={whatsappGroups}
-                              onView={(m) => {
-                                setViewingMatch(m);
-                              }}
-                              onNotes={(m) => {
-                                setNotesMatch(m);
-                                fetchNotes(m.id);
-                                setShowNotesModal(true);
-                              }}
-                              onDesignedCard={(m) => {
-                                setSelectedMatch(m);
-                                generateDesignedImage(m);
-                                setShowDesignedCardModal(true);
-                              }}
-                              showCreator
-                              isViewer={true}
-                              minimal={true}
-                            />
-                            <MatchActions
-                              match={match}
-                              whatsappGroups={whatsappGroups}
-                              onPublish={(m) => handlePublish(m)}
-                              onNotes={(m) => {
-                                setNotesMatch(m);
-                                fetchNotes(m.id);
-                                setShowNotesModal(true);
-                              }}
-                              onHistory={(m) => {
-                                setSelectedMatch(m);
-                                fetchPublishHistory(m);
-                                setShowHistoryModal(true);
-                              }}
-                              onEdit={(id) => {
-                                // Need to implement edit modal logic
-                                toast.error('עריכה טרם מומשה');
-                              }}
-                              onDelete={(id) => {
-                                handleDelete(id);
-                                confirmDelete();
-                              }}
-                              onDesignedCard={(m) => {
-                                setSelectedMatch(m);
-                                generateDesignedImage(m);
-                                setShowDesignedCardModal(true);
-                              }}
-                            />
+                          <div key={match.id} className="relative group flex flex-col h-full">
+                            <div className="flex-1">
+                              <MatchCard 
+                                match={match} 
+                                allGroups={whatsappGroups}
+                                onView={(m) => {
+                                  setViewingMatch(m);
+                                }}
+                                onNotes={(m) => {
+                                  setNotesMatch(m);
+                                  setIsNoteAvailable(m.is_available !== false);
+                                  fetchNotes(m.id);
+                                  setShowNotesModal(true);
+                                }}
+                                onDesignedCard={(m) => {
+                                  setSelectedMatch(m);
+                                  generateDesignedImage(m);
+                                  setShowDesignedCardModal(true);
+                                }}
+                                showCreator
+                                isViewer={true}
+                                minimal={true}
+                              />
+                            </div>
+                            <div className="mt-auto">
+                              <MatchActions
+                                match={match}
+                                whatsappGroups={whatsappGroups}
+                                isViewer={true}
+                                onOpenChat={(userId, initialMessage) => openChat({id: userId, name: match.creator_name || 'מנהל'}, initialMessage)}
+                                onPublish={(m) => handlePublish(m)}
+                                onNotes={(m) => {
+                                  setNotesMatch(m);
+                                  setIsNoteAvailable(m.is_available !== false);
+                                  fetchNotes(m.id);
+                                  setShowNotesModal(true);
+                                }}
+                                onHistory={(m) => {
+                                  setSelectedMatch(m);
+                                  fetchPublishHistory(m);
+                                  setShowHistoryModal(true);
+                                }}
+                                onEdit={(id) => {
+                                  // Need to implement edit modal logic
+                                  toast.error('עריכה טרם מומשה');
+                                }}
+                                onDelete={(id) => {
+                                  handleDelete(id);
+                                  confirmDelete();
+                                }}
+                                onDesignedCard={(m) => {
+                                  setSelectedMatch(m);
+                                  generateDesignedImage(m);
+                                  setShowDesignedCardModal(true);
+                                }}
+                              />
+                            </div>
                           </div>
                         ))}
                     </div>
@@ -1566,12 +1612,17 @@ export default function Dashboard() {
                   const now = new Date();
                   const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
                   
-                  const publishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo).length;
-                  const notPublishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) < oneMonthAgo).length;
-                  const neverPublished = matches.filter(m => !m.last_published_at).length;
+                  const isOwner = (m: Match) => user?.role === 'super_admin' || 
+                                         user?.role === 'team_leader' ||
+                                         m.created_by === user?.id || 
+                                         (user?.category && m.creator_category === user.category);
+
+                  const publishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo && isOwner(m)).length;
+                  const notPublishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) < oneMonthAgo && isOwner(m)).length;
+                  const neverPublished = matches.filter(m => !m.last_published_at && isOwner(m)).length;
                   
-                  const joinedLastWeek = matches.filter(m => new Date(m.created_at) >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)).length;
-                  const joinedLastMonth = matches.filter(m => new Date(m.created_at) >= oneMonthAgo && new Date(m.created_at) < new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)).length;
+                  const joinedLastWeek = matches.filter(m => new Date(m.created_at) >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) && isOwner(m)).length;
+                  const joinedLastMonth = matches.filter(m => new Date(m.created_at) >= oneMonthAgo && new Date(m.created_at) < new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) && isOwner(m)).length;
 
                   return (
                     <>
@@ -2013,6 +2064,7 @@ export default function Dashboard() {
                   onSuggest={handleSuggest}
                   onNotes={(m) => {
                     setNotesMatch(m);
+                    setIsNoteAvailable(m.is_available !== false);
                     fetchNotes(m.id);
                     setShowNotesModal(true);
                   }}
@@ -2278,6 +2330,7 @@ export default function Dashboard() {
                 onSuggest={handleSuggest}
                 onNotes={(m) => {
                   setNotesMatch(m);
+                  setIsNoteAvailable(m.is_available !== false);
                   fetchNotes(m.id);
                   setShowNotesModal(true);
                 }}
@@ -2881,7 +2934,13 @@ export default function Dashboard() {
                           
                           return true;
                         }
-                        if (statsModalType === 'neverPublished') return !m.last_published_at;
+                        if (statsModalType === 'neverPublished') {
+                          const isOwner = user?.role === 'super_admin' || 
+                                         user?.role === 'team_leader' ||
+                                         m.created_by === user?.id || 
+                                         (user?.category && m.creator_category === user.category);
+                          return !m.last_published_at && isOwner;
+                        }
                         if (statsModalType === 'publishedLastMonth') return m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo;
                         if (statsModalType === 'notPublishedLastMonth') return m.last_published_at && new Date(m.last_published_at) < oneMonthAgo;
                         if (statsModalType === 'joinedLastWeek') return new Date(m.created_at) >= oneWeekAgo;
@@ -3051,8 +3110,8 @@ export default function Dashboard() {
                 matchImage={generatedImageUrl}
                 defaultTab={publishModalTab}
                 openingMessage={
-                  (selectedMatch.type === 'male' ? user?.daily_message_template_male : user?.daily_message_template_female) 
-                  || user?.daily_message_template 
+                  (selectedMatch.type === 'male' ? personalTemplateMale : personalTemplateFemale) 
+                  || personalTemplate 
                   || template
                 }
                 isOpeningSent={isInitialSentToday()}

@@ -13,8 +13,6 @@ export interface User {
   avatar_url: string | null;
   deleted_at: string | null;
   daily_message_template: string | null;
-  daily_message_template_male: string | null;
-  daily_message_template_female: string | null;
   is_from_file: number;
   is_approved: number;
   is_shaham_manager?: number;
@@ -70,6 +68,7 @@ export interface Match {
   deleted_at: string | null;
   phone: string | null;
   is_published_confirmed: number;
+  is_available?: boolean;
   crop_config: string | null; // JSON string of { x, y, zoom }
   creation_source: 'manual' | 'ai' | 'csv' | null;
   viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs

@@ -24,8 +24,6 @@ CREATE TABLE IF NOT EXISTS public.admins (
   avatar_url TEXT,
   deleted_at TIMESTAMP WITH TIME ZONE,
   daily_message_template TEXT,
-  daily_message_template_male TEXT,
-  daily_message_template_female TEXT,
   is_from_file INTEGER DEFAULT 0,
   is_approved INTEGER DEFAULT 0,
   is_shaham_manager INTEGER DEFAULT 0,
@@ -135,7 +133,6 @@ CREATE TABLE IF NOT EXISTS public.candidate_notes (
   user_id UUID,
   user_name TEXT,
   text TEXT,
-  is_available BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -150,6 +147,7 @@ ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_age INTEGER;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_city TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true;
 
 -- Disable RLS for all tables to allow prototype access (The "Switch")
 ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
@@ -330,8 +328,6 @@ class DataService {
         avatar_url: data.avatar_url || null,
         deleted_at: data.deleted_at || null,
         daily_message_template: data.daily_message_template || null,
-        daily_message_template_male: data.daily_message_template_male || null,
-        daily_message_template_female: data.daily_message_template_female || null,
         is_from_file: data.is_from_file || 0,
         is_approved: data.is_approved || 0,
         is_shaham_manager: data.is_shaham_manager || 0
@@ -381,8 +377,6 @@ class DataService {
             avatar_url: null,
             deleted_at: null,
             daily_message_template: null,
-            daily_message_template_male: null,
-            daily_message_template_female: null,
             is_from_file: 0,
             is_approved: 1,
             is_shaham_manager: 0
@@ -444,7 +438,6 @@ class DataService {
       'name', 'username', 'email', 'password', 'password_plain', 'role', 
       'status', 'category', 'secondary_category', 'gender', 'phone', 
       'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 
-      'daily_message_template_male', 'daily_message_template_female', 
       'is_from_file', 'is_approved', 'is_shaham_manager', 'password_updated_at', 
       'assigned_group_id', 'created_by', 'creator_name', 'created_at'
     ];
@@ -538,7 +531,8 @@ class DataService {
     // Get current user to append name
     const currentUser = await this.getCurrentUser();
     const managerName = currentUser?.name || 'מערכת';
-    const finalBody = `*נשלח על ידי: ${managerName}*\n\n${body}`;
+    const prefix = currentUser?.gender === 'female' ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
+    const finalBody = `*${prefix}: ${managerName}*\n\n${body}`;
 
     const response = await fetch('https://gate.whapi.cloud/messages/text', {
       method: 'POST',
@@ -562,9 +556,10 @@ class DataService {
     // Get current user to append name to caption
     const currentUser = await this.getCurrentUser();
     const managerName = currentUser?.name || 'מערכת';
+    const prefix = currentUser?.gender === 'female' ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
     const finalCaption = caption 
-      ? `*נשלח על ידי: ${managerName}*\n\n${caption}`
-      : `*נשלח על ידי: ${managerName}*`;
+      ? `*${prefix}: ${managerName}*\n\n${caption}`
+      : `*${prefix}: ${managerName}*`;
 
     // Whapi expects media as URL or base64 string
     const response = await fetch('https://gate.whapi.cloud/messages/image', {
@@ -993,18 +988,48 @@ class DataService {
       .order('created_at', { ascending: false });
     
     if (error) throw error;
-    return data || [];
+    
+    return (data || []).map((note: any) => {
+      let isAvailable = true;
+      let cleanText = note.text || '';
+      
+      if (cleanText.includes('[סטטוס: לא פנוי לפרסום]')) {
+        isAvailable = false;
+        cleanText = cleanText.replace('\n[סטטוס: לא פנוי לפרסום]', '').replace('[סטטוס: לא פנוי לפרסום]', '');
+      } else if (cleanText.includes('[סטטוס: פנוי לפרסום]')) {
+        isAvailable = true;
+        cleanText = cleanText.replace('\n[סטטוס: פנוי לפרסום]', '').replace('[סטטוס: פנוי לפרסום]', '');
+      }
+      
+      return {
+        ...note,
+        is_available: isAvailable,
+        text: cleanText
+      };
+    });
   }
 
   async createMatchNote(note: Omit<MatchNote, 'id' | 'created_at'>): Promise<MatchNote> {
+    const dbNote = {
+      match_id: note.match_id,
+      user_id: note.user_id,
+      user_name: note.user_name,
+      text: note.text + (note.is_available ? '\n[סטטוס: פנוי לפרסום]' : '\n[סטטוס: לא פנוי לפרסום]')
+    };
+
     const { data, error } = await supabase
       .from('candidate_notes')
-      .insert(note)
+      .insert(dbNote)
       .select()
       .single();
     
     if (error) throw error;
-    return data as MatchNote;
+    
+    return {
+      ...data,
+      is_available: note.is_available,
+      text: note.text
+    } as MatchNote;
   }
 
   async deleteMatchNote(id: string): Promise<void> {
@@ -1317,12 +1342,14 @@ class DataService {
     return data || [];
   }
 
-  async sendInternalMessage(message: any): Promise<any> {
+  async sendInternalMessage(message: { receiver_id: string, content: string, sender_type: string }): Promise<any> {
     const data = await this.handleSupabase(
       supabase
         .from('internal_messages')
         .insert({
-          ...message,
+          receiver_id: message.receiver_id,
+          text: message.content, // Assuming 'text' is the column name for content
+          sender_id: message.sender_type, // Mapping sender_type to sender_id column as per request
           id: this.generateUUID(),
           created_at: new Date().toISOString(),
           is_read: false

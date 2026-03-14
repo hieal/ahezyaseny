@@ -72,8 +72,8 @@ function Sidebar() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const superAdminId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-  const isSuperAdminOnline = onlineUsers.includes(superAdminId);
+  const superAdmin = allAdmins.find(a => a.role === 'super_admin');
+  const isSuperAdminOnline = superAdmin ? onlineUsers.includes(superAdmin.id) : false;
 
   React.useEffect(() => {
     if (allAdmins.length > 0) {
@@ -81,7 +81,7 @@ function Sidebar() {
       const fiveMinutes = 5 * 60 * 1000;
       
       const online = allAdmins.filter(a => {
-        if (!a.last_seen) return false;
+        if (!a.last_seen || !a.is_online) return false;
         const lastSeen = new Date(a.last_seen).getTime();
         return (now - lastSeen) < fiveMinutes;
       }).map(a => a.id);
@@ -199,7 +199,7 @@ function Sidebar() {
             <Logo size={24} />
             <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
               <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-              {isSuperAdminOnline ? 'ראשי מחובר' : 'ראשי לא מחובר'}
+              {isSuperAdminOnline ? `${superAdmin?.name || 'ראשי'} מחובר` : `${superAdmin?.name || 'ראשי'} לא מחובר`}
             </div>
           </div>
         </div>
@@ -233,7 +233,7 @@ function Sidebar() {
                 <div className="flex flex-col items-end">
                   <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
-                    {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
+                    {isSuperAdminOnline ? `${superAdmin?.name || 'מנהל ראשי'} מחובר` : `${superAdmin?.name || 'מנהל ראשי'} לא מחובר`}
                   </div>
                 </div>
               </div>
@@ -474,7 +474,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [isImpersonating, setIsImpersonating] = React.useState(false);
-  const [activeChats, setActiveChats] = React.useState<{id: string, name: string}[]>([]);
+  const [activeChats, setActiveChats] = React.useState<{id: string, name: string, initialMessage?: string}[]>([]);
   const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
   const [multiChatMode, setMultiChatMode] = React.useState(() => {
     return localStorage.getItem('multi_chat_mode') === 'true';
@@ -510,7 +510,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('multi_chat_mode', multiChatMode.toString());
   }, [multiChatMode]);
 
-  const openChat = (otherUser: {id: string, name: string}) => {
+  const openChat = (otherUser: {id: string, name: string}, initialMessage?: string) => {
     setActiveChats(prev => {
       if (prev.some(c => c.id === otherUser.id)) {
         setSelectedChatId(otherUser.id);
@@ -524,7 +524,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       }
       
       setSelectedChatId(otherUser.id);
-      return [...prev, otherUser];
+      return [...prev, { ...otherUser, initialMessage }];
     });
   };
 
@@ -700,6 +700,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                     activeChats={activeChats}
                     onDragDisabled={() => setShowMoveLimitModal(true)}
                     onReset={() => handleResetChat(chat.id)}
+                    initialMessage={chat.initialMessage}
                   />
                 </div>
               ))
@@ -715,6 +716,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                     isMultiMode={false}
                     onDragDisabled={() => setShowMoveLimitModal(true)}
                     onReset={() => handleResetChat(selectedChatId)}
+                    initialMessage={activeChats.find(c => c.id === selectedChatId)?.initialMessage}
                   />
                 </div>
               )

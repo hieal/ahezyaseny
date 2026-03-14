@@ -1,7 +1,7 @@
 import React, { createContext, useContext } from 'react';
 
 interface ChatContextType {
-  openChat: (otherUser: { id: string; name: string }) => void;
+  openChat: (otherUser: { id: string; name: string }, initialMessage?: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);

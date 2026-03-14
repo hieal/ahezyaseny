@@ -29,12 +29,13 @@ interface InternalChatProps {
   isMultiMode?: boolean;
   onDragDisabled?: () => void;
   onReset?: () => void;
+  initialMessage?: string;
 }
 
-export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, activeChats, onSelectChat, selectedChatId, isMultiMode, onDragDisabled, onReset }) => {
+export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, activeChats, onSelectChat, selectedChatId, isMultiMode, onDragDisabled, onReset, initialMessage }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [newMessage, setNewMessage] = useState(initialMessage || '');
   const [loading, setLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [matches, setMatches] = useState<any[]>([]);
@@ -43,6 +44,14 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
   const [isExpanded, setIsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
+  const initialMessageSent = useRef(false);
+
+  useEffect(() => {
+    if (initialMessage && !initialMessageSent.current) {
+      initialMessageSent.current = true;
+      handleSend();
+    }
+  }, [initialMessage]);
 
   useEffect(() => {
     const fetchOtherUser = async () => {
@@ -144,15 +153,13 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
     }
 
     const newMsg = {
-      sender_id: user?.id,
       receiver_id: otherUser.id,
-      text: newMessage || 'שלחתי לך הצעה למשודך',
-      sender_name: user?.name || '',
-      ...matchDetails
+      content: newMessage || 'שלחתי לך הצעה למשודך',
+      sender_type: user?.id || 'unknown'
     };
     
     try {
-      if (!newMsg.sender_id) throw new Error('Missing sender ID');
+      if (!newMsg.sender_type) throw new Error('Missing sender ID');
       const savedMsg = await dataService.sendInternalMessage(newMsg);
       // Real-time listener will add it, but we can add it optimistically or wait for listener
       // setMessages(prev => [...prev, savedMsg]); 
@@ -190,6 +197,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
   return (
     <motion.div 
       ref={chatRef}
+      dir="rtl"
       drag={isDraggable && !isMinimized}
       dragMomentum={true}
       dragElastic={0.05}
@@ -246,7 +254,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
             <div className={`absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full ${otherUserDetails?.is_online ? 'opacity-100' : 'opacity-0'}`}></div>
           </div>
           <div>
-            <p className="text-sm font-black leading-tight">{otherUser.name}</p>
+            <p className="text-sm font-black leading-tight">צ'אט עם: {otherUser.name}</p>
             {!isMinimized && (
               <p className="text-[10px] opacity-80 font-bold">שיחה בין המנהל/ת <span className="underline">{user?.name}</span> למנהל/ת <span className="underline">{otherUser.name}</span></p>
             )}
@@ -328,14 +336,14 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
                 messages.map((msg) => (
                   <div 
                     key={msg.id} 
-                    className={`flex flex-col ${msg.sender_id === user?.id ? 'items-end' : 'items-start'}`}
+                    className={`flex flex-col ${msg.sender_id === user?.id ? 'items-start' : 'items-end'}`}
                   >
                     <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm shadow-sm transition-all relative group ${
                       msg.sender_id === user?.id 
                         ? `${bubbleColor} text-white rounded-br-none` 
                         : 'bg-white text-slate-900 rounded-bl-none border border-slate-100'
                     }`}>
-                      <div className="font-bold text-[10px] mb-1 opacity-70">
+                      <div className="font-bold text-xs mb-1 opacity-80">
                         {msg.sender_name}
                       </div>
                       {msg.match_id ? (

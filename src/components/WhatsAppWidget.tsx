@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2, Smile, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
@@ -86,7 +87,7 @@ export function WhatsAppWidget({
       const whapiMessages = await dataService.getWhatsAppMessages(groupId);
       const formattedMessages: Message[] = whapiMessages.map((m: any) => ({
         id: m.id,
-        text: m.text?.body || '',
+        text: m.text?.body || m.image?.caption || m.caption || '',
         sender: m.from_me ? (senderName || 'אני') : (m.from_name || 'אחר'),
         timestamp: new Date(m.timestamp * 1000).toISOString(),
         type: m.from_me ? 'me' : 'other',
@@ -221,6 +222,11 @@ export function WhatsAppWidget({
       return;
     }
     
+    if (currentMatch.is_available === false) {
+      toast.error('כרטיס זה סומן כלא פנוי לפירסום יש לשנות את זה בהערות על מנת לפרסם');
+      return;
+    }
+    
     // Duplicate confirmation inside widget
     if (currentMatch.last_published_at) {
       const lastDate = new Date(currentMatch.last_published_at).toLocaleDateString('he-IL');
@@ -307,8 +313,8 @@ export function WhatsAppWidget({
 
   const [showEmojis, setShowEmojis] = useState(false);
 
-  return (
-    <div className={`flex flex-col h-full bg-[#E5DDD5] rounded-2xl overflow-hidden shadow-2xl border border-slate-200 relative transition-all duration-300 ${isExpanded ? 'fixed inset-4 z-[100] md:inset-10' : ''}`}>
+  const widgetContent = (
+    <div className={`flex flex-col h-full bg-[#E5DDD5] rounded-2xl overflow-hidden shadow-2xl border border-slate-200 relative transition-all duration-300 ${isExpanded ? 'fixed inset-2 z-[100] md:inset-4 lg:inset-8' : ''}`}>
       {/* Header */}
       <div className="bg-[#075E54] p-4 flex items-center justify-between text-white z-10">
         <div className="flex items-center gap-3">
@@ -600,6 +606,28 @@ export function WhatsAppWidget({
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A884]"></div>
                 </div>
               )}
+              
+              {/* Match Content Preview Banner */}
+              {currentMatch && (
+                <div className="bg-white/90 backdrop-blur-sm border-b border-slate-200 p-3 shadow-sm z-10 flex items-start gap-3">
+                  {matchImage && (
+                    <img src={matchImage} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-[#075E54] mb-1">תוכן לפרסום: {currentMatch.name}</p>
+                    <p className="text-[10px] text-slate-600 line-clamp-2 leading-tight">{matchMessage}</p>
+                  </div>
+                  <button 
+                    onClick={publishMatch}
+                    disabled={loading}
+                    className="bg-[#25D366] text-white p-2 rounded-full hover:bg-[#128C7E] transition-colors shadow-sm shrink-0"
+                    title="שלח תוכן זה"
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              )}
+
               <div 
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -713,4 +741,20 @@ export function WhatsAppWidget({
       </div>
     </div>
   );
+
+  if (isExpanded) {
+    return (
+      <>
+        <div className="w-full h-full bg-slate-100 rounded-2xl animate-pulse"></div>
+        {createPortal(
+          <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm">
+            {widgetContent}
+          </div>,
+          document.body
+        )}
+      </>
+    );
+  }
+
+  return widgetContent;
 }

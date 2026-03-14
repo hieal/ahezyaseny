@@ -11,6 +11,7 @@ interface MatchCarouselProps {
   cols?: number;
   minimal?: boolean;
   displaySize?: 'small' | 'medium' | 'large';
+  isViewer?: boolean;
 }
 
 export const MatchCarousel: React.FC<MatchCarouselProps> = ({ 
@@ -19,7 +20,8 @@ export const MatchCarousel: React.FC<MatchCarouselProps> = ({
   rows: initialRows = 1,
   cols: initialCols = 3,
   minimal = false,
-  displaySize = 'medium'
+  displaySize = 'medium',
+  isViewer
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   
@@ -49,12 +51,8 @@ export const MatchCarousel: React.FC<MatchCarouselProps> = ({
           style={{ gridTemplateColumns: `repeat(${initialCols}, minmax(0, 1fr))` }}
         >
           {displayedMatches.map((match) => (
-            <div key={match.id} onClick={() => onMatchClick(match)} className={`cursor-pointer ${
-              displaySize === 'small' ? 'w-72' :
-              displaySize === 'medium' ? 'w-80' :
-              'w-96'
-            }`}>
-              <MatchCard match={match} minimal={minimal} onNext={next} onPrev={prev} />
+            <div key={match.id} onClick={() => onMatchClick(match)} className="cursor-pointer w-full">
+              <MatchCard match={match} minimal={minimal} onNext={next} onPrev={prev} isViewer={isViewer} />
             </div>
           ))}
         </motion.div>

@@ -120,8 +120,6 @@ export default function AdminManagement() {
           avatar_url: formData.avatar_url,
           deleted_at: null,
           daily_message_template: null,
-          daily_message_template_male: null,
-          daily_message_template_female: null,
           is_approved: 1,
           is_from_file: 0
         });
@@ -191,8 +189,6 @@ export default function AdminManagement() {
             google_login_allowed: 'true',
             deleted_at: null,
             daily_message_template: null,
-            daily_message_template_male: null,
-            daily_message_template_female: null,
             is_approved: 1,
             is_shaham_manager: 0
           };
