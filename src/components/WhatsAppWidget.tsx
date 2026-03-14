@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2, Smile } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, MoreVertical, Phone, Plus, Edit, Trash2, Smile, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { Match } from '../types';
@@ -57,6 +58,7 @@ export function WhatsAppWidget({
   onAdjustImage
 }: WhatsAppWidgetProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -68,15 +70,10 @@ export function WhatsAppWidget({
   const [activeTab, setActiveTab] = useState<'status' | 'content' | 'chat'>(
     defaultTab || (mode === 'chat-only' ? 'chat' : 'status')
   );
+  const [isExpanded, setIsExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-
-  const quickReplies = [
-    "ההזמנה מוכנה",
-    "נציג יחזור אליך",
-    "בוקר טוב לכולם!",
-    "כרטיס חדש במערכת",
-    "המשך יום נעים"
-  ];
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
   const fetchMessages = async () => {
     if (!groupId || !groupId.includes('@')) {
@@ -90,7 +87,7 @@ export function WhatsAppWidget({
       const formattedMessages: Message[] = whapiMessages.map((m: any) => ({
         id: m.id,
         text: m.text?.body || '',
-        sender: m.from_name || (m.from_me ? 'אני' : 'אחר'),
+        sender: m.from_me ? (senderName || 'אני') : (m.from_name || 'אחר'),
         timestamp: new Date(m.timestamp * 1000).toISOString(),
         type: m.from_me ? 'me' : 'other',
         image: m.type === 'image' ? m.image?.link : undefined
@@ -109,9 +106,31 @@ export function WhatsAppWidget({
     return () => clearInterval(interval);
   }, [groupId]);
 
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setShouldAutoScroll(isAtBottom);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior });
+    }
+  };
+
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (shouldAutoScroll) {
+      scrollToBottom();
+    }
+  }, [messages, shouldAutoScroll]);
+
+  // Initial scroll to bottom
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom('auto');
+    }
+  }, [activeTab]);
 
   const handleSend = async (text: string, matchId?: string, options?: { isOpeningOnly?: boolean }) => {
     if (!text.trim() && !matchId) return;
@@ -120,7 +139,11 @@ export function WhatsAppWidget({
     try {
       if (groupId && groupId.includes('@')) {
         // Use Whapi API
-        await dataService.sendWhatsAppMessage(groupId, text);
+        if (matchImage && !options?.isOpeningOnly) {
+          await dataService.sendWhatsAppImage(groupId, matchImage, text);
+        } else {
+          await dataService.sendWhatsAppMessage(groupId, text);
+        }
         toast.success('ההודעה נשלחה בהצלחה');
       } else {
         // Fallback to wa.me redirect if no valid Whapi ID
@@ -228,13 +251,51 @@ export function WhatsAppWidget({
     }
 
     setActiveTab('chat');
-    await handleSend(text, currentMatch.id);
-    
-    // Refresh parent status
-    onRefreshStatus?.();
-    
-    // Don't close automatically, stay in chat as requested
-    toast.success('הפרסום נשלח לצ\'אט החי');
+    setLoading(true);
+
+    try {
+      if (groupId && groupId.includes('@')) {
+        // Send separately if both selected
+        if (includeImage && matchImage && text) {
+          // Send image first
+          await dataService.sendWhatsAppImage(groupId, matchImage);
+          // Then send text
+          await dataService.sendWhatsAppMessage(groupId, text);
+        } else if (includeImage && matchImage) {
+          await dataService.sendWhatsAppImage(groupId, matchImage);
+        } else if (text) {
+          await dataService.sendWhatsAppMessage(groupId, text);
+        }
+
+        // Record publish in logs and update match stats
+        if (currentMatch?.id && user) {
+          await dataService.recordPublish(
+            currentMatch.id,
+            groupName,
+            user.id,
+            user.name || 'מנהל'
+          );
+        }
+
+        toast.success('הפרסום נשלח בהצלחה');
+      } else {
+        // Fallback
+        const fullText = includeImage ? `${text}\n\n(תמונה מצורפת)` : text;
+        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(fullText)}`;
+        window.open(whatsappUrl, '_blank');
+      }
+
+      // Refresh parent status
+      onRefreshStatus?.();
+      
+      // Refresh messages
+      setTimeout(fetchMessages, 2000);
+    } catch (err) {
+      console.error('Error publishing match:', err);
+      toast.error('שגיאה בפרסום');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const emojis = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '✨', '🙏', '🌹', '💍', '🏠', '📍', '😍', '😎', '🤔', '😢', '🎉', '🎁', '🎈', '⭐', '✅', '❌', '📞', '💌'];
@@ -247,7 +308,7 @@ export function WhatsAppWidget({
   const [showEmojis, setShowEmojis] = useState(false);
 
   return (
-    <div className="flex flex-col h-full bg-[#E5DDD5] rounded-2xl overflow-hidden shadow-2xl border border-slate-200 relative">
+    <div className={`flex flex-col h-full bg-[#E5DDD5] rounded-2xl overflow-hidden shadow-2xl border border-slate-200 relative transition-all duration-300 ${isExpanded ? 'fixed inset-4 z-[100] md:inset-10' : ''}`}>
       {/* Header */}
       <div className="bg-[#075E54] p-4 flex items-center justify-between text-white z-10">
         <div className="flex items-center gap-3">
@@ -260,6 +321,13 @@ export function WhatsAppWidget({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsExpanded(!isExpanded)} 
+            className="p-1 hover:bg-white/10 rounded-lg"
+            title={isExpanded ? 'מזער' : 'הגדל'}
+          >
+            {isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
           <button onClick={fetchMessages} className="p-1 hover:bg-white/10 rounded-lg opacity-80">
             <Clock size={18} />
           </button>
@@ -308,9 +376,9 @@ export function WhatsAppWidget({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#E5DDD5]">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#E5DDD5]">
           {activeTab === 'status' && (
-            <div className="p-6 space-y-6 bg-white min-h-full">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white custom-scrollbar">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm font-bold text-[#075E54] uppercase tracking-wider flex items-center gap-2">
                   <Clock size={16} />
@@ -403,7 +471,7 @@ export function WhatsAppWidget({
           )}
 
           {activeTab === 'content' && (
-            <div className="p-6 space-y-6 bg-white min-h-full">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white custom-scrollbar">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm font-bold text-[#075E54] uppercase tracking-wider flex items-center gap-2">
                   <MessageSquare size={16} />
@@ -526,13 +594,17 @@ export function WhatsAppWidget({
           )}
 
           {activeTab === 'chat' && (
-            <div className="h-full flex flex-col relative">
+            <div className="flex-1 flex flex-col relative overflow-hidden">
               {isChatLoading && messages.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A884]"></div>
                 </div>
               )}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+              <div 
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar"
+              >
                 {messages.length === 0 && !isChatLoading && (
                   <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
                     <MessageSquare size={40} className="opacity-20" />
@@ -548,7 +620,7 @@ export function WhatsAppWidget({
                       'bg-white rounded-tl-none'
                     }`}>
                       {msg.sender && msg.type !== 'system' && (
-                        <p className="font-bold text-[10px] text-[#075E54] mb-0.5">{msg.sender}</p>
+                        <p className="font-bold text-[11px] text-[#075E54] mb-1 border-b border-black/5 pb-0.5">{msg.sender}</p>
                       )}
                       
                       {msg.type === 'me' && (
@@ -573,6 +645,22 @@ export function WhatsAppWidget({
                 ))}
                 <div ref={chatEndRef} />
               </div>
+
+              {/* Scroll to bottom arrow */}
+              <AnimatePresence>
+                {!shouldAutoScroll && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.5, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.5, y: 10 }}
+                    onClick={() => scrollToBottom()}
+                    className="absolute bottom-20 right-4 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#075E54] hover:bg-slate-50 z-20 border border-slate-100"
+                  >
+                    <ChevronDown size={24} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+
               <div className="p-3 bg-[#F0F2F5] flex gap-2 relative">
                 <AnimatePresence>
                   {showEmojis && (

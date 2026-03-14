@@ -406,6 +406,24 @@ export default function AdminManagement() {
   };
 
   const filteredUsers = users.filter(u => {
+    // Manager Unification logic
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    const isTeamLeader = currentUser?.role === 'team_leader';
+    const isSameCategory = currentUser?.category && (u.category === currentUser.category || u.secondary_category === currentUser.category);
+    const isCreator = u.created_by === currentUser?.id;
+    const isSelf = u.id === currentUser?.id;
+
+    if (!isSuperAdmin) {
+      if (isTeamLeader) {
+        // Team leaders see admins in their category or admins they created
+        if (!isSameCategory && !isCreator && !isSelf) return false;
+      } else {
+        // Regular admins only see themselves or others in their category if unification is on
+        // For now, let's allow them to see their category as well for unification
+        if (!isSameCategory && !isSelf) return false;
+      }
+    }
+
     const matchesSearch = (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
                           (u.username || '').toLowerCase().includes(search.toLowerCase());
     const matchesCategory = filterCategory.length === 0 || 
@@ -1255,11 +1273,12 @@ export default function AdminManagement() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           >
-            <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl h-[80vh] flex flex-col overflow-hidden">
+            <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl h-[90vh] flex flex-col overflow-hidden">
               <div className="flex-1">
                 <WhatsAppWidget 
                   groupId={selectedGroupForChat.whapi_id || ""}
                   groupName={selectedGroupForChat.name}
+                  senderName={currentUser?.name}
                   mode="chat-only"
                   onClose={() => setShowChatModal(false)}
                 />

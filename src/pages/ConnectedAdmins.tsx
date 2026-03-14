@@ -84,6 +84,21 @@ export default function ConnectedAdmins() {
 
   const filteredAdmins = allAdmins
     .filter(a => {
+      // Manager Unification logic
+      const isSuperAdmin = user?.role === 'super_admin';
+      const isTeamLeader = user?.role === 'team_leader';
+      const isSameCategory = user?.category && (a.category === user.category || a.secondary_category === user.category);
+      const isCreator = a.created_by === user?.id;
+      const isSelf = a.id === user?.id;
+
+      if (!isSuperAdmin) {
+        if (isTeamLeader) {
+          if (!isSameCategory && !isCreator && !isSelf) return false;
+        } else {
+          if (!isSameCategory && !isSelf) return false;
+        }
+      }
+
       const matchesSearch = a.name?.toLowerCase().includes(searchTerm.toLowerCase());
       const isOnline = onlineUsers.includes(a.id);
       const matchesStatus = statusFilter === 'all' || (statusFilter === 'online' ? isOnline : !isOnline);

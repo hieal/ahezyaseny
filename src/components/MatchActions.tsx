@@ -1,6 +1,7 @@
 import React from 'react';
 import { Match, WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
+import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 import { Send, Edit, Trash2, History as HistoryIcon, MessageSquare, Paperclip, ImageIcon, FileText } from 'lucide-react';
 
@@ -16,6 +17,7 @@ interface MatchActionsProps {
 }
 
 export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroups, onPublish, onNotes, onHistory, onEdit, onDelete, onDesignedCard }) => {
+  const { user } = useAuth();
   const clearInternalMessages = async () => {
     if (!window.confirm('האם למחוק את כל הודעות הצ\'אט הפנימיות?')) return;
     await dataService.clearInternalMessages();
@@ -51,6 +53,17 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
 
     try {
       await dataService.sendWhatsAppMessage(group.whapi_id, message);
+      
+      // Record publish
+      if (user) {
+        await dataService.recordPublish(
+          match.id,
+          group.name,
+          user.id,
+          user.name || 'מנהל'
+        );
+      }
+      
       toast.success('ההודעה נשלחה לוואטסאפ');
     } catch (err) {
       console.error('Error sending WhatsApp message:', err);

@@ -4,12 +4,14 @@ import { Settings as SettingsIcon, Save, MessageSquare, Heart, Globe, ShieldChec
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
+import { useAuth } from '../contexts/AuthContext';
 
 import { WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
 import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
@@ -688,7 +690,7 @@ export default function SettingsPage() {
             <WhatsAppWidget 
               groupId={testGroup.whapi_id || testGroup.name}
               groupName={testGroup.name}
-              senderName="מנהל ראשי"
+              senderName={user?.name || "מנהל ראשי"}
               onClose={() => setTestGroup(null)}
             />
           </div>

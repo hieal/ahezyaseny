@@ -202,28 +202,68 @@ export default function Dashboard() {
 
   const generateDesignedImage = async (match: Match) => {
     setIsGenerating(true);
+    
+    // 1. Pre-calculate text heights to determine canvas height
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) {
+      setIsGenerating(false);
+      return;
+    }
+
+    const margin = 80;
+    const sidePadding = 150;
+    const maxWidth = 1600 - margin*2 - sidePadding*2;
+    const lineHeight = 55;
+
+    const calculateTextHeight = (text: string) => {
+      if (!text) return 0;
+      tempCtx.font = '40px sans-serif';
+      const words = String(text).split(' ');
+      let lines = 0;
+      let currentLine = '';
+      for (let n = 0; n < words.length; n++) {
+        let testLine = currentLine + words[n] + ' ';
+        if (tempCtx.measureText(testLine).width > maxWidth && n > 0) {
+          lines++;
+          currentLine = words[n] + ' ';
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines++;
+      return (lines * lineHeight) + 150;
+    };
+
+    const aboutHeight = match.about ? calculateTextHeight(match.about) : 0;
+    const lookingForHeight = match.looking_for ? calculateTextHeight(match.looking_for) : 0;
+    
+    // Base height: Header + Image + Name + Grid + Padding
+    const baseHeight = 2800;
+    const totalContentHeight = baseHeight + aboutHeight + lookingForHeight + 400; 
+    const canvasHeight = Math.max(3600, totalContentHeight);
+
     const canvas = document.createElement('canvas');
     canvas.width = 1600; 
-    canvas.height = 3600; // Increased height for footer below frame
+    canvas.height = canvasHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setIsGenerating(false);
       return;
     }
 
-    const margin = 80;
     const accentColor = match.type === 'male' ? '#2563eb' : '#db2777';
     const lightAccent = match.type === 'male' ? '#eff6ff' : '#fdf2f8';
     const greenColor = '#16a34a'; 
     const loveBg = '#ffffff';
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, 3600);
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
     gradient.addColorStop(0, loveBg);
     gradient.addColorStop(0.5, lightAccent);
     gradient.addColorStop(1, loveBg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1600, 3600);
+    ctx.fillRect(0, 0, 1600, canvasHeight);
 
     // Decorative Frame with Glow
     ctx.save();
@@ -231,7 +271,7 @@ export default function Dashboard() {
     ctx.shadowColor = accentColor;
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 20;
-    ctx.strokeRect(margin, margin, 1600 - margin*2, 3320 - margin); // Frame ends before footer
+    ctx.strokeRect(margin, margin, 1600 - margin*2, canvasHeight - margin*2 - 200); 
     ctx.restore();
     
     // Header Section
@@ -408,11 +448,12 @@ export default function Dashboard() {
     let currentY = gridStartY + (Math.ceil(details.length / 2) * rowHeight) + 80;
     
     const drawWrappedText = (title: string, text: string, y: number) => {
-      const lineHeight = 55; // Reduced
-      const sidePadding = 150; // Balanced padding
+      const lineHeight = 55;
+      const sidePadding = 150;
       const maxWidth = 1600 - margin*2 - sidePadding*2;
       
-      ctx.font = '40px sans-serif'; // Reduced
+      const fontSize = 40;
+      ctx.font = `${fontSize}px sans-serif`;
       const words = String(text || '').split(' ');
       let lines: string[] = [];
       let currentLine = '';
@@ -430,7 +471,7 @@ export default function Dashboard() {
       }
       lines.push(currentLine);
 
-      const boxHeight = (lines.length * lineHeight) + 150; // Reduced
+      const boxHeight = (lines.length * lineHeight) + 150;
       
       // Box
       ctx.fillStyle = '#ffffff';
@@ -449,7 +490,7 @@ export default function Dashboard() {
       
       // Text
       ctx.fillStyle = '#1e293b';
-      ctx.font = '40px sans-serif';
+      ctx.font = `${fontSize}px sans-serif`;
       lines.forEach((line, i) => {
         ctx.fillText(line, 1450 - 60, y + 70 + (i * lineHeight));
       });
@@ -468,14 +509,14 @@ export default function Dashboard() {
     }
 
     // Footer
-    const footerY = 3480; 
+    const footerY = canvasHeight - 220; 
     
     // Decorative Box for Manager Label
     const labelText = `נשלח על ידי ${match.type === 'female' ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
     ctx.font = 'bold 60px sans-serif';
     const textWidth = ctx.measureText(labelText).width;
     const boxWidth = textWidth + 120;
-    const boxHeight = 120;
+    const boxHeightLabel = 120;
     const boxX = (1600 - boxWidth) / 2;
     const boxY = footerY - 80;
 
@@ -484,7 +525,7 @@ export default function Dashboard() {
     ctx.shadowBlur = 20;
     ctx.shadowColor = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 30);
+    ctx.roundRect(boxX, boxY, boxWidth, boxHeightLabel, 30);
     ctx.fill();
     
     // Inner border for box
@@ -879,8 +920,12 @@ export default function Dashboard() {
   };
 
   const filteredMatches = matches.filter(m => {
-    // Main dashboard should only show user's matches (unless super admin)
-    const isOwner = user?.role === 'super_admin' || m.created_by === user?.id;
+    // Main dashboard should show user's matches or matches in their category (Manager Unification)
+    const isOwner = user?.role === 'super_admin' || 
+                   user?.role === 'team_leader' ||
+                   m.created_by === user?.id || 
+                   (user?.category && m.creator_category === user.category);
+    
     if (!isOwner) return false;
 
     const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -2998,6 +3043,7 @@ export default function Dashboard() {
               <WhatsAppWidget 
                 groupId={whatsappGroups.find(g => g.id === selectedGroupId)?.whapi_id || whatsappGroups.find(g => g.id === selectedGroupId)?.name || ""}
                 groupName={whatsappGroups.find(g => g.id === selectedGroupId)?.name || "קבוצה כללית"}
+                senderName={user?.name}
                 groupIdNum={selectedGroupId || undefined}
                 groupLink={whatsappGroups.find(g => g.id === selectedGroupId)?.link || ""}
                 currentMatch={selectedMatch}
@@ -3063,6 +3109,7 @@ export default function Dashboard() {
                   <WhatsAppWidget 
                     groupId={finalGroupId}
                     groupName={finalGroupName}
+                    senderName={user?.name}
                     mode="chat-only"
                     onClose={() => setShowWhatsAppFloating(false)}
                   />

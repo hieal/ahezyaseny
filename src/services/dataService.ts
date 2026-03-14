@@ -534,16 +534,50 @@ class DataService {
     if (!token) {
       throw new Error('WHAPI_TOKEN is not defined');
     }
+
+    // Get current user to append name
+    const currentUser = await this.getCurrentUser();
+    const managerName = currentUser?.name || 'מערכת';
+    const finalBody = `*נשלח על ידי: ${managerName}*\n\n${body}`;
+
     const response = await fetch('https://gate.whapi.cloud/messages/text', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ to, body })
+      body: JSON.stringify({ to, body: finalBody })
     });
     if (!response.ok) {
       throw new Error(`Failed to send WhatsApp message: ${response.statusText}`);
+    }
+  }
+
+  async sendWhatsAppImage(to: string, media: string, caption?: string): Promise<void> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) {
+      throw new Error('WHAPI_TOKEN is not defined');
+    }
+    
+    // Get current user to append name to caption
+    const currentUser = await this.getCurrentUser();
+    const managerName = currentUser?.name || 'מערכת';
+    const finalCaption = caption 
+      ? `*נשלח על ידי: ${managerName}*\n\n${caption}`
+      : `*נשלח על ידי: ${managerName}*`;
+
+    // Whapi expects media as URL or base64 string
+    const response = await fetch('https://gate.whapi.cloud/messages/image', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ to, media, caption: finalCaption })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to send WhatsApp image: ${response.statusText}`);
     }
   }
 
@@ -593,13 +627,22 @@ class DataService {
     
     if (user && user.role !== 'super_admin') {
       if (user.role === 'team_leader') {
-        // Fetch all admins created by this team leader
-        const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
-        const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
-        query = query.in('created_by', adminIds);
+        // Unified view for team leader: see all in my category if assigned
+        if (user.category) {
+          query = query.eq('category', user.category);
+        } else {
+          // Fallback: Fetch all admins created by this team leader
+          const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
+          const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
+          query = query.in('created_by', adminIds);
+        }
       } else {
-        // Regular admin only sees their own
-        query = query.eq('created_by', user.id);
+        // Unified view: see all in my category if assigned, otherwise only mine
+        if (user.category) {
+          query = query.eq('category', user.category);
+        } else {
+          query = query.eq('created_by', user.id);
+        }
       }
     }
     
@@ -1050,13 +1093,45 @@ class DataService {
     return data as WhatsAppGroup;
   }
 
+  async getMatchById(id: string): Promise<Match | null> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error || !data) return null;
+    return data as Match;
+  }
+
   async recordPublish(matchId: string, groupName: string, userId: string, userName: string) {
+    // 1. Fetch match to get name and current count
+    const match = await this.getMatchById(matchId);
+    if (!match) return;
+
+    // 2. Log to publish_logs
     await this.logPublish({
       match_id: matchId,
-      match_name: '', // Should be fetched if needed
+      match_name: match.name,
       user_id: userId,
       user_name: userName,
       group_name: groupName
+    });
+
+    // 3. Update match stats
+    await this.updateMatch(matchId, {
+      last_published_at: new Date().toISOString(),
+      publish_count: (match.publish_count || 0) + 1
+    });
+
+    // 4. Log to activity_logs
+    await this.logActivity({
+      user_id: userId,
+      user_name: userName,
+      action: 'פרסום משודך',
+      details: `פרסום של ${match.name} בקבוצה ${groupName}`,
+      entity_id: matchId,
+      entity_type: 'match'
     });
   }
 

@@ -15,6 +15,7 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'activity' | 'publishing'>('activity');
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const getAvailableMonths = (logs: any[]) => {
     const months = new Set<string>();
@@ -43,8 +44,18 @@ export default function TrackingPage() {
   const availablePublishMonths = getAvailableMonths(publishLogs);
   const currentAvailableMonths = activeTab === 'activity' ? availableActivityMonths : availablePublishMonths;
 
-  const filteredActivityLogs = filterByMonth(logs);
-  const filteredPublishLogs = filterByMonth(publishLogs);
+  const filteredActivityLogs = filterByMonth(logs).filter(log => {
+    if (!searchTerm) return true;
+    return (log.details || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+           (log.action || '').toLowerCase().includes(searchTerm.toLowerCase());
+  });
+  
+  const filteredPublishLogs = filterByMonth(publishLogs).filter(log => {
+    if (!searchTerm) return true;
+    return (log.match_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+           (log.group_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
   const [filters, setFilters] = useState({
     userId: '',
     dateFrom: '',
@@ -177,26 +188,39 @@ export default function TrackingPage() {
       </div>
 
       {/* Month Filters */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setSelectedMonth(null)}
-          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
-            selectedMonth === null ? 'bg-luxury-blue text-white shadow-md' : 'bg-white text-text-secondary border border-slate-200 hover:border-luxury-blue'
-          }`}
-        >
-          הצג כל החודשים
-        </button>
-        {currentAvailableMonths.map(month => (
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
           <button
-            key={month}
-            onClick={() => setSelectedMonth(month)}
+            onClick={() => setSelectedMonth(null)}
             className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
-              selectedMonth === month ? 'bg-luxury-blue text-white shadow-md' : 'bg-white text-text-secondary border border-slate-200 hover:border-luxury-blue'
+              selectedMonth === null ? 'bg-luxury-blue text-white shadow-md' : 'bg-white text-text-secondary border border-slate-200 hover:border-luxury-blue'
             }`}
           >
-            {formatMonth(month)}
+            הצג כל החודשים
           </button>
-        ))}
+          {currentAvailableMonths.map(month => (
+            <button
+              key={month}
+              onClick={() => setSelectedMonth(month)}
+              className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                selectedMonth === month ? 'bg-luxury-blue text-white shadow-md' : 'bg-white text-text-secondary border border-slate-200 hover:border-luxury-blue'
+              }`}
+            >
+              {formatMonth(month)}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative w-full md:w-64">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input 
+            type="text"
+            placeholder="חפש לפי שם משודך..."
+            className="input-field pr-10 font-bold"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       {activeTab === 'activity' ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Match, PublishLog } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { dataService } from '../services/dataService';
 import { toast } from 'react-hot-toast';
 import { History, Search, Filter, Calendar, User as UserIcon, MessageSquare, CheckCircle, X, Eye, Clock, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,12 +23,10 @@ export default function MatchesHistoryPage() {
   const fetchConfirmedMatches = async () => {
     try {
       setLoading(true);
-      // const res = await fetch('/api/matches/confirmed');
-      // if (res.ok) {
-      //   const data = await res.json();
-      //   setMatches(data);
-      // }
-      setMatches([]);
+      const males = await dataService.getMatches('male');
+      const females = await dataService.getMatches('female');
+      const allMatches = [...males, ...females].filter(m => m.is_published_confirmed === 1);
+      setMatches(allMatches);
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית משודכים');
     } finally {
@@ -38,11 +37,8 @@ export default function MatchesHistoryPage() {
   const fetchMatchHistory = async (matchId: string) => {
     try {
       setHistoryLoading(true);
-      // const res = await fetch(`/api/matches/${matchId}/publications`);
-      // if (res.ok) {
-      //   setPublishHistory(await res.json());
-      // }
-      setPublishHistory([]);
+      const logs = await dataService.getPublishLogs(matchId);
+      setPublishHistory(logs);
     } catch (err) {
       toast.error('שגיאה בטעינת היסטוריית פרסומים');
     } finally {
