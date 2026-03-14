@@ -20,6 +20,8 @@ interface MatchCardProps {
    onSuggest?: (match: Match) => void;
    onNotes?: (match: Match) => void;
    onDesignedCard?: (match: Match) => void;
+   onNext?: () => void;
+   onPrev?: () => void;
    showCreator?: boolean;
    minimal?: boolean;
    selected?: boolean;
@@ -27,7 +29,7 @@ interface MatchCardProps {
    isViewer?: boolean;
  }
 
-export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
@@ -131,6 +133,23 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     setIsAdjusting(false);
   };
 
+  const [showManualPublishModal, setShowManualPublishModal] = React.useState(false);
+  const [manualPublishDate, setManualPublishDate] = React.useState(new Date().toISOString().split('T')[0]);
+
+  const handleManualPublish = async () => {
+    if (isViewer) return;
+    try {
+      await onQuickUpdate?.(match.id, { 
+        manual_published_at: new Date(manualPublishDate).toISOString(),
+        last_published_at: new Date(manualPublishDate).toISOString()
+      });
+      setShowManualPublishModal(false);
+      toast.success('הפרסום הידני עודכן בהצלחה');
+    } catch (err) {
+      toast.error('שגיאה בעדכון הפרסום');
+    }
+  };
+
   const getMissingFields = (m: Match) => {
     const missing = [];
     if (!m.about || m.about.length < 5) missing.push('על עצמי');
@@ -207,6 +226,16 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
+          {onPrev && (
+            <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80">
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          {onNext && (
+            <button onClick={(e) => { e.stopPropagation(); onNext(); }} className="absolute right-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80">
+              <ChevronRight size={20} />
+            </button>
+          )}
           <img 
             src={dataService.getPublicImageUrl(match.image_url)} 
             alt={match.name} 
@@ -227,47 +256,60 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           
           {/* Adjustment Controls Overlay */}
           {!isViewer && (
-            <div className={`absolute inset-0 bg-black/0 hover:bg-black/20 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100 bg-black/20' : 'opacity-0 hover:opacity-100'}`}>
-              <div className="flex flex-col items-center gap-1 bg-white/40 backdrop-blur-md p-2 rounded-2xl shadow-xl scale-90" onClick={e => e.stopPropagation()}>
-                <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronUp size={16} /></button>
+            <div className={`absolute inset-0 bg-black/20 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
+              <div className="flex flex-col items-center gap-3 bg-white/95 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-slate-200 w-[220px]" onClick={e => e.stopPropagation()}>
+                <div className="text-[11px] font-bold text-slate-500 text-center leading-tight">
+                  שיפור מקום התמונה<br/>
+                  <span className="text-[9px] font-medium opacity-70">לחץ על אישור לשמירה</span>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronRight size={16} /></button>
-                  <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-1.5 hover:bg-white/50 rounded-lg text-luxury-blue"><ZoomIn size={16} /></button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsAdjusting(true);
-                      toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
-                    }} 
-                    className={`p-1.5 hover:bg-white/50 rounded-lg ${isAdjusting ? 'text-green-600 bg-white/50' : 'text-slate-900'}`}
-                    title="הזזה חופשית עם העכבר"
-                  >
-                    <Move size={16} />
-                  </button>
-                  <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-1.5 hover:bg-white/50 rounded-lg text-luxury-blue"><ZoomOut size={16} /></button>
-                  <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronLeft size={16} /></button>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-lg text-slate-900"><ChevronDown size={16} /></button>
+                
+                <div className="flex flex-col items-center gap-2 w-full">
+                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronUp size={20} /></button>
+                  
+                  <div className="flex items-center justify-between w-full gap-2">
+                    <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronRight size={20} /></button>
+                    
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                        <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הגדל"><ZoomIn size={18} /></button>
+                        <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הקטן"><ZoomOut size={18} /></button>
+                      </div>
+
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsAdjusting(true);
+                          toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
+                        }} 
+                        className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-2xl transition-all shadow-md ${isAdjusting ? 'bg-gradient-to-br from-luxury-blue to-blue-700 text-white scale-105 ring-4 ring-blue-100' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-100'}`}
+                        title="הזזה חופשית"
+                      >
+                        <Move size={22} />
+                        <span className="text-[9px] font-bold">הזזה חופשית</span>
+                      </button>
+                    </div>
+
+                    <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronLeft size={20} /></button>
+                  </div>
+                  
+                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronDown size={20} /></button>
                 </div>
                 
                 {isAdjusting ? (
                   <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100 w-full justify-center">
                     <button 
                       onClick={saveAdjustment}
-                      className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
-                      title="שמור מיקום"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm font-bold text-xs"
                     >
-                      <Check size={16} />
+                      <Check size={14} />
+                      <span>אישור</span>
                     </button>
                     <button 
                       onClick={cancelAdjustment}
-                      className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm"
-                      title="ביטול"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm font-bold text-xs"
                     >
-                      <X size={16} />
+                      <X size={14} />
+                      <span>ביטול</span>
                     </button>
                   </div>
                 ) : (
@@ -520,7 +562,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} />
               <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} />
               <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} />
-              <InfoItem icon={<HistoryIcon size={14} />} label="פרסום" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+              <InfoItem icon={<HistoryIcon size={14} />} label="פרסום אוטומטי" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+              <InfoItem icon={<CheckCircle size={14} />} label="פרסום ידני" value={match.manual_published_at ? new Date(match.manual_published_at).toLocaleDateString('he-IL') : 'טרם'} />
             </>
           )}
         </div>
@@ -603,9 +646,71 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                 <Paperclip size={18} />
               </button>
             )}
+            {!isViewer && (
+              <button 
+                onClick={() => setShowManualPublishModal(true)}
+                className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${match.manual_published_at ? 'bg-green-100 text-green-600' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                title="סימון כפורסם ידנית"
+              >
+                <CheckCircle size={18} />
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Manual Publish Modal */}
+      <AnimatePresence>
+        {showManualPublishModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-green-600">
+                  <CheckCircle size={24} />
+                  <h2 className="text-xl font-bold">סימון כפורסם ידנית</h2>
+                </div>
+                <button onClick={() => setShowManualPublishModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500 font-bold">סמן מתי המשודך פורסם לאחרונה באופן ידני:</p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">תאריך פרסום</label>
+                  <input 
+                    type="date" 
+                    value={manualPublishDate}
+                    onChange={(e) => setManualPublishDate(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleManualPublish}
+                  className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg active:scale-95"
+                >
+                  עדכן פרסום
+                </button>
+                <button 
+                  onClick={() => setShowManualPublishModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all active:scale-95"
+                >
+                  ביטול
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   </motion.div>
   );
@@ -618,7 +723,7 @@ function InfoItem({ icon, label, value, isMissing }: { icon: React.ReactNode, la
         {icon}
         <span>{label}</span>
       </div>
-      <div className={`text-sm font-bold truncate ${isMissing ? 'text-red-600 italic' : 'text-text-main'}`}>
+      <div className={`text-sm font-bold break-words ${isMissing ? 'text-red-600 italic' : 'text-text-main'}`}>
         {value || (isMissing ? 'חסר' : '---')}
       </div>
     </div>

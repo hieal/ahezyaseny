@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBackend } from '../contexts/BackendContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { LogIn, User, Lock, Heart, ShieldCheck, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud, Settings, RefreshCw, Copy, X, Zap, Globe } from 'lucide-react';
+import { LogIn, User, Lock, Heart, ShieldCheck, ShieldAlert, Users, Eye, EyeOff, Send, ClipboardList, UserCheck, Database, Cloud, Settings, RefreshCw, Copy, X, Zap, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from '../constants';
 import { Logo } from '../components/Logo';
@@ -404,25 +404,37 @@ export default function LoginPage() {
         {/* Login Error Modal */}
         <AnimatePresence>
           {showErrorModal && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="bg-white rounded-[2.5rem] p-8 shadow-2xl max-w-md w-full text-center space-y-6 border border-slate-100"
+                className="bg-white rounded-[3rem] p-10 shadow-2xl max-w-md w-full text-center space-y-8 border border-slate-100 relative overflow-hidden"
               >
-                <div className="w-20 h-20 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
-                  <ShieldCheck size={40} />
+                {/* Decorative background element */}
+                <div className="absolute -top-24 -right-24 w-48 h-48 bg-red-50 rounded-full blur-3xl opacity-50" />
+                <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-50 rounded-full blur-3xl opacity-50" />
+                
+                <div className="relative">
+                  <div className="w-24 h-24 bg-gradient-to-br from-red-50 to-red-100 text-red-500 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner border border-red-200/50">
+                    <ShieldAlert size={48} strokeWidth={2.5} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-2xl font-black text-slate-900">שגיאת התחברות</h3>
-                  <p className="text-slate-500 font-bold">{errorMessage}</p>
+
+                <div className="space-y-3 relative">
+                  <h3 className="text-3xl font-black text-slate-900 tracking-tight">שגיאת התחברות</h3>
+                  <div className="h-1.5 w-12 bg-red-500 rounded-full mx-auto mb-4" />
+                  <p className="text-slate-500 font-bold text-lg leading-relaxed">{errorMessage}</p>
                 </div>
+
                 <button 
                   onClick={() => setShowErrorModal(false)}
-                  className="w-full py-4 bg-luxury-blue text-white rounded-2xl font-black hover:opacity-90 transition-all shadow-lg active:scale-95"
+                  className="w-full py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl font-black text-lg hover:from-slate-800 hover:to-slate-700 transition-all shadow-xl shadow-slate-200 active:scale-95 relative overflow-hidden group"
                 >
-                  נסה שוב
+                  <span className="relative z-10 flex items-center justify-center gap-2">
+                    <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-500" />
+                    נסה שוב
+                  </span>
                 </button>
               </motion.div>
             </div>

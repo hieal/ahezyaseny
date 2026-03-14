@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
 import MatchCard from '../components/MatchCard';
+import { MatchActions } from '../components/MatchActions';
+import { MatchCarousel } from '../components/MatchCarousel';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { MatchSuggestions } from '../components/MatchSuggestions';
 
@@ -50,6 +52,7 @@ export default function Dashboard() {
   const [publishText, setPublishText] = useState(true);
   const [publishModalTab, setPublishModalTab] = useState<'status' | 'content' | 'chat'>('status');
   const [isInitialMarkedSent, setIsInitialMarkedSent] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'carousel'>('list');
   const [displaySize, setDisplaySize] = useState<'small' | 'medium' | 'large'>('medium');
   const [showMinimal, setShowMinimal] = useState(false);
   const [completionFilter, setCompletionFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
@@ -105,8 +108,14 @@ export default function Dashboard() {
   const [viewerCardView, setViewerCardView] = useState<'full' | 'designed'>('full');
   const [showSameGroupsAdminsModal, setShowSameGroupsAdminsModal] = useState(false);
   const [cardsPerRow, setCardsPerRow] = useState(3);
+  const [rowsPerPage, setRowsPerPage] = useState(1);
   const [sliderViewEnabled, setSliderViewEnabled] = useState(false);
   const [currentSliderIndex, setCurrentSliderIndex] = useState(0);
+
+  // Reset slider index when layout changes
+  useEffect(() => {
+    setCurrentSliderIndex(0);
+  }, [cardsPerRow, rowsPerPage]);
   const [managerCounts, setManagerCounts] = useState<Record<string, number>>({});
 
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -367,39 +376,43 @@ export default function Dashboard() {
 
     ctx.textAlign = 'right';
     const gridStartY = 1950;
+    const rowHeight = 130;
     details.forEach((item, i) => {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 1450 - (col * 700);
-      const y = gridStartY + (row * 85);
+      const y = gridStartY + (row * rowHeight);
       
+      // Label
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 42px sans-serif';
+      ctx.font = 'bold 36px sans-serif';
       ctx.fillText(':' + item.label, x, y);
       
+      // Value
       ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 44px sans-serif';
+      ctx.font = 'bold 46px sans-serif';
       
       let value = String(item.value || '---');
-      const maxValWidth = 550;
+      const maxValWidth = 650;
+      
       if (ctx.measureText(value).width > maxValWidth) {
         while (ctx.measureText(value + '...').width > maxValWidth && value.length > 0) {
           value = value.slice(0, -1);
         }
         value += '...';
       }
-      ctx.fillText(value, x - 300, y);
+      ctx.fillText(value, x, y + 60);
     });
 
     // Sections
-    let currentY = gridStartY + (Math.ceil(details.length / 2) * 85) + 100;
+    let currentY = gridStartY + (Math.ceil(details.length / 2) * rowHeight) + 80;
     
     const drawWrappedText = (title: string, text: string, y: number) => {
-      const lineHeight = 65;
-      const sidePadding = 120; // Increased padding from the frame
+      const lineHeight = 55; // Reduced
+      const sidePadding = 150; // Balanced padding
       const maxWidth = 1600 - margin*2 - sidePadding*2;
       
-      ctx.font = '42px sans-serif';
+      ctx.font = '40px sans-serif'; // Reduced
       const words = String(text || '').split(' ');
       let lines: string[] = [];
       let currentLine = '';
@@ -417,28 +430,28 @@ export default function Dashboard() {
       }
       lines.push(currentLine);
 
-      const boxHeight = (lines.length * lineHeight) + 180;
+      const boxHeight = (lines.length * lineHeight) + 150; // Reduced
       
       // Box
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'rgba(0,0,0,0.05)';
       ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.roundRect(margin + 60, y - 60, 1600 - margin*2 - 120, boxHeight, 40);
+      ctx.roundRect(margin + 80, y - 60, 1600 - margin*2 - 160, boxHeight, 40);
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Title
       ctx.textAlign = 'right';
       ctx.fillStyle = accentColor;
-      ctx.font = 'bold 48px sans-serif';
-      ctx.fillText(':' + title, 1450 - 40, y);
+      ctx.font = 'bold 46px sans-serif';
+      ctx.fillText(':' + title, 1450 - 60, y);
       
       // Text
       ctx.fillStyle = '#1e293b';
-      ctx.font = '42px sans-serif';
+      ctx.font = '40px sans-serif';
       lines.forEach((line, i) => {
-        ctx.fillText(line, 1450 - 40, y + 80 + (i * lineHeight));
+        ctx.fillText(line, 1450 - 60, y + 70 + (i * lineHeight));
       });
 
       return boxHeight;
@@ -1300,83 +1313,87 @@ export default function Dashboard() {
                     <MatchSuggestions />
                   </div>
 
-                  <div 
-                    className={sliderViewEnabled ? "relative grid items-center justify-center w-full gap-6 px-12" : "grid grid-cols-1 sm:grid-cols-2 gap-6"}
-                    style={sliderViewEnabled ? { gridTemplateColumns: `repeat(${cardsPerRow}, minmax(0, 1fr))` } : {}}
-                  >
-                    {sliderViewEnabled && (
-                      <button 
-                        onClick={() => setCurrentSliderIndex(prev => Math.max(0, prev - cardsPerRow))}
-                        className="p-3 bg-white/20 backdrop-blur-md rounded-full shadow-lg hover:bg-white/40 transition-all text-luxury-blue z-20 border border-white/20"
-                      >
-                        <ChevronRight size={24} />
-                      </button>
-                    )}
-                    {matches
-                      .filter(m => {
-                        const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
-                        const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
-                        const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
-                        const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
-                        return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
-                      })
-                      .slice(sliderViewEnabled ? currentSliderIndex : 0, sliderViewEnabled ? currentSliderIndex + cardsPerRow : matches.length)
-                      .map(match => (
-                        <div key={match.id} className="relative group">
-                          <MatchCard 
-                            match={match} 
-                            allGroups={whatsappGroups}
-                            onView={(m) => {
-                              setViewingMatch(m);
-                            }}
-                            onNotes={(m) => {
-                              setNotesMatch(m);
-                              fetchNotes(m.id);
-                              setShowNotesModal(true);
-                            }}
-                            onDesignedCard={(m) => {
-                              setSelectedMatch(m);
-                              generateDesignedImage(m);
-                              setShowDesignedCardModal(true);
-                            }}
-                            showCreator
-                            isViewer={true}
-                            minimal={true}
-                          />
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
-                              <button 
-                                onClick={() => {
-                                  setViewingMatch(match);
-                                }}
-                                className="p-2 bg-white/90 backdrop-blur-sm text-luxury-blue rounded-lg shadow-lg hover:bg-white transition-all"
-                                title="צפה בכרטיס מלא"
-                              >
-                                <Eye size={16} />
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  setSelectedMatch(match);
-                                  generateDesignedImage(match);
-                                  setShowDesignedCardModal(true);
-                                }}
-                                className="p-2 bg-white/90 backdrop-blur-sm text-purple-600 rounded-lg shadow-lg hover:bg-white transition-all"
-                                title="צפה בכרטיס מעוצב"
-                              >
-                                <ImageIcon size={16} />
-                              </button>
-                            </div>
-                        </div>
-                      ))
-                    }
-                    {sliderViewEnabled && (
-                      <button 
-                        onClick={() => setCurrentSliderIndex(prev => prev + cardsPerRow)}
-                        className="p-3 bg-white/20 backdrop-blur-md rounded-full shadow-lg hover:bg-white/40 transition-all text-luxury-blue z-20 border border-white/20"
-                      >
-                        <ChevronLeft size={24} />
-                      </button>
-                    )}
-                  </div>
+                  {sliderViewEnabled ? (
+                    <div className="w-full">
+                      <MatchCarousel 
+                        matches={matches.filter(m => {
+                          const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
+                          const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                          const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
+                          const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                          return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
+                        })}
+                        onMatchClick={(m) => setViewingMatch(m)}
+                        rows={rowsPerPage}
+                        cols={cardsPerRow}
+                        minimal={showMinimal}
+                        displaySize={displaySize}
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {matches
+                        .filter(m => {
+                          const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
+                          const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
+                          const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
+                          const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                          return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
+                        })
+                        .map(match => (
+                          <div key={match.id} className="relative group">
+                            <MatchCard 
+                              match={match} 
+                              allGroups={whatsappGroups}
+                              onView={(m) => {
+                                setViewingMatch(m);
+                              }}
+                              onNotes={(m) => {
+                                setNotesMatch(m);
+                                fetchNotes(m.id);
+                                setShowNotesModal(true);
+                              }}
+                              onDesignedCard={(m) => {
+                                setSelectedMatch(m);
+                                generateDesignedImage(m);
+                                setShowDesignedCardModal(true);
+                              }}
+                              showCreator
+                              isViewer={true}
+                              minimal={true}
+                            />
+                            <MatchActions
+                              match={match}
+                              whatsappGroups={whatsappGroups}
+                              onPublish={(m) => handlePublish(m)}
+                              onNotes={(m) => {
+                                setNotesMatch(m);
+                                fetchNotes(m.id);
+                                setShowNotesModal(true);
+                              }}
+                              onHistory={(m) => {
+                                setSelectedMatch(m);
+                                fetchPublishHistory(m);
+                                setShowHistoryModal(true);
+                              }}
+                              onEdit={(id) => {
+                                // Need to implement edit modal logic
+                                toast.error('עריכה טרם מומשה');
+                              }}
+                              onDelete={(id) => {
+                                handleDelete(id);
+                                confirmDelete();
+                              }}
+                              onDesignedCard={(m) => {
+                                setSelectedMatch(m);
+                                generateDesignedImage(m);
+                                setShowDesignedCardModal(true);
+                              }}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  )}
                   {matches.filter(m => {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                         const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
@@ -1852,20 +1869,36 @@ export default function Dashboard() {
             <span className="text-xs font-bold text-text-secondary">מצב סליידר</span>
           </label>
           {sliderViewEnabled && (
-            <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
-              <span className="text-xs font-bold text-text-secondary px-2">כרטיסים:</span>
-              {[1, 2, 3].map((count) => (
-                <button
-                  key={count}
-                  onClick={() => setCardsPerRow(count)}
-                  className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
-                    cardsPerRow === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
-                  }`}
-                >
-                  {count}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
+                <span className="text-xs font-bold text-text-secondary px-2">שורות:</span>
+                {[1, 2, 3].map((count) => (
+                  <button
+                    key={count}
+                    onClick={() => setRowsPerPage(count)}
+                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                      rowsPerPage === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
+                    }`}
+                  >
+                    {count}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
+                <span className="text-xs font-bold text-text-secondary px-2">כרטיסים בשורה:</span>
+                {[1, 2, 3].map((count) => (
+                  <button
+                    key={count}
+                    onClick={() => setCardsPerRow(count)}
+                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                      cardsPerRow === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
+                    }`}
+                  >
+                    {count}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1897,57 +1930,70 @@ export default function Dashboard() {
       )}
 
       {/* Matches Grid */}
-      <div className="w-full overflow-x-auto pb-6 custom-scrollbar" dir="rtl">
-        <div className="flex gap-6 min-w-max px-2">
-          {filteredMatches.map((match) => (
-            <div key={match.id} className={`${
-              displaySize === 'small' ? 'w-72' :
-              displaySize === 'medium' ? 'w-80' :
-              'w-96'
-            }`}>
-              <MatchCard 
-                match={match}
-                allGroups={whatsappGroups}
-                minimal={showMinimal}
-                onPublish={handlePublish}
-                onView={(m) => setViewingMatch(m)}
-                onEdit={(id) => navigate(`/matches/edit/${id}`)}
-                onDelete={handleDelete}
-                onHistory={fetchPublishHistory}
-                onImageClick={(m) => {
-                  setImageMatch(m);
-                  setImageUrlInput(m.image_url || '');
-                  setShowImageModal(true);
-                }}
-                onQuickUpdate={handleQuickUpdate}
-                onSuggest={handleSuggest}
-                onNotes={(m) => {
-                  setNotesMatch(m);
-                  fetchNotes(m.id);
-                  setShowNotesModal(true);
-                }}
-                onDesignedCard={(m) => {
-                  setSelectedMatch(m);
-                  generateDesignedImage(m);
-                  setShowDesignedCardModal(true);
-                }}
-                showCreator={user?.role === 'super_admin'}
-                selected={selectedMatchIds.includes(match.id)}
-                onSelect={handleSelectMatch}
-              />
-            </div>
-          ))}
+      {sliderViewEnabled ? (
+        <div className="w-full py-6">
+          <MatchCarousel 
+            matches={filteredMatches}
+            onMatchClick={(m) => setViewingMatch(m)}
+            rows={rowsPerPage}
+            cols={cardsPerRow}
+            minimal={showMinimal}
+            displaySize={displaySize}
+          />
         </div>
-        {filteredMatches.length === 0 && (
-          <div className="col-span-full py-20 text-center card bg-white/50 border-dashed border-2">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 text-slate-400 mb-4">
-              <Search size={32} />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900">לא נמצאו כרטיסים</h3>
-            <p className="text-slate-500 mt-1">נסה לשנות את מסנני החיפוש או ליצור כרטיס חדש</p>
+      ) : (
+        <div className="w-full overflow-x-auto pb-6 custom-scrollbar" dir="rtl">
+          <div className="flex gap-6 min-w-max px-2">
+            {filteredMatches.map((match) => (
+              <div key={match.id} className={`${
+                displaySize === 'small' ? 'w-72' :
+                displaySize === 'medium' ? 'w-80' :
+                'w-96'
+              }`}>
+                <MatchCard 
+                  match={match}
+                  allGroups={whatsappGroups}
+                  minimal={showMinimal}
+                  onPublish={handlePublish}
+                  onView={(m) => setViewingMatch(m)}
+                  onEdit={(id) => navigate(`/matches/edit/${id}`)}
+                  onDelete={handleDelete}
+                  onHistory={fetchPublishHistory}
+                  onImageClick={(m) => {
+                    setImageMatch(m);
+                    setImageUrlInput(m.image_url || '');
+                    setShowImageModal(true);
+                  }}
+                  onQuickUpdate={handleQuickUpdate}
+                  onSuggest={handleSuggest}
+                  onNotes={(m) => {
+                    setNotesMatch(m);
+                    fetchNotes(m.id);
+                    setShowNotesModal(true);
+                  }}
+                  onDesignedCard={(m) => {
+                    setSelectedMatch(m);
+                    generateDesignedImage(m);
+                    setShowDesignedCardModal(true);
+                  }}
+                  showCreator={user?.role === 'super_admin'}
+                  selected={selectedMatchIds.includes(match.id)}
+                  onSelect={handleSelectMatch}
+                />
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+          {filteredMatches.length === 0 && (
+            <div className="col-span-full py-20 text-center card bg-white/50 border-dashed border-2">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 text-slate-400 mb-4">
+                <Search size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">לא נמצאו כרטיסים</h3>
+              <p className="text-slate-500 mt-1">נסה לשנות את מסנני החיפוש או ליצור כרטיס חדש</p>
+            </div>
+          )}
+        </div>
+      )}
 
 
       {/* Image Manager Modal */}

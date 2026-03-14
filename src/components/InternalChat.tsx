@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, X, Smile, Paperclip, User, Trash2, CheckCircle, ChevronDown, ChevronUp, ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, X, Smile, Paperclip, User, Trash2, CheckCircle, ChevronDown, ChevronUp, ZoomIn, ZoomOut, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -28,9 +28,10 @@ interface InternalChatProps {
   selectedChatId?: string;
   isMultiMode?: boolean;
   onDragDisabled?: () => void;
+  onReset?: () => void;
 }
 
-export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, activeChats, onSelectChat, selectedChatId, isMultiMode, onDragDisabled }) => {
+export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, activeChats, onSelectChat, selectedChatId, isMultiMode, onDragDisabled, onReset }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -208,16 +209,25 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
       <div 
         className={`p-4 bg-gradient-to-r ${themeColor} text-white flex items-center justify-between shadow-lg ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
         onPointerDown={(e) => {
+          // Check if the click was on a button or an icon inside a button
+          const target = e.target as HTMLElement;
+          if (target.closest('button')) return;
+          
           if (!isDraggable && !isMinimized) {
             onDragDisabled?.();
           }
         }}
         onClick={(e) => {
-          // Only minimize if clicking the header background, not buttons
-          if (e.target === e.currentTarget) setIsMinimized(!isMinimized);
+          // Check if the click was on a button
+          const target = e.target as HTMLElement;
+          if (target.closest('button')) return;
+          
+          if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.header-info')) {
+            setIsMinimized(!isMinimized);
+          }
         }}
       >
-        <div className="flex items-center gap-3 pointer-events-none">
+        <div className="flex items-center gap-3 pointer-events-none header-info">
           <div className="relative">
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center border border-white/30 overflow-hidden relative">
               {otherUserDetails?.avatar_url ? (
@@ -243,6 +253,18 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {!isMinimized && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onReset?.();
+              }} 
+              className="p-2 hover:bg-white/10 rounded-xl transition-all"
+              title="אפס מיקום"
+            >
+              <RefreshCw size={18} />
+            </button>
+          )}
           {!isMinimized && (
             <button 
               onClick={(e) => {

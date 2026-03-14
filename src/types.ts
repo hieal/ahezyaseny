@@ -65,6 +65,7 @@ export interface Match {
   creator_phone?: string | null;
   created_at: string;
   last_published_at: string | null;
+  manual_published_at?: string | null;
   publish_count: number;
   deleted_at: string | null;
   phone: string | null;

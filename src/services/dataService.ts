@@ -529,6 +529,63 @@ class DataService {
     return breakdown;
   }
 
+  async sendWhatsAppMessage(to: string, body: string): Promise<void> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) {
+      throw new Error('WHAPI_TOKEN is not defined');
+    }
+    const response = await fetch('https://gate.whapi.cloud/messages/text', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ to, body })
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to send WhatsApp message: ${response.statusText}`);
+    }
+  }
+
+  async getWhatsAppMessages(chatId: string): Promise<any[]> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) return [];
+    
+    try {
+      const response = await fetch(`https://gate.whapi.cloud/messages/list/${chatId}?count=20`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.messages || [];
+    } catch (err) {
+      console.error('Error fetching WhatsApp messages:', err);
+      return [];
+    }
+  }
+
+  async clearInternalMessages(): Promise<void> {
+    await this.handleSupabase(supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+  }
+
+  async clearActivityLogs(): Promise<void> {
+    await this.handleSupabase(supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+  }
+
+  async clearPublishLogs(): Promise<void> {
+    await this.handleSupabase(supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+  }
+
+  async clearWhatsAppGroups(): Promise<void> {
+    await this.handleSupabase(supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+  }
+
+  async clearCandidates(): Promise<void> {
+    await this.handleSupabase(supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+  }
+
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
     let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);

@@ -157,6 +157,7 @@ function Sidebar() {
   };
 
   const navItems = [
+    { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { 
       path: '/suggestions', 
@@ -169,7 +170,6 @@ function Sidebar() {
     { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
     { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
     { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
-    { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
   ];
 
   if (user?.role === 'super_admin' || user?.role === 'team_leader') {
@@ -484,6 +484,14 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   });
   const [showLimitModal, setShowLimitModal] = React.useState(false);
   const [showMoveLimitModal, setShowMoveLimitModal] = React.useState(false);
+  const [chatResetKeys, setChatResetKeys] = React.useState<Record<string, number>>({});
+
+  const handleResetChat = (chatId: string) => {
+    setChatResetKeys(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || 0) + 1
+    }));
+  };
 
   React.useEffect(() => {
     const handleStorage = () => {
@@ -684,19 +692,20 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           <AnimatePresence>
             {multiChatMode ? (
               activeChats.map((chat) => (
-                <div key={chat.id} className="pointer-events-auto">
+                <div key={`${chat.id}-${chatResetKeys[chat.id] || 0}`} className="pointer-events-auto">
                   <InternalChat 
                     otherUser={chat} 
                     onClose={() => closeChat(chat.id)} 
                     isMultiMode={true}
                     activeChats={activeChats}
                     onDragDisabled={() => setShowMoveLimitModal(true)}
+                    onReset={() => handleResetChat(chat.id)}
                   />
                 </div>
               ))
             ) : (
               activeChats.length > 0 && selectedChatId && (
-                <div className="pointer-events-auto">
+                <div key={`${selectedChatId}-${chatResetKeys[selectedChatId] || 0}`} className="pointer-events-auto">
                   <InternalChat 
                     otherUser={activeChats.find(c => c.id === selectedChatId)!} 
                     onClose={() => closeChat(selectedChatId)} 
@@ -705,6 +714,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                     selectedChatId={selectedChatId}
                     isMultiMode={false}
                     onDragDisabled={() => setShowMoveLimitModal(true)}
+                    onReset={() => handleResetChat(selectedChatId)}
                   />
                 </div>
               )

@@ -4,6 +4,7 @@ import { Send, Image as ImageIcon, MessageSquare, Check, Clock, User, Share2, Mo
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { Match } from '../types';
+import { dataService } from '../services/dataService';
 
 interface Message {
   id: string;
@@ -78,12 +79,34 @@ export function WhatsAppWidget({
   ];
 
   const fetchMessages = async () => {
-    // Local mode: just keep current messages or load from local storage if needed
-    setIsChatLoading(false);
+    if (!groupId || !groupId.includes('@')) {
+      setIsChatLoading(false);
+      return;
+    }
+
+    setIsChatLoading(true);
+    try {
+      const whapiMessages = await dataService.getWhatsAppMessages(groupId);
+      const formattedMessages: Message[] = whapiMessages.map((m: any) => ({
+        id: m.id,
+        text: m.text?.body || '',
+        sender: m.from_name || (m.from_me ? 'אני' : 'אחר'),
+        timestamp: new Date(m.timestamp * 1000).toISOString(),
+        type: m.from_me ? 'me' : 'other',
+        image: m.type === 'image' ? m.image?.link : undefined
+      }));
+      setMessages(formattedMessages.reverse());
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
+    } finally {
+      setIsChatLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchMessages();
+    const interval = setInterval(fetchMessages, 10000); // Poll every 10 seconds
+    return () => clearInterval(interval);
   }, [groupId]);
 
   useEffect(() => {
@@ -95,11 +118,18 @@ export function WhatsAppWidget({
     
     setLoading(true);
     try {
-      // Open WhatsApp with the message text
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(whatsappUrl, '_blank');
+      if (groupId && groupId.includes('@')) {
+        // Use Whapi API
+        await dataService.sendWhatsAppMessage(groupId, text);
+        toast.success('ההודעה נשלחה בהצלחה');
+      } else {
+        // Fallback to wa.me redirect if no valid Whapi ID
+        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        window.open(whatsappUrl, '_blank');
+        toast.success('ההודעה נשלחה (הפניה לוואטסאפ)');
+      }
       
-      // Simulate successful send locally
+      // Simulate successful send locally for immediate feedback
       const newMsg: Message = {
         id: Date.now().toString(),
         text: text,
@@ -110,10 +140,13 @@ export function WhatsAppWidget({
       };
       
       setMessages(prev => [...prev, newMsg]);
-      toast.success('ההודעה נשלחה בהצלחה');
       setInputText('');
       
+      // Refresh messages after a short delay
+      setTimeout(fetchMessages, 2000);
+      
     } catch (err) {
+      console.error('Error sending message:', err);
       toast.error('שגיאה בשליחת ההודעה');
     } finally {
       setLoading(false);

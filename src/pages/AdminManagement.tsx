@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { WhatsAppWidget } from '../components/WhatsAppWidget';
 
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
@@ -38,6 +39,13 @@ export default function AdminManagement() {
   const [connectionView, setConnectionView] = useState<'online' | 'offline'>('online');
   const [scrollThreshold, setScrollThreshold] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [selectedGroupForChat, setSelectedGroupForChat] = useState<WhatsAppGroup | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupCategory, setNewGroupCategory] = useState('');
+  const [newGroupWhapiId, setNewGroupWhapiId] = useState('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -1078,6 +1086,227 @@ export default function AdminManagement() {
           </table>
         </div>
       </div>
+
+      <div id="section-advanced" className="card overflow-hidden border-none shadow-lg mt-8">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-red-50/30">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="text-red-600" size={24} />
+            <h2 className="text-2xl font-extrabold text-text-main">ניהול מתקדם ואיפוסים (מנהל ראשי בלבד)</h2>
+          </div>
+        </div>
+        <div className="p-6">
+          {currentUser?.role === 'super_admin' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Option 1: Full System Reset */}
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
+                <h3 className="font-black text-red-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס מערכת מלא
+                </h3>
+                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים). האם אתה בטוח?')) {
+                      await dataService.clearCandidates();
+                      await dataService.clearWhatsAppGroups();
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      await dataService.clearInternalMessages();
+                      toast.success('המערכת אופסה לחלוטין');
+                      fetchUsers();
+                    }
+                  }} 
+                  className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
+                >
+                  בצע איפוס מלא
+                </button>
+              </div>
+
+              {/* Option 2: History Reset (with Candidates) */}
+              <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 space-y-3">
+                <h3 className="font-black text-orange-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס היסטוריה (כולל כרטיסים)
+                </h3>
+                <p className="text-xs text-orange-600/80">מוחק כרטיסי משודכים, היסטוריית פרסומים ומעקב פעולות. לא מוחק קבוצות וואטסאפ.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את כל כרטיסי המשודכים וכל ההיסטוריה?')) {
+                      await dataService.clearCandidates();
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      toast.success('היסטוריה וכרטיסים נמחקו');
+                    }
+                  }} 
+                  className="w-full py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-sm"
+                >
+                  איפוס היסטוריה וכרטיסים
+                </button>
+              </div>
+
+              {/* Option 3: WhatsApp Groups Only */}
+              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-3">
+                <h3 className="font-black text-blue-700 flex items-center gap-2">
+                  <Trash2 size={20} /> מחיקת קבוצות וואטסאפ בלבד
+                </h3>
+                <p className="text-xs text-blue-600/80">מוחק רק את הגדרות קבוצות הוואטסאפ והקישורים שהוזנו למערכת.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את כל קבוצות הוואטסאפ?')) {
+                      await dataService.clearWhatsAppGroups();
+                      toast.success('קבוצות וואטסאפ נמחקו');
+                      fetchUsers();
+                    }
+                  }} 
+                  className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  מחק קבוצות בלבד
+                </button>
+              </div>
+
+              {/* Option 4: History Only (WITHOUT Candidates) */}
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
+                <h3 className="font-black text-amber-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס היסטוריה (ללא מחיקת כרטיסים)
+                </h3>
+                <p className="text-xs text-amber-600/80">מוחק מעקב פרסומים ומעקב פעולות בלבד. כרטיסי המשודכים והמנהלים יישארו.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את היסטוריית הפרסומים ומעקב הפעולות? (הכרטיסים לא יימחקו)')) {
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      toast.success('היסטוריית פעילות נמחקה');
+                    }
+                  }} 
+                  className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors shadow-sm"
+                >
+                  איפוס היסטוריה בלבד
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              <Shield size={48} className="mx-auto text-slate-300 mb-4" />
+              <p className="text-slate-500 font-bold">אזור זה מוגבל למנהלים ראשיים בלבד.</p>
+              <p className="text-slate-400 text-sm mt-1">התפקיד הנוכחי שלך: {currentUser?.role === 'admin' ? 'מנהל' : currentUser?.role === 'team_leader' ? 'ראש צוות' : 'צופה'}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card overflow-hidden border-none shadow-lg mt-8">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <h2 className="text-2xl font-extrabold text-text-main">ניהול קבוצות וואטסאפ</h2>
+          <button 
+            onClick={() => setShowWhatsAppModal(true)}
+            className="bg-luxury-blue text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
+          >
+            <Plus size={16} /> הוסף קבוצה
+          </button>
+        </div>
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-right">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>
+                <th className="px-6 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שם קבוצה</th>
+                <th className="px-6 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">קטגוריה</th>
+                <th className="px-6 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">WHAPI ID</th>
+                <th className="px-6 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs text-left">פעולות</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50 bg-white">
+              {whatsappGroups.map((g) => (
+                <tr key={g.id}>
+                  <td className="px-6 py-4 text-sm font-bold text-text-main">{g.name}</td>
+                  <td className="px-6 py-4 text-sm text-text-secondary">{g.category}</td>
+                  <td className="px-6 py-4">
+                    <input 
+                      type="text" 
+                      className="input-field text-xs font-mono"
+                      defaultValue={g.whapi_id || ''}
+                      onBlur={async (e) => {
+                        await dataService.updateWhatsAppGroup(g.id, { whapi_id: e.target.value });
+                        toast.success('ה-ID עודכן');
+                        fetchUsers();
+                      }}
+                    />
+                  </td>
+                  <td className="px-6 py-4 text-left flex gap-2 justify-end">
+                    <a href={g.link} target="_blank" rel="noreferrer" className="text-luxury-blue hover:underline text-xs font-bold">קישור</a>
+                    <button 
+                      onClick={() => {
+                        setSelectedGroupForChat(g);
+                        setShowChatModal(true);
+                      }}
+                      className="text-green-600 hover:text-green-800 text-xs font-bold"
+                    >
+                      צ'אט
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Chat Modal */}
+      <AnimatePresence>
+        {showChatModal && selectedGroupForChat && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          >
+            <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl h-[80vh] flex flex-col overflow-hidden">
+              <div className="flex-1">
+                <WhatsAppWidget 
+                  groupId={selectedGroupForChat.whapi_id || ""}
+                  groupName={selectedGroupForChat.name}
+                  mode="chat-only"
+                  onClose={() => setShowChatModal(false)}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* WhatsApp Group Modal */}
+      <AnimatePresence>
+        {showWhatsAppModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          >
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="text-xl font-bold mb-4">הוספת קבוצת וואטסאפ</h3>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                await dataService.createWhatsAppGroup({
+                  name: newGroupName,
+                  category: newGroupCategory,
+                  type: 'male',
+                  link: '',
+                  whapi_id: newGroupWhapiId,
+                  last_initial_sent: null
+                });
+                toast.success('הקבוצה נוספה');
+                setShowWhatsAppModal(false);
+                setNewGroupName('');
+                setNewGroupCategory('');
+                setNewGroupWhapiId('');
+                fetchUsers();
+              }}>
+                <input type="text" placeholder="שם הקבוצה" className="input-field w-full mb-3" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} required />
+                <input type="text" placeholder="קטגוריה" className="input-field w-full mb-3" value={newGroupCategory} onChange={e => setNewGroupCategory(e.target.value)} required />
+                <input type="text" placeholder="WHAPI ID" className="input-field w-full mb-4" value={newGroupWhapiId} onChange={e => setNewGroupWhapiId(e.target.value)} />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowWhatsAppModal(false)} className="btn-secondary">ביטול</button>
+                  <button type="submit" className="btn-primary">שמור</button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CSV Upload Modal */}
       <AnimatePresence>
