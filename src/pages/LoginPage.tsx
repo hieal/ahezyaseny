@@ -79,7 +79,7 @@ export default function LoginPage() {
 
       try {
         const tempClient = createClient(url, key);
-        const { error } = await tempClient.from('admins').select('id').limit(1);
+        const { error } = await tempClient.from('profiles').select('id').limit(1);
 
         if (!error) {
           toast.success('חיבור תקין! מרענן...');
@@ -121,7 +121,7 @@ export default function LoginPage() {
       }
 
       // If auto-sync fails, check connection and tables to show manual SQL if needed
-      const { error: adminsError } = await supabase.from('admins').select('id, phone').limit(1);
+      const { error: adminsError } = await supabase.from('profiles').select('id, phone').limit(1);
       const { error: matchesError } = await supabase.from('candidates').select('id, full_name').limit(1);
 
       if (!adminsError && !matchesError) {
@@ -173,8 +173,8 @@ export default function LoginPage() {
   const handleBypassLogin = async () => {
     setLoading(true);
     try {
-      // First check if admins table exists
-      const { error: checkError } = await supabase.from('admins').select('id').limit(1);
+      // First check if profiles table exists
+      const { error: checkError } = await supabase.from('profiles').select('id').limit(1);
       
       if (checkError && (checkError.code === '42P01' || checkError.message?.includes('does not exist'))) {
         toast.error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) למטה.');

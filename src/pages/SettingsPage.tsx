@@ -483,84 +483,119 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Advanced Actions Section */}
-      <div id="section-advanced" className="card p-8 bg-white space-y-8 shadow-sm border border-slate-100 scroll-mt-20">
-        <div className="flex items-center gap-3 text-luxury-blue">
-          <div className="p-3 bg-blue-50 rounded-2xl shadow-sm">
-            <Database size={24} />
-          </div>
-          <h2 className="font-extrabold text-2xl tracking-tight">פעולות מתקדמות</h2>
-        </div>
-
-        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-lg text-text-main">סנכרון תמונות חיצוניות</h3>
-              <p className="text-text-secondary font-medium text-sm mt-1 max-w-xl">
-                מוריד תמונות מקישורים חיצוניים (כמו Airtable) ושומר אותן בשרת המערכת באופן קבוע. פעולה זו מונעת מצב שבו תמונות נעלמות כאשר הקישור החיצוני פג תוקף.
-              </p>
+        {/* Advanced Actions Section */}
+        <div id="section-advanced" className="card p-8 bg-white space-y-8 shadow-sm border border-slate-100 scroll-mt-20">
+          <div className="flex items-center gap-3 text-luxury-blue">
+            <div className="p-3 bg-blue-50 rounded-2xl shadow-sm">
+              <Database size={24} />
             </div>
-            <button 
-              onClick={() => setShowImageSync(true)}
-              className="px-6 py-3 bg-white border-2 border-luxury-blue text-luxury-blue hover:bg-blue-50 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap"
-            >
-              פתח מרכז סנכרון
-            </button>
+            <h2 className="font-extrabold text-2xl tracking-tight">פעולות מתקדמות</h2>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg text-amber-700 flex items-center gap-2">
-                <AlertTriangle size={20} />
-                איפוס היסטוריה
-              </h3>
+          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-lg text-text-main">סנכרון תמונות חיצוניות</h3>
+                <p className="text-text-secondary font-medium text-sm mt-1 max-w-xl">
+                  מוריד תמונות מקישורים חיצוניים (כמו Airtable) ושומר אותן בשרת המערכת באופן קבוע. פעולה זו מונעת מצב שבו תמונות נעלמות כאשר הקישור החיצוני פג תוקף.
+                </p>
+              </div>
               <button 
-                onClick={async () => {
-                  const tid = toast.loading('מסנכרן איפוסים מהעוגן...');
-                  const res = await dataService.syncResetsFromAnchor();
-                  if (res.success) toast.success(res.message, { id: tid });
-                  else toast.error(res.message, { id: tid });
-                }}
-                className="flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-lg hover:bg-amber-200 transition-all"
+                onClick={() => setShowImageSync(true)}
+                className="px-6 py-3 bg-white border-2 border-luxury-blue text-luxury-blue hover:bg-blue-50 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap"
               >
-                <Anchor size={12} />
-                קישור עוגן
+                פתח מרכז סנכרון
               </button>
             </div>
-            <p className="text-amber-600 text-sm font-medium">
-              פעולה זו תמחק את כל הכרטיסים (משודכים), היסטוריית הפרסומים ומעקב הפעולות.
-              <br />
-              <strong>שימו לב: פעולה זו אינה הפיכה!</strong>
-            </p>
-            <button 
-              onClick={() => setShowResetHistoryModal(true)}
-              className="w-full py-3 bg-white border-2 border-amber-500 text-amber-600 hover:bg-amber-100 rounded-xl font-bold transition-all"
-            >
-              אפס היסטוריה
-            </button>
           </div>
 
-          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 space-y-4">
-            <h3 className="font-bold text-lg text-red-700 flex items-center gap-2">
-              <Trash2 size={20} />
-              איפוס מערכת מלא (Factory Reset)
-            </h3>
-            <p className="text-red-600 text-sm font-medium">
-              מחיקת כל הנתונים במערכת: מנהלים, קבוצות, כרטיסים והגדרות. המערכת תחזור למצב התחלתי.
-              <br />
-              <strong>זהירות: כל המידע יאבד לצמיתות!</strong>
-            </p>
-            <button 
-              onClick={() => setShowFactoryResetModal(true)}
-              className="w-full py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-all shadow-md"
-            >
-              איפוס מערכת מלא
-            </button>
-          </div>
+          {user?.role === 'super_admin' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Option 1: Full System Reset */}
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
+                <h3 className="font-black text-red-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס מערכת מלא
+                </h3>
+                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים). האם אתה בטוח?')) {
+                      await dataService.clearCandidates();
+                      await dataService.clearWhatsAppGroups();
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      await dataService.clearInternalMessages();
+                      toast.success('המערכת אופסה לחלוטין');
+                    }
+                  }} 
+                  className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
+                >
+                  בצע איפוס מלא
+                </button>
+              </div>
+
+              {/* Option 2: History Reset (with Candidates) */}
+              <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 space-y-3">
+                <h3 className="font-black text-orange-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס היסטוריה (כולל כרטיסים)
+                </h3>
+                <p className="text-xs text-orange-600/80">מוחק כרטיסי משודכים, היסטוריית פרסומים ומעקב פעולות. לא מוחק קבוצות וואטסאפ.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את כל כרטיסי המשודכים וכל ההיסטוריה?')) {
+                      await dataService.clearCandidates();
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      toast.success('היסטוריה וכרטיסים נמחקו');
+                    }
+                  }} 
+                  className="w-full py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-sm"
+                >
+                  איפוס היסטוריה וכרטיסים
+                </button>
+              </div>
+
+              {/* Option 3: WhatsApp Groups Only */}
+              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-3">
+                <h3 className="font-black text-blue-700 flex items-center gap-2">
+                  <Trash2 size={20} /> מחיקת קבוצות וואטסאפ בלבד
+                </h3>
+                <p className="text-xs text-blue-600/80">מוחק רק את הגדרות קבוצות הוואטסאפ והקישורים שהוזנו למערכת.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את כל קבוצות הוואטסאפ?')) {
+                      await dataService.clearWhatsAppGroups();
+                      toast.success('קבוצות וואטסאפ נמחקו');
+                    }
+                  }} 
+                  className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  מחק קבוצות בלבד
+                </button>
+              </div>
+
+              {/* Option 4: History Only (WITHOUT Candidates) */}
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
+                <h3 className="font-black text-amber-700 flex items-center gap-2">
+                  <Trash2 size={20} /> איפוס היסטוריה (ללא מחיקת כרטיסים)
+                </h3>
+                <p className="text-xs text-amber-600/80">מוחק מעקב פרסומים ומעקב פעולות בלבד. כרטיסי המשודכים והמנהלים יישארו.</p>
+                <button 
+                  onClick={async () => { 
+                    if(confirm('האם למחוק את היסטוריית הפרסומים ומעקב הפעולות? (הכרטיסים לא יימחקו)')) {
+                      await dataService.clearPublishLogs();
+                      await dataService.clearActivityLogs();
+                      toast.success('היסטוריית פעילות נמחקה');
+                    }
+                  }} 
+                  className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors shadow-sm"
+                >
+                  איפוס היסטוריה בלבד
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
 
       {/* Reset History Confirmation Modal */}
       <AnimatePresence>

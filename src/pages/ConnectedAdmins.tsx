@@ -81,8 +81,6 @@ export default function ConnectedAdmins() {
       const isAdminRole = a.role === 'admin' || a.role === 'super_admin';
 
       if (!isSuperAdmin) {
-        if (isAdminRole) return true;
-        
         if (isTeamLeader) {
           if (!isSameCategory && !isCreator && !isSelf) return false;
         } else {
@@ -100,7 +98,11 @@ export default function ConnectedAdmins() {
       return matchesSearch && matchesStatus && matchesGender && matchesGroup && matchesSpecificAdmin;
     })
     .sort((a, b) => {
-      // Admin/SuperAdmin first
+      // Super Admin first
+      if (b.role === 'super_admin' && a.role !== 'super_admin') return 1;
+      if (a.role === 'super_admin' && b.role !== 'super_admin') return -1;
+
+      // Then Admin/SuperAdmin
       const aIsAdmin = a.role === 'admin' || a.role === 'super_admin';
       const bIsAdmin = b.role === 'admin' || b.role === 'super_admin';
       if (aIsAdmin && !bIsAdmin) return -1;

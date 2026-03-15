@@ -1431,6 +1431,7 @@ export default function Dashboard() {
                             <div className="flex-1">
                               <MatchCard 
                                 match={match} 
+                                size={displaySize}
                                 allGroups={whatsappGroups}
                                 onView={(m) => {
                                   setViewingMatch(m);
@@ -2051,6 +2052,7 @@ export default function Dashboard() {
               }`}>
                 <MatchCard 
                   match={match}
+                  size={displaySize}
                   allGroups={whatsappGroups}
                   minimal={showMinimal}
                   onPublish={handlePublish}
@@ -2309,6 +2311,7 @@ export default function Dashboard() {
             >
               <MatchCard 
                 match={viewingMatch} 
+                size="large"
                 allGroups={whatsappGroups}
                 onView={() => {}} 
                 onEdit={(id) => {

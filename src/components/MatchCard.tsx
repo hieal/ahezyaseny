@@ -27,9 +27,10 @@ interface MatchCardProps {
    selected?: boolean;
    onSelect?: (id: string, selected: boolean) => void;
    isViewer?: boolean;
+   size?: 'small' | 'medium' | 'large';
  }
 
-export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium' }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [isEditingGender, setIsEditingGender] = React.useState(false);
@@ -210,6 +211,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className={`card flex flex-col h-full hover:shadow-md transition-all group relative ${
+        size === 'small' ? 'max-w-xs' : size === 'medium' ? 'max-w-sm' : 'max-w-md'
+      } ${
         isNotAvailable ? 'ring-2 ring-black ring-inset' : 
         isRecentlyPublished ? 'ring-2 ring-orange-500 ring-inset' : 
         ''
@@ -273,6 +276,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
             style={{
               objectPosition: `${localCropConfig.x}% ${localCropConfig.y}%`,
               transform: `scale(${localCropConfig.zoom})`
+            }}
+            onError={(e) => {
+              e.currentTarget.src = 'https://picsum.photos/seed/person/400/400';
             }}
           />
           

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon, Plus } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -99,8 +99,7 @@ export default function AdminManagement() {
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone,
-          avatar_url: formData.avatar_url
+          phone: formData.phone
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -270,10 +269,23 @@ export default function AdminManagement() {
     toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
   };
 
-  const handleDelete = async (userToDelete: User) => {
-    if (!confirm(`האם אתה בטוח שברצונך למחוק את המנהל ${userToDelete.name}?`)) return;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+
+  const confirmDelete = (user: User) => {
+    if (user.id === currentUser?.id) {
+      toast.error('לא ניתן למחוק את המשתמש המחובר כרגע');
+      return;
+    }
+    setUserToDelete(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const executeDelete = async () => {
+    if (!userToDelete) return;
     try {
       await dataService.deleteUser(userToDelete.id);
+      
       await dataService.logActivity({
         user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
         user_name: currentUser?.name || 'System',
@@ -285,7 +297,11 @@ export default function AdminManagement() {
       toast.success('המנהל נמחק');
       fetchUsers();
     } catch (err) {
-      toast.error('שגיאה במחיקה');
+      console.error('שגיאה במחיקה:', err);
+      toast.error('שגיאה במחיקה - בדוק קונסול');
+    } finally {
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
     }
   };
 
@@ -379,28 +395,39 @@ export default function AdminManagement() {
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
 
   const handleUpdateGender = async (user: User, gender: 'male' | 'female') => {
+    // Update local state immediately
+    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, gender } : u));
+    
     try {
       await dataService.updateUser(user.id, { gender });
       toast.success('מין עודכן בהצלחה');
       setGenderModalUser(null);
-      fetchUsers();
-    } catch (e) {
+      fetchUsers(); // Refresh
+    } catch (e: any) {
+      console.log('Update Error:', e);
       toast.error('שגיאה בעדכון המין');
+      fetchUsers(); // Revert/Refresh
     }
   };
 
   const handleUpdatePhone = async () => {
     if (!phoneModalUser) return;
+    
+    // Update local state immediately
+    setUsers(prev => prev.map(u => u.id === phoneModalUser.id ? { ...u, phone: String(tempPhone), username: String(tempPhone) } : u));
+
     try {
       await dataService.updateUser(phoneModalUser.id, { 
-        phone: tempPhone,
-        username: tempPhone // Update username to match phone as requested
+        phone: String(tempPhone), // Ensure string
+        username: String(tempPhone)
       });
       toast.success('מספר טלפון ושם משתמש עודכנו');
       setPhoneModalUser(null);
-      fetchUsers();
-    } catch (e) {
+      fetchUsers(); // Refresh
+    } catch (e: any) {
+      console.log('Update Error:', e);
       toast.error('שגיאה בעדכון');
+      fetchUsers(); // Revert/Refresh
     }
   };
 
@@ -460,6 +487,17 @@ export default function AdminManagement() {
           <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות וגישה למערכת {APP_NAME}</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={async () => {
+              const res = await dataService.mirrorAllExternalImages();
+              toast.success(`סונכרנו ${res.success} תמונות, נכשלו ${res.failed}`);
+              fetchUsers();
+            }}
+            className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
+          >
+            <RefreshCw size={20} />
+            סנכרון תמונות
+          </button>
           <button 
             onClick={() => setShowCsvModal(true)}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
@@ -815,11 +853,11 @@ export default function AdminManagement() {
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      {u.avatar_url ? (
+                      {u.avatar_url && !u.avatar_url.includes('airtableusercontent') ? (
                         <img src={u.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                          <UserIcon size={20} />
+                          {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
                         </div>
                       )}
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
@@ -878,7 +916,7 @@ export default function AdminManagement() {
                     <div className="flex items-center gap-3">
                       <div className="flex flex-col items-center gap-1">
                         <div className="relative">
-                          {u.avatar_url ? (
+                          {u.avatar_url && !u.avatar_url.includes('airtableusercontent') ? (
                             <img 
                               key={u.avatar_url}
                               src={dataService.getPublicImageUrl(u.avatar_url)} 
@@ -891,8 +929,8 @@ export default function AdminManagement() {
                               }}
                             />
                           ) : null}
-                          <div className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url ? 'hidden' : ''}`}>
-                            <UserCheck size={24} />
+                          <div className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url && !u.avatar_url.includes('airtableusercontent') ? 'hidden' : ''}`}>
+                            {u.gender === 'female' ? <Heart size={24} className="text-pink-400" /> : <UserIcon size={24} className="text-blue-400" />}
                           </div>
                           <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${!!presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} title={!!presenceState[u.id] ? getGenderedText(u.gender, 'מחובר', 'מחוברת') : getGenderedText(u.gender, 'לא מחובר', 'לא מחוברת')}></div>
                           {u.role === 'super_admin' && (
@@ -1032,13 +1070,13 @@ export default function AdminManagement() {
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                        u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 
+                        u.role === 'super_admin' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm' : 
                         u.role === 'team_leader' ? 'bg-indigo-100 text-indigo-700' :
                         u.role === 'viewer' ? 'bg-slate-100 text-slate-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
                         {u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />}
-                        {u.role === 'super_admin' ? 'מנהל ראשי' : 
+                        {u.role === 'super_admin' ? 'מנהל על' : 
                          u.role === 'team_leader' ? 'ראש צוות' :
                          u.role === 'viewer' ? 'צופה' : 'מנהל'}
                       </span>
@@ -1052,10 +1090,10 @@ export default function AdminManagement() {
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                        u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        (u.status || 'active') === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                       }`}>
-                        {u.status === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                        {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
+                        {(u.status || 'active') === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                        {(u.status || 'active') === 'active' ? 'פעיל' : 'לא פעיל'}
                       </span>
                       {u.is_approved === 0 && (
                         <button 
@@ -1090,8 +1128,8 @@ export default function AdminManagement() {
                       <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
                         <Edit2 size={16} />
                       </button>
-                      {u.role !== 'super_admin' && (
-                        <button onClick={() => handleDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
+                      {u.id !== currentUser?.id && (
+                        <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
                           <Trash2 size={16} />
                         </button>
                       )}
@@ -1104,110 +1142,43 @@ export default function AdminManagement() {
         </div>
       </div>
 
-      <div id="section-advanced" className="card overflow-hidden border-none shadow-lg mt-8">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-red-50/30">
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="text-red-600" size={24} />
-            <h2 className="text-2xl font-extrabold text-text-main">ניהול מתקדם ואיפוסים (מנהל ראשי בלבד)</h2>
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && userToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-sm space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 size={32} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900">מחיקת מנהל</h3>
+                <p className="text-slate-500 font-medium">האם אתה בטוח שברצונך למחוק את {userToDelete.name}?</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={executeDelete}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-700 transition-all"
+                >
+                  מחק
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-        <div className="p-6">
-          {currentUser?.role === 'super_admin' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Option 1: Full System Reset */}
-              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
-                <h3 className="font-black text-red-700 flex items-center gap-2">
-                  <Trash2 size={20} /> איפוס מערכת מלא
-                </h3>
-                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
-                <button 
-                  onClick={async () => { 
-                    if(confirm('אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים). האם אתה בטוח?')) {
-                      await dataService.clearCandidates();
-                      await dataService.clearWhatsAppGroups();
-                      await dataService.clearPublishLogs();
-                      await dataService.clearActivityLogs();
-                      await dataService.clearInternalMessages();
-                      toast.success('המערכת אופסה לחלוטין');
-                      fetchUsers();
-                    }
-                  }} 
-                  className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
-                >
-                  בצע איפוס מלא
-                </button>
-              </div>
+        )}
+      </AnimatePresence>
 
-              {/* Option 2: History Reset (with Candidates) */}
-              <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 space-y-3">
-                <h3 className="font-black text-orange-700 flex items-center gap-2">
-                  <Trash2 size={20} /> איפוס היסטוריה (כולל כרטיסים)
-                </h3>
-                <p className="text-xs text-orange-600/80">מוחק כרטיסי משודכים, היסטוריית פרסומים ומעקב פעולות. לא מוחק קבוצות וואטסאפ.</p>
-                <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את כל כרטיסי המשודכים וכל ההיסטוריה?')) {
-                      await dataService.clearCandidates();
-                      await dataService.clearPublishLogs();
-                      await dataService.clearActivityLogs();
-                      toast.success('היסטוריה וכרטיסים נמחקו');
-                    }
-                  }} 
-                  className="w-full py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-sm"
-                >
-                  איפוס היסטוריה וכרטיסים
-                </button>
-              </div>
-
-              {/* Option 3: WhatsApp Groups Only */}
-              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-3">
-                <h3 className="font-black text-blue-700 flex items-center gap-2">
-                  <Trash2 size={20} /> מחיקת קבוצות וואטסאפ בלבד
-                </h3>
-                <p className="text-xs text-blue-600/80">מוחק רק את הגדרות קבוצות הוואטסאפ והקישורים שהוזנו למערכת.</p>
-                <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את כל קבוצות הוואטסאפ?')) {
-                      await dataService.clearWhatsAppGroups();
-                      toast.success('קבוצות וואטסאפ נמחקו');
-                      fetchUsers();
-                    }
-                  }} 
-                  className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  מחק קבוצות בלבד
-                </button>
-              </div>
-
-              {/* Option 4: History Only (WITHOUT Candidates) */}
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
-                <h3 className="font-black text-amber-700 flex items-center gap-2">
-                  <Trash2 size={20} /> איפוס היסטוריה (ללא מחיקת כרטיסים)
-                </h3>
-                <p className="text-xs text-amber-600/80">מוחק מעקב פרסומים ומעקב פעולות בלבד. כרטיסי המשודכים והמנהלים יישארו.</p>
-                <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את היסטוריית הפרסומים ומעקב הפעולות? (הכרטיסים לא יימחקו)')) {
-                      await dataService.clearPublishLogs();
-                      await dataService.clearActivityLogs();
-                      toast.success('היסטוריית פעילות נמחקה');
-                    }
-                  }} 
-                  className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors shadow-sm"
-                >
-                  איפוס היסטוריה בלבד
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <Shield size={48} className="mx-auto text-slate-300 mb-4" />
-              <p className="text-slate-500 font-bold">אזור זה מוגבל למנהלים ראשיים בלבד.</p>
-              <p className="text-slate-400 text-sm mt-1">התפקיד הנוכחי שלך: {currentUser?.role === 'admin' ? 'מנהל' : currentUser?.role === 'team_leader' ? 'ראש צוות' : 'צופה'}</p>
-            </div>
-          )}
-        </div>
-      </div>
 
       <div className="card overflow-hidden border-none shadow-lg mt-8">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">

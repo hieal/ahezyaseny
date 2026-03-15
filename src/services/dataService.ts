@@ -274,7 +274,7 @@ class DataService {
       const user = JSON.parse(userJson);
       // Don't update for the fallback "מנהל ראשי"
       if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
-        await supabase.from('admins').update({ 
+        await supabase.from('profiles').update({ 
           last_seen: new Date().toISOString(),
           is_online: true 
         }).eq('id', user.id);
@@ -298,7 +298,7 @@ class DataService {
     try {
       const data = await this.handleSupabase(
         supabase
-          .from('admins')
+          .from('profiles')
           .select('*, deleted_at')
           .eq('username', user.username)
           .limit(1)
@@ -345,7 +345,7 @@ class DataService {
   async login(usernameOrEmailOrPhone: string, password_plain: string): Promise<User | null> {
     try {
       const cleanPhone = usernameOrEmailOrPhone.replace(/\D/g, '');
-      let query = supabase.from('admins').select('*, deleted_at');
+      let query = supabase.from('profiles').select('*, deleted_at');
       
       // Build OR query for username, email, or phone
       let orConditions = `username.eq."${usernameOrEmailOrPhone}",email.eq."${usernameOrEmailOrPhone}"`;
@@ -392,7 +392,7 @@ class DataService {
           throw new Error('המשתמש חסום. אנא פנה למנהל המערכת.');
         }
         
-        await supabase.from('admins').update({ 
+        await supabase.from('profiles').update({ 
           last_seen: new Date().toISOString(),
           is_online: true 
         }).eq('id', user.id);
@@ -681,7 +681,7 @@ class DataService {
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     try {
-      const { data, error } = await supabase.from('admins').select('*');
+      const { data, error } = await supabase.from('profiles').select('*');
       if (error) {
         console.error('CRITICAL ERROR fetching admins:', error.message, error.details, error.hint);
         throw error;
@@ -695,14 +695,14 @@ class DataService {
 
   async getUserById(id: string): Promise<User | null> {
     const data = await this.handleSupabase(
-      supabase.from('admins').select('*').eq('id', id).single()
+      supabase.from('profiles').select('*').eq('id', id).single()
     );
     return data as User;
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
     const data = await this.handleSupabase(
-      supabase.from('admins').select('*').eq('email', email).limit(1).maybeSingle()
+      supabase.from('profiles').select('*').eq('email', email).limit(1).maybeSingle()
     );
     return data as User;
   }
@@ -717,7 +717,7 @@ class DataService {
     };
 
     const sanitized = this.sanitizeAdmin(newUser);
-    const data = await this.handleSupabase(supabase.from('admins').insert(sanitized).select().single());
+    const data = await this.handleSupabase(supabase.from('profiles').insert(sanitized).select().single());
     return data as User;
   }
 
@@ -726,12 +726,12 @@ class DataService {
       updates.password_updated_at = new Date().toISOString();
     }
     const sanitized = this.sanitizeAdmin(updates);
-    const data = await this.handleSupabase(supabase.from('admins').update(sanitized).eq('id', id).select().single());
+    const data = await this.handleSupabase(supabase.from('profiles').update(sanitized).eq('id', id).select().single());
     return data as User;
   }
 
   async deleteUser(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('admins').update({ deleted_at: new Date().toISOString() }).eq('id', id));
+    await this.handleSupabase(supabase.from('profiles').update({ deleted_at: new Date().toISOString() }).eq('id', id));
   }
 
   // Images

@@ -75,7 +75,7 @@ function Sidebar() {
   }, []);
 
   const { presenceState } = usePresence();
-  const isAnyAdminOnline = Object.values(presenceState).some(p => p.role === 'admin' || p.role === 'super_admin');
+  const isSuperAdminOnline = Object.values(presenceState).some(p => p.role === 'super_admin');
 
   React.useEffect(() => {
     if (allAdmins.length > 0) {
@@ -211,9 +211,9 @@ function Sidebar() {
           )}
           <div className="flex items-center gap-2">
             <Logo size={24} />
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isAnyAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-              <div className={`w-1 h-1 rounded-full ${isAnyAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-              {isAnyAdminOnline ? 'מנהל מחובר' : 'אין מנהלים מחוברים'}
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+              <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+              {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
             </div>
           </div>
         </div>
@@ -245,9 +245,9 @@ function Sidebar() {
               <div className="flex items-center justify-between">
                 <Logo size={40} />
                 <div className="flex flex-col items-end">
-                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isAnyAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${isAnyAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
-                    {isAnyAdminOnline ? 'מנהל מחובר' : 'אין מנהלים מחוברים'}
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                    {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
                   </div>
                 </div>
               </div>
@@ -597,9 +597,10 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           // Don't show toast if chat is already open with this user
           const isChatOpen = activeChats.some(c => c.id === msg.sender_id);
           
-          if (autoPopup) {
-            openChat({ id: msg.sender_id, name: msg.sender_name });
-          }
+          // Removed auto-opening chat window logic
+          // if (autoPopup) {
+          //   openChat({ id: msg.sender_id, name: msg.sender_name });
+          // }
 
           if (!isChatOpen) {
             toast((t) => (

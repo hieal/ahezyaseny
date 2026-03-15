@@ -261,7 +261,9 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
           <div>
             <p className="text-sm font-black leading-tight">צ'אט עם: {otherUser.name}</p>
             {!isMinimized && (
-              <p className="text-[10px] opacity-80 font-bold">שיחה בין המנהל/ת <span className="underline">{user?.name}</span> למנהל/ת <span className="underline">{otherUser.name}</span></p>
+              <p className="text-[10px] opacity-80 font-bold">
+                שיחה בין {user?.role === 'super_admin' ? 'המנהל הראשי' : 'המנהל/ת'} <span className="underline">{user?.name}</span> ל{otherUserDetails?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל/ת'} <span className="underline">{otherUser.name}</span>
+              </p>
             )}
           </div>
         </div>
