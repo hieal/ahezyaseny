@@ -1,0 +1,242 @@
+import React, { useState, useEffect } from 'react';
+import { dataService } from '../services/dataService';
+import { PortalSettings, GameScore } from '../types';
+import { motion } from 'motion/react';
+import { 
+  Settings, Image as ImageIcon, Zap, Trophy, 
+  Save, Plus, Trash2, Layout, BarChart3,
+  Users, Gamepad2, Clock
+} from 'lucide-react';
+import { toast } from 'react-hot-toast';
+
+export default function CandidatePortalAdmin() {
+  const [settings, setSettings] = useState<PortalSettings | null>(null);
+  const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newImageUrl, setNewImageUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [portalSettings, scores] = await Promise.all([
+          dataService.getPortalSettings(),
+          dataService.getLeaderboard()
+        ]);
+        setSettings(portalSettings);
+        setLeaderboard(scores);
+      } catch (err) {
+        console.error('Error fetching portal settings:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleSaveSettings = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      await dataService.updatePortalSettings(settings);
+      toast.success('הגדרות הפורטל עודכנו בהצלחה');
+    } catch (err) {
+      toast.error('שגיאה בעדכון ההגדרות');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addImage = () => {
+    if (!newImageUrl.trim() || !settings) return;
+    const images = JSON.parse(settings.memory_game_images || '[]');
+    if (images.length >= 8) {
+      toast.error('ניתן להוסיף עד 8 תמונות למשחק הזיכרון');
+      return;
+    }
+    const updatedImages = [...images, newImageUrl];
+    setSettings({ ...settings, memory_game_images: JSON.stringify(updatedImages) });
+    setNewImageUrl('');
+  };
+
+  const removeImage = (index: number) => {
+    if (!settings) return;
+    const images = JSON.parse(settings.memory_game_images || '[]');
+    const updatedImages = images.filter((_: any, i: number) => i !== index);
+    setSettings({ ...settings, memory_game_images: JSON.stringify(updatedImages) });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  const memoryImages = JSON.parse(settings?.memory_game_images || '[]');
+
+  return (
+    <div className="space-y-8 pb-12">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900">ניהול פורטל משודכים</h1>
+          <p className="text-slate-500 font-medium">ניהול הגדרות, משחקים וסטטיסטיקות של אזור המשודכים</p>
+        </div>
+        <button
+          onClick={handleSaveSettings}
+          disabled={saving}
+          className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
+        >
+          {saving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
+          שמור שינויים
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Settings */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Speed Date Toggle */}
+          <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-500 flex items-center justify-center">
+                  <Zap size={28} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">ספיד-דייט</h2>
+                  <p className="text-sm text-slate-500 font-medium">הפעל או השבת את תכונת הספיד-דייט בפורטל</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSettings(s => s ? { ...s, is_speed_date_active: !s.is_speed_date_active } : null)}
+                className={`relative w-16 h-8 rounded-full transition-all duration-300 ${
+                  settings?.is_speed_date_active ? 'bg-emerald-500' : 'bg-slate-200'
+                }`}
+              >
+                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-sm transition-all duration-300 ${
+                  settings?.is_speed_date_active ? 'right-9' : 'right-1'
+                }`} />
+              </button>
+            </div>
+          </section>
+
+          {/* Memory Game Images */}
+          <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center">
+                <ImageIcon size={28} />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900">תמונות למשחק הזיכרון</h2>
+                <p className="text-sm text-slate-500 font-medium">נהל את התמונות שיופיעו במשחק הזיכרון (מומלץ 4-8 תמונות)</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newImageUrl}
+                onChange={(e) => setNewImageUrl(e.target.value)}
+                placeholder="הכנס כתובת URL של תמונה..."
+                className="flex-1 p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 font-medium"
+              />
+              <button
+                onClick={addImage}
+                className="px-6 bg-blue-500 text-white rounded-2xl font-bold hover:bg-blue-600 transition-all flex items-center gap-2"
+              >
+                <Plus size={20} />
+                הוסף
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {memoryImages.map((url: string, index: number) => (
+                <div key={index} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-100">
+                  <img src={url} className="w-full h-full object-cover" alt={`Memory ${index}`} referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                      onClick={() => removeImage(index)}
+                      className="p-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {memoryImages.length === 0 && (
+                <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                  <p className="text-slate-400 font-bold">אין תמונות עדיין. הוסף תמונות כדי להפעיל את המשחק.</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Right Column: Stats & Leaderboard */}
+        <div className="space-y-8">
+          {/* Quick Stats */}
+          <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center">
+                <BarChart3 size={28} />
+              </div>
+              <h2 className="text-xl font-black text-slate-900">סטטיסטיקות פורטל</h2>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                <div className="flex items-center gap-3">
+                  <Users className="text-blue-500" size={20} />
+                  <span className="font-bold text-slate-700">משודכים רשומים</span>
+                </div>
+                <span className="font-black text-slate-900">24</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                <div className="flex items-center gap-3">
+                  <Gamepad2 className="text-purple-500" size={20} />
+                  <span className="font-bold text-slate-700">משחקים ששוחקו</span>
+                </div>
+                <span className="font-black text-slate-900">{leaderboard.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                <div className="flex items-center gap-3">
+                  <Clock className="text-emerald-500" size={20} />
+                  <span className="font-bold text-slate-700">ספיד-דייטים היום</span>
+                </div>
+                <span className="font-black text-slate-900">12</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Leaderboard Preview */}
+          <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-yellow-50 text-yellow-500 flex items-center justify-center">
+                <Trophy size={28} />
+              </div>
+              <h2 className="text-xl font-black text-slate-900">טבלת המובילים</h2>
+            </div>
+
+            <div className="space-y-3">
+              {leaderboard.slice(0, 5).map((score, index) => (
+                <div key={score.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center text-xs font-black text-slate-400">
+                      {index + 1}
+                    </span>
+                    <span className="font-bold text-slate-700 text-sm">{score.candidate_name}</span>
+                  </div>
+                  <span className="font-black text-emerald-600 text-sm">{score.score} נק׳</span>
+                </div>
+              ))}
+              {leaderboard.length === 0 && (
+                <p className="text-center text-slate-400 py-4 font-medium">אין נתונים עדיין</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

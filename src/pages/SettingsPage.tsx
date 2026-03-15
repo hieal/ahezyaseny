@@ -28,6 +28,21 @@ export default function SettingsPage() {
   const [showResetHistoryModal, setShowResetHistoryModal] = useState(false);
   const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
   const [resetting, setResetting] = useState(false);
+  
+  // Generic reset modal state
+  const [resetModalConfig, setResetModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void>;
+    color: 'red' | 'orange' | 'blue' | 'amber';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: async () => {},
+    color: 'red'
+  });
 
   useEffect(() => {
     dataService.getSettings().then(data => {
@@ -516,18 +531,19 @@ export default function SettingsPage() {
                 <h3 className="font-black text-red-700 flex items-center gap-2">
                   <Trash2 size={20} /> איפוס מערכת מלא
                 </h3>
-                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
+                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות (מחיקה של הכל חוץ ממנהל ראשי).</p>
                 <button 
-                  onClick={async () => { 
-                    if(confirm('אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים). האם אתה בטוח?')) {
-                      await dataService.clearCandidates();
-                      await dataService.clearWhatsAppGroups();
-                      await dataService.clearPublishLogs();
-                      await dataService.clearActivityLogs();
-                      await dataService.clearInternalMessages();
+                  onClick={() => setResetModalConfig({
+                    isOpen: true,
+                    title: 'איפוס מערכת מלא',
+                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת (מחיקה של הכל חוץ ממנהל ראשי). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
+                    color: 'red',
+                    onConfirm: async () => {
+                      await dataService.factoryReset();
                       toast.success('המערכת אופסה לחלוטין');
+                      window.location.href = '/login';
                     }
-                  }} 
+                  })} 
                   className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
                 >
                   בצע איפוס מלא
@@ -541,14 +557,18 @@ export default function SettingsPage() {
                 </h3>
                 <p className="text-xs text-orange-600/80">מוחק כרטיסי משודכים, היסטוריית פרסומים ומעקב פעולות. לא מוחק קבוצות וואטסאפ.</p>
                 <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את כל כרטיסי המשודכים וכל ההיסטוריה?')) {
+                  onClick={() => setResetModalConfig({
+                    isOpen: true,
+                    title: 'איפוס היסטוריה וכרטיסים',
+                    message: 'האם אתה בטוח שברצונך למחוק את כל כרטיסי המשודכים וכל ההיסטוריה? פעולה זו אינה ניתנת לביטול.',
+                    color: 'orange',
+                    onConfirm: async () => {
                       await dataService.clearCandidates();
                       await dataService.clearPublishLogs();
                       await dataService.clearActivityLogs();
                       toast.success('היסטוריה וכרטיסים נמחקו');
                     }
-                  }} 
+                  })} 
                   className="w-full py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-sm"
                 >
                   איפוס היסטוריה וכרטיסים
@@ -562,12 +582,16 @@ export default function SettingsPage() {
                 </h3>
                 <p className="text-xs text-blue-600/80">מוחק רק את הגדרות קבוצות הוואטסאפ והקישורים שהוזנו למערכת.</p>
                 <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את כל קבוצות הוואטסאפ?')) {
+                  onClick={() => setResetModalConfig({
+                    isOpen: true,
+                    title: 'מחיקת קבוצות וואטסאפ',
+                    message: 'האם אתה בטוח שברצונך למחוק את כל קבוצות הוואטסאפ? פעולה זו אינה ניתנת לביטול.',
+                    color: 'blue',
+                    onConfirm: async () => {
                       await dataService.clearWhatsAppGroups();
                       toast.success('קבוצות וואטסאפ נמחקו');
                     }
-                  }} 
+                  })} 
                   className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   מחק קבוצות בלבד
@@ -581,13 +605,17 @@ export default function SettingsPage() {
                 </h3>
                 <p className="text-xs text-amber-600/80">מוחק מעקב פרסומים ומעקב פעולות בלבד. כרטיסי המשודכים והמנהלים יישארו.</p>
                 <button 
-                  onClick={async () => { 
-                    if(confirm('האם למחוק את היסטוריית הפרסומים ומעקב הפעולות? (הכרטיסים לא יימחקו)')) {
+                  onClick={() => setResetModalConfig({
+                    isOpen: true,
+                    title: 'איפוס היסטוריה בלבד',
+                    message: 'האם אתה בטוח שברצונך למחוק את היסטוריית הפרסומים ומעקב הפעולות? (הכרטיסים לא יימחקו). פעולה זו אינה ניתנת לביטול.',
+                    color: 'amber',
+                    onConfirm: async () => {
                       await dataService.clearPublishLogs();
                       await dataService.clearActivityLogs();
                       toast.success('היסטוריית פעילות נמחקה');
                     }
-                  }} 
+                  })} 
                   className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors shadow-sm"
                 >
                   איפוס היסטוריה בלבד
@@ -596,6 +624,63 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+      {/* Generic Reset Confirmation Modal */}
+      <AnimatePresence>
+        {resetModalConfig.isOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
+                resetModalConfig.color === 'red' ? 'bg-red-50 text-red-500' :
+                resetModalConfig.color === 'orange' ? 'bg-orange-50 text-orange-500' :
+                resetModalConfig.color === 'blue' ? 'bg-blue-50 text-blue-500' :
+                'bg-amber-50 text-amber-500'
+              }`}>
+                <Trash2 size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">{resetModalConfig.title}</h3>
+                <p className="text-slate-500 font-medium">{resetModalConfig.message}</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setResetModalConfig(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={async () => {
+                    setResetting(true);
+                    try {
+                      await resetModalConfig.onConfirm();
+                      setResetModalConfig(prev => ({ ...prev, isOpen: false }));
+                    } catch (err) {
+                      toast.error('שגיאה בביצוע הפעולה');
+                    } finally {
+                      setResetting(false);
+                    }
+                  }}
+                  disabled={resetting}
+                  className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all ${
+                    resetModalConfig.color === 'red' ? 'bg-red-600 hover:bg-red-700' :
+                    resetModalConfig.color === 'orange' ? 'bg-orange-600 hover:bg-orange-700' :
+                    resetModalConfig.color === 'blue' ? 'bg-blue-600 hover:bg-blue-700' :
+                    'bg-amber-600 hover:bg-amber-700'
+                  }`}
+                >
+                  {resetting ? 'מבצע...' : 'אשר וביצוע'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Reset History Confirmation Modal */}
       <AnimatePresence>
@@ -664,7 +749,7 @@ export default function SettingsPage() {
                 <p className="text-slate-500 font-medium">
                   <strong>אזהרה חמורה!</strong>
                   <br />
-                  פעולה זו תמחק את כל המנהלים, הקבוצות, הכרטיסים וההגדרות. המערכת תחזור למצב ריק לחלוטין.
+                  פעולה זו תמחק את כל המנהלים, הקבוצות, הכרטיסים וההגדרות (מחיקה של הכל חוץ ממנהל ראשי). המערכת תחזור למצב התחלתי.
                 </p>
               </div>
               <div className="flex gap-3">

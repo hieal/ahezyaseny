@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -109,7 +109,13 @@ export default function Dashboard() {
     toast(`בחר מנהל להציע לו את ${match.name}`, { icon: '💬' });
   };
 
+  const [showTeamLeaderDashboard, setShowTeamLeaderDashboard] = useState(false);
   const [showManagersViewerModal, setShowManagersViewerModal] = useState(false);
+  const [showShahamSubgroups, setShowShahamSubgroups] = useState(false);
+  const [teamAdminsData, setTeamAdminsData] = useState<any[]>([]);
+  const [teamActivityLogs, setTeamActivityLogs] = useState<any[]>([]);
+  const [teamPublishLogs, setTeamPublishLogs] = useState<any[]>([]);
+  const [loadingTeamData, setLoadingTeamData] = useState(false);
   const [showDesignedCardModal, setShowDesignedCardModal] = useState(false);
   const [viewerSelectedManagerId, setViewerSelectedManagerId] = useState<string | null>(null);
   const [viewerAffiliation, setViewerAffiliation] = useState<string>('all');
@@ -145,6 +151,41 @@ export default function Dashboard() {
     return userCategories.some(cat => myCategories.includes(cat));
   });
 
+  const fetchTeamData = async () => {
+    if (!user || user.role !== 'team_leader') return;
+    setLoadingTeamData(true);
+    try {
+      // Get admins in the same category
+      const teamAdmins = allUsers.filter(u => {
+        const myCategories = [user.category, user.secondary_category].filter(Boolean);
+        const userCategories = [u.category, u.secondary_category].filter(Boolean);
+        return userCategories.some(cat => myCategories.includes(cat)) && u.id !== user.id;
+      });
+      
+      setTeamAdminsData(teamAdmins);
+      
+      const adminIds = teamAdmins.map(a => a.id);
+      if (adminIds.length > 0) {
+        const [activity, publish] = await Promise.all([
+          dataService.getTeamActivity(adminIds),
+          dataService.getTeamPublishLogs(adminIds)
+        ]);
+        setTeamActivityLogs(activity);
+        setTeamPublishLogs(publish);
+      }
+    } catch (err) {
+      console.error('Error fetching team data:', err);
+      toast.error('שגיאה בטעינת נתוני צוות');
+    } finally {
+      setLoadingTeamData(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showTeamLeaderDashboard) {
+      fetchTeamData();
+    }
+  }, [showTeamLeaderDashboard]);
   const fetchManagerCounts = async () => {
     try {
       const counts = await dataService.getManagerCandidateCounts();
@@ -964,7 +1005,9 @@ export default function Dashboard() {
     const isOwner = user?.role === 'super_admin' || 
                    user?.role === 'team_leader' ||
                    m.created_by === user?.id || 
-                   (user?.category && m.creator_category === user.category);
+                   (user?.category && m.creator_category === user.category) ||
+                   (user?.secondary_category && m.creator_category === user.secondary_category) ||
+                   (user?.role === 'viewer' && m.created_by === user.created_by);
     
     if (!isOwner) return false;
 
@@ -985,7 +1028,8 @@ export default function Dashboard() {
     const matchesManager = filterManager === 'all' || m.created_by === filterManager;
 
     // Multi-selection filters (buttons)
-    const matchesMultiGroup = selectedGroupType === 'all' || m.creator_category === selectedGroupType;
+    const matchesMultiGroup = selectedGroupType === 'all' || 
+                             (selectedGroupType === 'פרויקט שח"ם' ? (m.creator_category === 'פרויקט שח"ם 20-35' || m.creator_category === 'פרויקט שח"ם 36-50') : m.creator_category === selectedGroupType);
     const matchesMultiManager = selectedManagerIds.length === 0 || selectedManagerIds.includes(m.created_by);
     
     // Completion filter
@@ -1175,6 +1219,15 @@ export default function Dashboard() {
             <Eye size={20} />
             צפיית כרטיסי מנהלים
           </button>
+          {user?.role === 'team_leader' && (
+            <button 
+              onClick={() => setShowTeamLeaderDashboard(true)} 
+              className="btn-secondary flex items-center gap-2 px-6 py-3 text-sm md:text-lg border-purple-200 text-purple-700 hover:bg-purple-50"
+            >
+              <Users size={20} />
+              הצוות שלי
+            </button>
+          )}
           <button 
             onClick={() => navigate('/matches/new')} 
             disabled={isViewer}
@@ -1185,6 +1238,187 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Team Leader Dashboard Modal */}
+      {showTeamLeaderDashboard && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[2rem] w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-purple-50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-purple-600 text-white rounded-2xl shadow-lg shadow-purple-200">
+                  <Users size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">לוח בקרה - ראש צוות</h2>
+                  <p className="text-slate-500 font-medium">ניהול ומעקב אחר צוות המנהלים שלך</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowTeamLeaderDashboard(false)}
+                className="p-2 hover:bg-white/50 rounded-full transition-colors"
+              >
+                <X size={24} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/30">
+              {loadingTeamData ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                  <p className="text-slate-500 font-bold">טוען נתוני צוות...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Team Stats Summary */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">מנהלים בצוות</p>
+                      <p className="text-3xl font-black text-purple-600">{teamAdminsData.length}</p>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">סה"כ משודכים בצוות</p>
+                      <p className="text-3xl font-black text-blue-600">
+                        {teamAdminsData.reduce((acc, admin) => acc + (managerCounts[admin.id] || 0), 0)}
+                      </p>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">פעולות אחרונות</p>
+                      <p className="text-3xl font-black text-amber-600">{teamActivityLogs.length}</p>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">פרסומים אחרונים</p>
+                      <p className="text-3xl font-black text-emerald-600">{teamPublishLogs.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Team Members List */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                          <Users size={20} className="text-purple-600" />
+                          מנהלי הצוות
+                        </h3>
+                      </div>
+                      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                        <table className="w-full text-right">
+                          <thead className="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                              <th className="px-6 py-4 text-sm font-bold text-slate-500">מנהל</th>
+                              <th className="px-6 py-4 text-sm font-bold text-slate-500">קטגוריה</th>
+                              <th className="px-6 py-4 text-sm font-bold text-slate-500">משודכים</th>
+                              <th className="px-6 py-4 text-sm font-bold text-slate-500">סטטוס</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {teamAdminsData.map(admin => (
+                              <tr key={admin.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center font-bold text-xs">
+                                      {admin.name?.charAt(0)}
+                                    </div>
+                                    <span className="font-bold text-slate-700">{admin.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-slate-500 font-medium">
+                                  {admin.category}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold">
+                                    {managerCounts[admin.id] || 0}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className={`w-2 h-2 rounded-full ${admin.is_online ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-slate-300'}`} />
+                                    <span className="text-xs font-bold text-slate-500">
+                                      {admin.is_online ? 'מחובר' : 'לא מחובר'}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Team Activity Feed */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                        <Activity size={20} className="text-amber-600" />
+                        פעילות אחרונה בצוות
+                      </h3>
+                      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4 max-h-[400px] overflow-y-auto">
+                        {teamActivityLogs.length === 0 ? (
+                          <p className="text-center py-10 text-slate-400 font-medium">אין פעילות להצגה</p>
+                        ) : (
+                          teamActivityLogs.map((log, idx) => (
+                            <div key={idx} className="flex gap-4 p-3 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                              <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+                                <Activity size={18} />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-bold text-slate-800 text-sm">{log.user_name}</span>
+                                  <span className="text-[10px] font-bold text-slate-400">
+                                    {new Date(log.created_at).toLocaleString('he-IL')}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-600 font-medium">{log.details}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Team Publications */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <MessageSquare size={20} className="text-emerald-600" />
+                      פרסומים אחרונים של הצוות
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {teamPublishLogs.length === 0 ? (
+                        <div className="col-span-full bg-white p-10 rounded-3xl border border-dashed border-slate-200 text-center">
+                          <p className="text-slate-400 font-medium">אין פרסומים להצגה</p>
+                        </div>
+                      ) : (
+                        teamPublishLogs.map((log, idx) => (
+                          <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-bold text-[10px]">
+                                  {log.admin_name?.charAt(0)}
+                                </div>
+                                <span className="font-bold text-slate-800 text-xs">{log.admin_name}</span>
+                              </div>
+                              <span className="text-[10px] font-bold text-slate-400">
+                                {new Date(log.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                              <p className="text-xs font-bold text-slate-700 mb-1">פורסם בקבוצה:</p>
+                              <p className="text-xs text-emerald-700 font-black">{log.group_name}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Managers Viewer Modal */}
       {showManagersViewerModal && (
@@ -1880,15 +2114,70 @@ export default function Dashboard() {
             <div className="space-y-2">
               <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">סינון לפי קבוצה</label>
               <div className="flex flex-wrap gap-2">
-                {['all', ...CATEGORIES].map(cat => (
+                <button
+                  onClick={() => {
+                    setSelectedGroupType('all');
+                    setShowShahamSubgroups(false);
+                  }}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    selectedGroupType === 'all' ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  הכל
+                </button>
+
+                {/* Shaham Project Grouping */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setSelectedGroupType('פרויקט שח"ם');
+                      setShowShahamSubgroups(!showShahamSubgroups);
+                    }}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
+                      selectedGroupType === 'פרויקט שח"ם' || selectedGroupType.startsWith('פרויקט שח"ם')
+                        ? 'bg-luxury-blue text-white shadow-md'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    פרויקט שח"ם
+                    <ChevronDown size={12} className={`transition-transform ${showShahamSubgroups ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showShahamSubgroups && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex gap-1 ml-2 p-1 bg-slate-50 rounded-full border border-slate-200"
+                    >
+                      {CATEGORIES.filter(c => c.startsWith('פרויקט שח"ם ') && c !== 'פרויקט שח"ם').map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setSelectedGroupType(cat)}
+                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                            selectedGroupType === cat
+                              ? 'bg-white text-luxury-blue shadow-sm border border-luxury-blue/20'
+                              : 'bg-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          {cat.replace('פרויקט שח"ם ', '')}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </div>
+
+                {CATEGORIES.filter(c => !c.startsWith('פרויקט שח"ם')).map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => setSelectedGroupType(cat)}
+                    onClick={() => {
+                      setSelectedGroupType(cat);
+                      setShowShahamSubgroups(false);
+                    }}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
                       selectedGroupType === cat ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                   >
-                    {cat === 'all' ? 'הכל' : cat}
+                    {cat}
                   </button>
                 ))}
               </div>

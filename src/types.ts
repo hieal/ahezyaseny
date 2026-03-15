@@ -1,9 +1,10 @@
 export interface User {
   id: string;
   name: string;
+  full_name?: string | null;
   username: string;
   email: string;
-  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer';
+  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate';
   status: 'active' | 'inactive';
   category: string | null;
   secondary_category: string | null;
@@ -24,6 +25,33 @@ export interface User {
   created_at: string;
   last_seen?: string;
   is_online?: boolean;
+}
+
+export interface GameScore {
+  id: string;
+  candidate_id: string;
+  candidate_name: string;
+  game_type: 'memory' | 'this_or_that' | 'speed_date';
+  score: number;
+  created_at: string;
+}
+
+export interface PortalSettings {
+  id: string;
+  memory_game_images: string; // JSON array of URLs
+  is_speed_date_active: boolean;
+  created_at: string;
+}
+
+export interface SpeedDateSession {
+  id: string;
+  male_id: string;
+  female_id: string;
+  status: 'active' | 'completed' | 'expired';
+  created_at: string;
+  expires_at: string;
+  share_details_male?: boolean;
+  share_details_female?: boolean;
 }
 
 export interface WhatsAppGroup {

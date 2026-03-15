@@ -14,7 +14,11 @@ import SettingsPage from './pages/SettingsPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
 import ConnectedAdmins from './pages/ConnectedAdmins';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles } from 'lucide-react';
+import CandidateDashboard from './pages/CandidateDashboard';
+import SpeedDate from './pages/SpeedDate';
+import GamesPortal from './pages/GamesPortal';
+import CandidatePortalAdmin from './pages/CandidatePortalAdmin';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -24,6 +28,7 @@ import { dataService } from './services/dataService';
 import { supabase } from './services/supabase';
 import { InternalChat } from './components/InternalChat';
 import { ChatProvider } from './contexts/ChatContext';
+import { TransferModal } from './components/TransferModal';
 
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
   const { user, loading } = useAuth();
@@ -49,6 +54,8 @@ function Sidebar() {
   const [isOpen, setIsOpen] = React.useState(false);
   const [showConnectedAdmins, setShowConnectedAdmins] = React.useState(false);
   const [showPasswordModal, setShowPasswordModal] = React.useState(false);
+  const [showTransferModal, setShowTransferModal] = React.useState(false);
+  const [pendingTransfersCount, setPendingTransfersCount] = React.useState(0);
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -73,6 +80,22 @@ function Sidebar() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  React.useEffect(() => {
+    if (user) {
+      const fetchPendingCount = async () => {
+        try {
+          const pending = await dataService.getPendingTransfersForMe(user.id);
+          setPendingTransfersCount(pending.length);
+        } catch (err) {
+          console.error('Failed to fetch pending transfers count:', err);
+        }
+      };
+      fetchPendingCount();
+      const interval = setInterval(fetchPendingCount, 30000); // Refresh every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const { presenceState } = usePresence();
   const isSuperAdminOnline = Object.values(presenceState).some(p => p.role === 'super_admin');
@@ -186,6 +209,11 @@ function Sidebar() {
     { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
   ];
 
+  const handleOpenTransferModal = () => {
+    setShowTransferModal(true);
+    setIsOpen(false);
+  };
+
   if (user?.role === 'super_admin' || user?.role === 'team_leader') {
     navItems.push(
       { path: '/admins', label: 'ניהול מנהלים', icon: <UserCog size={20} /> },
@@ -195,6 +223,7 @@ function Sidebar() {
 
   if (user?.role === 'super_admin') {
     navItems.push(
+      { path: '/portal-admin', label: 'ניהול פורטל', icon: <Gamepad2 size={20} /> },
       { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
     );
   }
@@ -255,6 +284,19 @@ function Sidebar() {
             </div>
 
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
+              <button
+                onClick={handleOpenTransferModal}
+                className="w-full sidebar-item mb-2 bg-luxury-blue/5 text-luxury-blue border border-luxury-blue/10 hover:bg-luxury-blue/10 transition-all"
+              >
+                <ArrowLeftRight size={20} />
+                <span className="font-bold flex-1 text-right">העברת משודכים</span>
+                {pendingTransfersCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                    {pendingTransfersCount}
+                  </span>
+                )}
+              </button>
+
               {navItems.map((item) => (
                 <div key={item.path} className="relative group">
                   <Link
@@ -336,6 +378,11 @@ function Sidebar() {
           </motion.aside>
         )}
       </AnimatePresence>
+      
+      <TransferModal 
+        isOpen={showTransferModal} 
+        onClose={() => setShowTransferModal(false)} 
+      />
       
       {/* Password Change Modal */}
       <AnimatePresence>
@@ -827,6 +874,13 @@ export default function App() {
               <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
               <Route path="/roles" element={<ProtectedRoute adminOnly><RoleManagement /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute superAdminOnly><SettingsPage /></ProtectedRoute>} />
+              <Route path="/portal-admin" element={<ProtectedRoute superAdminOnly><CandidatePortalAdmin /></ProtectedRoute>} />
+              
+              {/* Candidate Portal Routes */}
+              <Route path="/portal" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+              <Route path="/portal/speed-date" element={<ProtectedRoute><SpeedDate /></ProtectedRoute>} />
+              <Route path="/portal/games" element={<ProtectedRoute><GamesPortal /></ProtectedRoute>} />
+              
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </MainLayout>

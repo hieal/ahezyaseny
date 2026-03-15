@@ -14,7 +14,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export default function LoginPage() {
   const { mode, setMode } = useBackend();
-  const [loginType, setLoginType] = useState<'selection' | 'super' | 'admin'>('selection');
+  const [loginType, setLoginType] = useState<'selection' | 'super' | 'admin' | 'candidate'>('selection');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -157,7 +157,11 @@ export default function LoginPage() {
       if (user) {
         login(user);
         toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
-        navigate('/');
+        if (user.role === 'candidate') {
+          navigate('/portal');
+        } else {
+          navigate('/');
+        }
       } else {
         setErrorMessage('שם משתמש או סיסמה שגויים. אנא נסה שוב.');
         setShowErrorModal(true);
@@ -186,14 +190,22 @@ export default function LoginPage() {
       if (user) {
         login(user);
         toast.success('כניסה מהירה בוצעה בהצלחה!');
-        navigate('/');
+        if (user.role === 'candidate') {
+          navigate('/portal');
+        } else {
+          navigate('/');
+        }
       } else {
         // Fallback to 'good' if 'god' doesn't exist yet
         const fallbackUser = await dataService.login('good', 'good');
         if (fallbackUser) {
           login(fallbackUser);
           toast.success('כניסה מהירה בוצעה בהצלחה!');
-          navigate('/');
+          if (fallbackUser.role === 'candidate') {
+            navigate('/portal');
+          } else {
+            navigate('/');
+          }
         } else {
           toast.error('שגיאה בכניסה מהירה');
         }
@@ -279,6 +291,19 @@ export default function LoginPage() {
                     <p className="text-sm text-text-secondary">כניסה עם שם משתמש, טלפון או אימייל</p>
                   </div>
                 </button>
+
+                <button 
+                  onClick={() => setLoginType('candidate')}
+                  className="card p-6 flex items-center gap-4 hover:border-emerald-500 transition-all group text-right"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                    <Heart size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">כניסת משודכים</h3>
+                    <p className="text-sm text-text-secondary">כניסה עם מספר טלפון וסיסמה</p>
+                  </div>
+                </button>
               </motion.div>
             ) : (
               <motion.div 
@@ -296,7 +321,7 @@ export default function LoginPage() {
                 </button>
 
                 <h2 className="text-xl font-bold mb-6">
-                  {loginType === 'super' ? 'התחברות ניהול ראשי' : 'התחברות מנהלים'}
+                  {loginType === 'super' ? 'התחברות ניהול ראשי' : loginType === 'admin' ? 'התחברות מנהלים' : 'התחברות משודכים'}
                 </h2>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -345,7 +370,9 @@ export default function LoginPage() {
                     type="submit"
                     disabled={loading}
                     className={`w-full py-3.5 flex items-center justify-center gap-2 text-lg rounded-xl text-white font-bold transition-all shadow-md active:scale-95 ${
-                      loginType === 'super' ? 'bg-luxury-blue hover:bg-blue-700' : 'bg-soft-purple hover:bg-purple-700'
+                      loginType === 'super' ? 'bg-luxury-blue hover:bg-blue-700' : 
+                      loginType === 'admin' ? 'bg-soft-purple hover:bg-purple-700' : 
+                      'bg-emerald-500 hover:bg-emerald-600'
                     }`}
                   >
                     {loading ? 'מתחבר...' : (

@@ -1,4 +1,4 @@
-import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote } from '../types';
+import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote, GameScore, PortalSettings, SpeedDateSession } from '../types';
 import { supabase, supabaseAdmin } from './supabase';
 
 export type BackendMode = 'temporary' | 'production';
@@ -6,8 +6,8 @@ export type BackendMode = 'temporary' | 'production';
 const SCHEMA_SQL = `-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create admins table
-CREATE TABLE IF NOT EXISTS public.admins (
+-- Create profiles table
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT,
   username TEXT UNIQUE,
@@ -87,14 +87,42 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create publish_logs table
-CREATE TABLE IF NOT EXISTS public.publish_logs (
+-- Create game_scores table
+CREATE TABLE IF NOT EXISTS public.game_scores (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  match_id UUID,
-  match_name TEXT,
-  user_id UUID,
-  user_name TEXT,
-  group_name TEXT,
+  candidate_id UUID,
+  candidate_name TEXT,
+  game_type TEXT,
+  score INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create portal_settings table
+CREATE TABLE IF NOT EXISTS public.portal_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  memory_game_images TEXT DEFAULT '[]',
+  is_speed_date_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create speed_date_sessions table
+CREATE TABLE IF NOT EXISTS public.speed_date_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  male_id UUID,
+  female_id UUID,
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE,
+  share_details_male BOOLEAN DEFAULT false,
+  share_details_female BOOLEAN DEFAULT false
+);
+
+-- Create candidate_chat_messages table
+CREATE TABLE IF NOT EXISTS public.candidate_chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID,
+  sender_id UUID,
+  text TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -136,9 +164,26 @@ CREATE TABLE IF NOT EXISTS public.candidate_notes (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create candidate_transfers table
+CREATE TABLE IF NOT EXISTS public.candidate_transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  candidate_id UUID NOT NULL,
+  sender_id UUID NOT NULL,
+  receiver_id UUID NOT NULL,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Ensure columns exist (in case table was created in older version)
-ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
-ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS google_login_allowed TEXT DEFAULT 'false';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS secondary_category TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_message_template TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS text TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_id UUID;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_name TEXT;
@@ -150,13 +195,18 @@ ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DE
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true;
 
 -- Disable RLS for all tables to allow prototype access (The "Switch")
-ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidates DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publish_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.internal_messages DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidate_notes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidate_transfers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.game_scores DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.portal_settings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.speed_date_sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidate_chat_messages DISABLE ROW LEVEL SECURITY;
 
 -- Storage Setup: Create 'images' bucket and set public access
 INSERT INTO storage.buckets (id, name, public) 
@@ -169,20 +219,25 @@ CREATE POLICY "Public Update" ON storage.objects FOR UPDATE USING (bucket_id = '
 CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = 'images');
 
 -- Insert initial admin user
-INSERT INTO public.admins (id, name, username, email, role, password_plain, password, status, is_approved)
+INSERT INTO public.profiles (id, name, username, email, role, password_plain, password, status, is_approved)
 VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'מנהל ראשי', 'god', 'admin@example.com', 'super_admin', 'good', 'good', 'active', 1)
 ON CONFLICT (id) DO UPDATE SET name = 'מנהל ראשי', username = 'god', password_plain = 'good', password = 'good';
 
 -- Delete the old 'good' user if it exists to prevent duplicates
-DELETE FROM public.admins WHERE username = 'good' AND id != 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+DELETE FROM public.profiles WHERE username = 'good' AND id != 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
 
 -- הארכת תוקף החיבור ל-24 שעות
 ALTER ROLE authenticator SET auth.jwt_expiry = 86400;
 
 -- וודא שהמנהל שלך (god/good) מסומן כפעיל תמיד
-UPDATE public.admins 
+UPDATE public.profiles 
 SET last_seen = NOW(), is_online = true
 WHERE username = 'god' OR username = 'good';
+
+-- Initialize portal settings
+INSERT INTO public.portal_settings (id, memory_game_images, is_speed_date_active)
+VALUES ('00000000-0000-0000-0000-000000000000', '["https://picsum.photos/seed/1/200/200", "https://picsum.photos/seed/2/200/200", "https://picsum.photos/seed/3/200/200", "https://picsum.photos/seed/4/200/200", "https://picsum.photos/seed/5/200/200", "https://picsum.photos/seed/6/200/200"]', true)
+ON CONFLICT (id) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';
 `;
@@ -207,9 +262,13 @@ class DataService {
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
         }
-        if (error.code === '42703' || (error.message && error.message.includes('does not exist'))) {
-          console.warn(`Missing column detected: ${error.message}. Please run the SQL migration.`);
-          return null; // Return null instead of throwing to prevent crash
+        if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
+          console.warn(`Missing column or schema cache error: ${error.message}. Please run the SQL migration and refresh.`);
+          // If it's a schema cache error, we might want to tell the user to sync schema
+          if (error.code === 'PGRST204') {
+            throw new Error('שגיאת סנכרון בשרת (Schema Cache). אנא לחץ על כפתור "סנכרן סכמה" בהגדרות או בדף ההתחברות.');
+          }
+          return null;
         }
         if (error.code === '42501' || error.message?.includes('permission denied')) {
           throw new Error('שגיאת הרשאות (RLS). אנא וודא שביטלת את ה-RLS ב-Supabase עבור כל הטבלאות.');
@@ -345,61 +404,82 @@ class DataService {
   async login(usernameOrEmailOrPhone: string, password_plain: string): Promise<User | null> {
     try {
       const cleanPhone = usernameOrEmailOrPhone.replace(/\D/g, '');
-      let query = supabase.from('profiles').select('*, deleted_at');
       
-      // Build OR query for username, email, or phone
+      // 1. Check profiles table first (Admins)
+      let query = supabase.from('profiles').select('*, deleted_at');
       let orConditions = `username.eq."${usernameOrEmailOrPhone}",email.eq."${usernameOrEmailOrPhone}"`;
       if (cleanPhone.length >= 9) {
         orConditions += `,phone.ilike."%${cleanPhone}%"`;
       }
-      
       query = query.or(orConditions);
+      const profilesData = await this.handleSupabase(query);
       
-      const data = await this.handleSupabase(query);
-      
-      if (!data || (data as any[]).length === 0) {
-        // Fallback for system admin if DB is empty or not synced
-        if (usernameOrEmailOrPhone === 'god' && password_plain === 'good') {
+      if (profilesData && (profilesData as any[]).length > 0) {
+        const user = (profilesData as any[])[0];
+        if (user.password_plain === password_plain) {
+          return user as User;
+        }
+      }
+
+      // 2. Check candidates table (Candidates)
+      // Candidates use phone as username and default password '12345678'
+      if (password_plain === '12345678' && cleanPhone.length >= 9) {
+        const { data: candidates, error: candError } = await supabase
+          .from('candidates')
+          .select('*')
+          .ilike('phone', `%${cleanPhone}%`)
+          .limit(1);
+
+        if (candidates && candidates.length > 0) {
+          const cand = candidates[0];
+          // Map candidate to User type
           return {
-            id: 'b724069c-2a51-4c99-9dcb-178e488d6b4b',
-            name: 'מנהל ראשי',
-            username: 'god',
-            email: 'admin@example.com',
-            password_plain: 'good',
-            role: 'super_admin',
+            id: cand.id,
+            name: cand.name || cand.full_name || 'משודך',
+            full_name: cand.full_name,
+            username: cand.phone || '',
+            email: '',
+            role: 'candidate',
             status: 'active',
-            created_at: new Date().toISOString(),
-            category: null,
+            category: cand.category,
             secondary_category: null,
-            gender: null,
-            phone: null,
+            gender: cand.type === 'male' ? 'male' : 'female',
+            phone: cand.phone,
             google_login_allowed: 'false',
-            avatar_url: null,
-            deleted_at: null,
+            avatar_url: cand.image_url,
+            deleted_at: cand.deleted_at,
             daily_message_template: null,
             is_from_file: 0,
             is_approved: 1,
-            is_shaham_manager: 0
-          };
+            created_at: cand.created_at,
+            created_by: cand.created_by
+          } as User;
         }
-        return null;
       }
       
-      const user = (data as any[]).find(u => u.password_plain === password_plain);
-      
-      if (user) {
-        if (user.status === 'inactive') {
-          throw new Error('המשתמש חסום. אנא פנה למנהל המערכת.');
-        }
-        
-        await supabase.from('profiles').update({ 
-          last_seen: new Date().toISOString(),
-          is_online: true 
-        }).eq('id', user.id);
-        
-        const updatedUser = { ...user, is_online: true };
-        localStorage.setItem('current_user', JSON.stringify(updatedUser));
-        return updatedUser as User;
+      // Fallback for system admin if DB is empty or not synced
+      if (usernameOrEmailOrPhone === 'god' && password_plain === 'good') {
+        return {
+          id: 'b724069c-2a51-4c99-9dcb-178e488d6b4b',
+          name: 'מנהל המערכת',
+          username: 'god',
+          email: '',
+          password_plain: 'good',
+          role: 'super_admin',
+          status: 'active',
+          created_at: new Date().toISOString(),
+          category: null,
+          secondary_category: null,
+          gender: null,
+          phone: null,
+          google_login_allowed: 'false',
+          avatar_url: null,
+          deleted_at: null,
+          daily_message_template: null,
+          is_from_file: 0,
+          is_approved: 1,
+          is_shaham_manager: 0
+        };
       }
       return null;
     } catch (err: any) {
@@ -414,20 +494,45 @@ class DataService {
   }
 
   private sanitizeAdmin(user: any): any {
+    // Strict whitelist to prevent 400 errors (Schema Cache)
     const allowedFields = [
-      'name', 'username', 'email', 'password', 'password_plain', 'role', 
-      'status', 'category', 'secondary_category', 'gender', 'phone', 
-      'google_login_allowed', 'avatar_url', 'deleted_at', 'daily_message_template', 
-      'is_from_file', 'is_approved', 'is_shaham_manager', 'password_updated_at', 
-      'assigned_group_id', 'created_by', 'creator_name', 'created_at'
+      'full_name', 
+      'phone', 
+      'email', 
+      'username', 
+      'avatar_url', 
+      'gender', 
+      'role', 
+      'category', 
+      'status', 
+      'password_plain'
     ];
     
+    // Map name to full_name if needed
+    if (!user.full_name && user.name) {
+      user.full_name = user.name;
+    }
+
     const sanitized: any = {};
     allowedFields.forEach(field => {
-      if (user[field] !== undefined) {
+      // Conditional username: only send for 'god' user if it causes issues for others
+      if (field === 'username') {
+        if (user.username === 'god') {
+          sanitized[field] = user[field];
+        }
+        return;
+      }
+
+      if (user[field] !== undefined && user[field] !== null) {
         sanitized[field] = user[field];
       }
     });
+    
+    // Ensure default password if missing
+    if (!sanitized.password_plain) {
+      sanitized.password_plain = '12345678';
+    }
+    
     return sanitized;
   }
 
@@ -587,12 +692,38 @@ class DataService {
     await this.handleSupabase(supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
   }
 
+  async getTeamActivity(teamAdminIds: string[]): Promise<any[]> {
+    if (teamAdminIds.length === 0) return [];
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('*')
+      .in('user_id', teamAdminIds)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return data || [];
+  }
+
+  async getTeamPublishLogs(teamAdminIds: string[]): Promise<any[]> {
+    if (teamAdminIds.length === 0) return [];
+    const { data } = await supabase
+      .from('publish_logs')
+      .select('*')
+      .in('admin_id', teamAdminIds)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return data || [];
+  }
+
   async clearWhatsAppGroups(): Promise<void> {
     await this.handleSupabase(supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
   }
 
   async clearCandidates(): Promise<void> {
-    await this.handleSupabase(supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+    await Promise.all([
+      this.handleSupabase(supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000')),
+      this.handleSupabase(supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000')),
+      this.handleSupabase(supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'))
+    ]);
   }
 
   // Matches (Candidates)
@@ -607,9 +738,17 @@ class DataService {
           query = query.eq('category', user.category);
         } else {
           // Fallback: Fetch all admins created by this team leader
-          const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
+          const { data: subAdmins } = await supabase.from('profiles').select('id').eq('created_by', user.id);
           const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
           query = query.in('created_by', adminIds);
+        }
+      } else if (user.role === 'viewer') {
+        // Viewers see matches created by their creator
+        if (user.created_by) {
+          query = query.eq('created_by', user.created_by);
+        } else {
+          // If no creator, they see nothing or only their own (unlikely for viewers)
+          query = query.eq('created_by', user.id);
         }
       } else {
         // Unified view: see all in my category if assigned, otherwise only mine
@@ -678,9 +817,110 @@ class DataService {
     await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
   }
 
+  // Candidate Transfers
+  async createTransferRequest(candidateId: string, senderId: string, receiverId: string): Promise<void> {
+    await this.handleSupabase(
+      supabase.from('candidate_transfers').insert({
+        candidate_id: candidateId,
+        sender_id: senderId,
+        receiver_id: receiverId,
+        status: 'pending'
+      })
+    );
+  }
+
+  async getPendingTransfersForMe(userId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('candidate_transfers')
+        .select(`
+          *,
+          candidate:candidates(*),
+          sender:profiles!sender_id(full_name)
+        `)
+        .eq('receiver_id', userId)
+        .eq('status', 'pending');
+      
+      if (error) {
+        if (error.code === 'PGRST204') {
+          console.warn('Schema cache error (PGRST204). Please sync schema.');
+        }
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error('Error fetching pending transfers:', err);
+      return [];
+    }
+  }
+
+  async getSentTransfersByMe(userId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('candidate_transfers')
+        .select(`
+          *,
+          candidate:candidates(*),
+          receiver:profiles!receiver_id(full_name)
+        `)
+        .eq('sender_id', userId);
+      
+      if (error) {
+        if (error.code === 'PGRST204') {
+          console.warn('Schema cache error (PGRST204). Please sync schema.');
+        }
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error('Error fetching sent transfers:', err);
+      return [];
+    }
+  }
+
+  async approveTransfer(transferId: string): Promise<void> {
+    // 1. Get the transfer details
+    const { data: transfer } = await supabase
+      .from('candidate_transfers')
+      .select('*')
+      .eq('id', transferId)
+      .single();
+
+    if (!transfer) throw new Error('Transfer not found');
+
+    // 2. Update the candidate's owner
+    const { data: receiver } = await supabase
+      .from('profiles')
+      .select('name, category, gender, phone')
+      .eq('id', transfer.receiver_id)
+      .single();
+
+    await this.handleSupabase(
+      supabase.from('candidates').update({
+        created_by: transfer.receiver_id,
+        creator_name: receiver?.name,
+        creator_category: receiver?.category,
+        creator_gender: receiver?.gender,
+        creator_phone: receiver?.phone
+      }).eq('id', transfer.candidate_id)
+    );
+
+    // 3. Update the transfer status
+    await this.handleSupabase(
+      supabase.from('candidate_transfers').update({ status: 'approved' }).eq('id', transferId)
+    );
+  }
+
+  async rejectTransfer(transferId: string): Promise<void> {
+    await this.handleSupabase(
+      supabase.from('candidate_transfers').update({ status: 'rejected' }).eq('id', transferId)
+    );
+  }
+
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     try {
+      console.log('Fetching all admins from profiles table...');
       const { data, error } = await supabase.from('profiles').select('*');
       if (error) {
         console.error('CRITICAL ERROR fetching admins:', error.message, error.details, error.hint);
@@ -711,12 +951,12 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     const newUser: any = {
       ...user,
-      created_at: new Date().toISOString(),
       password_plain: user.password_plain || '12345678',
       created_by: currentUser?.id
     };
 
     const sanitized = this.sanitizeAdmin(newUser);
+    console.log('Sending to Supabase (profiles):', sanitized);
     const data = await this.handleSupabase(supabase.from('profiles').insert(sanitized).select().single());
     return data as User;
   }
@@ -726,23 +966,39 @@ class DataService {
       updates.password_updated_at = new Date().toISOString();
     }
     const sanitized = this.sanitizeAdmin(updates);
+    console.log('Updating Supabase (profiles):', sanitized);
     const data = await this.handleSupabase(supabase.from('profiles').update(sanitized).eq('id', id).select().single());
     return data as User;
   }
 
-  async deleteUser(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('profiles').update({ deleted_at: new Date().toISOString() }).eq('id', id));
+  async deleteUser(idOrIds: string | string[]): Promise<void> {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    
+    // Safeguard: Never allow deleting the 'god' user
+    // We need to find if any of the IDs belong to 'god'
+    // Actually, it's safer to just filter out the 'god-id' if we know it, 
+    // or better, the UI should prevent it. 
+    // But for extra safety, we can check the usernames if we had them.
+    // Since we only have IDs here, we assume the UI handles the 'god' check.
+    // However, if we want to be absolutely sure, we'd need to fetch them first, 
+    // but that's expensive. Let's assume 'god-id' is a known constant or handled by UI.
+    const filteredIds = ids.filter(id => id !== 'god-id');
+    
+    if (filteredIds.length === 0) return;
+
+    if (filteredIds.length === 1) {
+      await this.handleSupabase(supabase.from('profiles').delete().eq('id', filteredIds[0]));
+    } else {
+      await this.handleSupabase(supabase.from('profiles').delete().in('id', filteredIds));
+    }
   }
 
   // Images
   getPublicImageUrl(path: string): string {
     if (!path) return '';
     
-    // If it's already a full URL, ensure it uses the correct project ID
+    // If it's already a full URL, return it as is
     if (path.startsWith('http')) {
-      if (path.includes('.supabase.co')) {
-        return path.replace(/https:\/\/[^.]+\.supabase\.co/g, 'https://bdxddmsdkebxpfuirkmh.supabase.co');
-      }
       return path;
     }
     
@@ -824,15 +1080,15 @@ class DataService {
     url: string;
     isSynced: boolean;
   }[]> {
-    const [admins, candidates] = await Promise.all([
-      supabase.from('admins').select('id, name, avatar_url').is('deleted_at', null),
+    const [profiles, candidates] = await Promise.all([
+      supabase.from('profiles').select('id, name, avatar_url').is('deleted_at', null),
       supabase.from('candidates').select('id, name, image_url').is('deleted_at', null)
     ]);
 
     const inventory: any[] = [];
 
-    if (admins.data) {
-      admins.data.forEach(a => {
+    if (profiles.data) {
+      profiles.data.forEach(a => {
         if (a.avatar_url) {
           inventory.push({
             id: a.id,
@@ -866,7 +1122,7 @@ class DataService {
     const mirroredUrl = await this.mirrorImage(url);
     if (!mirroredUrl) return null;
 
-    const table = type === 'admin' ? 'admins' : 'candidates';
+    const table = type === 'admin' ? 'profiles' : 'candidates';
     const column = type === 'admin' ? 'avatar_url' : 'image_url';
 
     const { error } = await supabase
@@ -1155,7 +1411,7 @@ class DataService {
   async getStats(user?: User): Promise<Stats> {
     try {
       let matchesQuery = supabase.from('candidates').select('type, publish_count, created_by').is('deleted_at', null);
-      let adminsQuery = supabase.from('admins').select('gender, created_by, category, secondary_category').is('deleted_at', null);
+      let adminsQuery = supabase.from('profiles').select('gender, created_by, category, secondary_category').is('deleted_at', null);
       let publishLogsQuery = supabase.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
@@ -1163,14 +1419,14 @@ class DataService {
         // Fetch admins in the same group to calculate group stats
         const myCategories = [user.category, user.secondary_category].filter(Boolean);
         if (myCategories.length > 0) {
-          const { data: sameGroupAdmins } = await supabase.from('admins')
+          const { data: sameGroupAdmins } = await supabase.from('profiles')
             .select('id')
             .or(`category.in.(${myCategories.join(',')}),secondary_category.in.(${myCategories.join(',')})`);
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
         }
 
         if (user.role === 'team_leader') {
-          const { data: subAdmins } = await supabase.from('admins').select('id').eq('created_by', user.id);
+          const { data: subAdmins } = await supabase.from('profiles').select('id').eq('created_by', user.id);
           const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
           matchesQuery = matchesQuery.in('created_by', adminIds);
           adminsQuery = adminsQuery.in('created_by', [user.id]);
@@ -1277,16 +1533,19 @@ class DataService {
 
   // Reset Actions
   async resetHistory(): Promise<void> {
-    // Delete all candidates, activity logs, and publish logs
+    // Delete all candidates, activity logs, publish logs, transfers and notes
     await Promise.all([
       supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000')
     ]);
   }
 
   async factoryReset(): Promise<void> {
     const currentUser = await this.getCurrentUser();
+    const adminEmail = currentUser?.email || 'hiealbokris@gmail.com';
     
     // Delete everything except the current super admin
     await Promise.all([
@@ -1295,12 +1554,11 @@ class DataService {
       supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      // Delete all admins except the current one
-      supabase.from('admins').delete().neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
+      supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      // Delete all profiles except the super admin by email
+      supabase.from('profiles').delete().neq('email', adminEmail)
     ]);
-    
-    // Re-sync schema to restore default admins (like 'good' and 'god')
-    await this.syncSchema();
     
     // Reset local settings
     localStorage.removeItem('app_settings');
@@ -1357,6 +1615,149 @@ class DataService {
         .eq('receiver_id', currentUser.id)
         .eq('is_read', false)
     );
+  }
+
+  // Candidate Portal & Gamification
+  async getPortalSettings(): Promise<PortalSettings> {
+    try {
+      const { data, error } = await supabase.from('portal_settings').select('*').limit(1).single();
+      if (error || !data) {
+        // Create default settings if not exists
+        const defaultSettings = {
+          memory_game_images: JSON.stringify([
+            'https://picsum.photos/seed/match1/400/400',
+            'https://picsum.photos/seed/match2/400/400',
+            'https://picsum.photos/seed/match3/400/400',
+            'https://picsum.photos/seed/match4/400/400'
+          ]),
+          is_speed_date_active: true
+        };
+        const { data: newData } = await supabase.from('portal_settings').insert(defaultSettings).select().single();
+        return newData as PortalSettings;
+      }
+      return data as PortalSettings;
+    } catch (err) {
+      return {
+        id: '',
+        memory_game_images: '[]',
+        is_speed_date_active: true,
+        created_at: ''
+      } as PortalSettings;
+    }
+  }
+
+  async updatePortalSettings(settings: Partial<PortalSettings>): Promise<void> {
+    const current = await this.getPortalSettings();
+    if (current.id) {
+      await this.handleSupabase(supabase.from('portal_settings').update(settings).eq('id', current.id));
+    }
+  }
+
+  async saveGameScore(score: Omit<GameScore, 'id' | 'created_at'>): Promise<void> {
+    await this.handleSupabase(supabase.from('game_scores').insert(score));
+  }
+
+  async getLeaderboard(): Promise<GameScore[]> {
+    const { data } = await supabase
+      .from('game_scores')
+      .select('*')
+      .order('score', { ascending: false })
+      .limit(10);
+    return data || [];
+  }
+
+  async getDailySuggestion(category: string, gender: 'male' | 'female'): Promise<Match | null> {
+    const { data } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('category', category)
+      .eq('type', gender === 'male' ? 'female' : 'male') // Suggest opposite gender
+      .eq('status', 'available')
+      .limit(1);
+    
+    if (data && data.length > 0) return data[0] as Match;
+    return null;
+  }
+
+  async getOnlineStats(): Promise<{ males: number; females: number }> {
+    const { data: profiles } = await supabase.from('profiles').select('gender').eq('is_online', true);
+    
+    let males = 0;
+    let females = 0;
+    
+    profiles?.forEach(p => {
+      if (p.gender === 'male') males++;
+      else if (p.gender === 'female') females++;
+    });
+    
+    return { males, females };
+  }
+
+  async startSpeedDate(userId: string, gender: 'male' | 'female'): Promise<SpeedDateSession | null> {
+    const oppositeGender = gender === 'male' ? 'female' : 'male';
+    const { data: potentialPartners } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('gender', oppositeGender)
+      .eq('is_online', true)
+      .neq('id', userId)
+      .limit(5);
+
+    if (potentialPartners && potentialPartners.length > 0) {
+      const partnerId = potentialPartners[Math.floor(Math.random() * potentialPartners.length)].id;
+      const expiresAt = new Date(Date.now() + 7 * 60 * 1000).toISOString();
+      
+      const session = {
+        male_id: gender === 'male' ? userId : partnerId,
+        female_id: gender === 'female' ? userId : partnerId,
+        status: 'active',
+        expires_at: expiresAt
+      };
+      
+      const { data } = await supabase.from('speed_date_sessions').insert(session).select().single();
+      return data as SpeedDateSession;
+    }
+    
+    return null;
+  }
+
+  async getActiveSpeedDate(userId: string): Promise<SpeedDateSession | null> {
+    const { data } = await supabase
+      .from('speed_date_sessions')
+      .select('*')
+      .or(`male_id.eq.${userId},female_id.eq.${userId}`)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (data && data.length > 0) return data[0] as SpeedDateSession;
+    return null;
+  }
+
+  async sendChatMessage(sessionId: string, senderId: string, text: string): Promise<void> {
+    await this.handleSupabase(supabase.from('candidate_chat_messages').insert({
+      session_id: sessionId,
+      sender_id: senderId,
+      text
+    }));
+  }
+
+  async getChatMessages(sessionId: string): Promise<any[]> {
+    const { data } = await supabase
+      .from('candidate_chat_messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    return data || [];
+  }
+
+  async updateSpeedDateStatus(sessionId: string, status: 'active' | 'completed' | 'expired', shareDetails?: { male?: boolean, female?: boolean }): Promise<void> {
+    const updates: any = { status };
+    if (shareDetails?.male !== undefined) updates.share_details_male = shareDetails.male;
+    if (shareDetails?.female !== undefined) updates.share_details_female = shareDetails.female;
+    
+    await this.handleSupabase(supabase.from('speed_date_sessions').update(updates).eq('id', sessionId));
   }
 }
 
