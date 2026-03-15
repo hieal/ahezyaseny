@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 interface SyncItem {
   id: string;
   name: string;
-  type: 'admin' | 'candidate';
+  type: 'admin' | 'match';
   url: string;
   isSynced: boolean;
   status: 'pending' | 'syncing' | 'success' | 'failed';
@@ -16,7 +16,15 @@ interface SyncItem {
 export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [items, setItems] = useState<SyncItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'admin' | 'match' | 'pending'>('all');
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  const filteredItems = items.filter(item => {
+    if (filter === 'admin') return item.type === 'admin';
+    if (filter === 'match') return item.type === 'match';
+    if (filter === 'pending') return !item.isSynced;
+    return true;
+  });
 
   const fetchInventory = async () => {
     setLoading(true);
@@ -55,9 +63,9 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
   };
 
   const syncAll = async () => {
-    const pendingItems = items.filter(i => i.status === 'pending' || i.status === 'failed');
-    if (pendingItems.length === 0) {
-      toast.success('כל התמונות כבר מסונכרנות');
+    const itemsToSync = filteredItems.filter(i => i.status === 'pending' || i.status === 'failed');
+    if (itemsToSync.length === 0) {
+      toast.success('אין תמונות לסנכרון לפי הסינון הנוכחי');
       return;
     }
 
@@ -65,7 +73,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     let successCount = 0;
     let failCount = 0;
 
-    for (const item of pendingItems) {
+    for (const item of itemsToSync) {
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'syncing' } : i));
       try {
         const result = await dataService.mirrorSingleImage(item.id, item.type, item.url);
@@ -91,7 +99,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     synced: items.filter(i => i.isSynced).length,
     pending: items.filter(i => !i.isSynced).length,
     admins: items.filter(i => i.type === 'admin').length,
-    candidates: items.filter(i => i.type === 'candidate').length,
+    matches: items.filter(i => i.type === 'match').length,
   };
 
   return (
@@ -119,26 +127,41 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
           </button>
         </div>
 
-        <div className="p-6 grid grid-cols-2 md:grid-cols-5 gap-4 bg-white border-b border-slate-100">
-          <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
-            <p className="text-[10px] font-black text-blue-600 uppercase">סה"כ תמונות</p>
-            <p className="text-2xl font-black text-blue-900">{stats.total}</p>
+        <div className="p-6 bg-white border-b border-slate-100">
+          <div className="flex gap-2 mb-6">
+            {(['all', 'admin', 'match', 'pending'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  filter === f ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {f === 'all' ? 'הכל' : f === 'admin' ? 'מנהלים' : f === 'match' ? 'משודכים' : 'לא סונכרנו'}
+              </button>
+            ))}
           </div>
-          <div className="bg-green-50 p-3 rounded-2xl border border-green-100 text-center">
-            <p className="text-[10px] font-black text-green-600 uppercase">סונכרנו</p>
-            <p className="text-2xl font-black text-green-900">{stats.synced}</p>
-          </div>
-          <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 text-center">
-            <p className="text-[10px] font-black text-amber-600 uppercase">ממתינים</p>
-            <p className="text-2xl font-black text-amber-900">{stats.pending}</p>
-          </div>
-          <div className="bg-purple-50 p-3 rounded-2xl border border-purple-100 text-center">
-            <p className="text-[10px] font-black text-purple-600 uppercase">מנהלים</p>
-            <p className="text-2xl font-black text-purple-900">{stats.admins}</p>
-          </div>
-          <div className="bg-pink-50 p-3 rounded-2xl border border-pink-100 text-center">
-            <p className="text-[10px] font-black text-pink-600 uppercase">משודכים</p>
-            <p className="text-2xl font-black text-pink-900">{stats.candidates}</p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
+              <p className="text-[10px] font-black text-blue-600 uppercase">סה"כ תמונות</p>
+              <p className="text-2xl font-black text-blue-900">{stats.total}</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-2xl border border-green-100 text-center">
+              <p className="text-[10px] font-black text-green-600 uppercase">סונכרנו</p>
+              <p className="text-2xl font-black text-green-900">{stats.synced}</p>
+            </div>
+            <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 text-center">
+              <p className="text-[10px] font-black text-amber-600 uppercase">ממתינים</p>
+              <p className="text-2xl font-black text-amber-900">{stats.pending}</p>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-2xl border border-purple-100 text-center">
+              <p className="text-[10px] font-black text-purple-600 uppercase">מנהלים</p>
+              <p className="text-2xl font-black text-purple-900">{stats.admins}</p>
+            </div>
+            <div className="bg-pink-50 p-3 rounded-2xl border border-pink-100 text-center">
+              <p className="text-[10px] font-black text-pink-600 uppercase">משודכים</p>
+              <p className="text-2xl font-black text-pink-900">{stats.matches}</p>
+            </div>
           </div>
         </div>
 
@@ -160,7 +183,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {items.map(item => (
+                {filteredItems.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">

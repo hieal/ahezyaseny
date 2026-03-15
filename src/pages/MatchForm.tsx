@@ -179,7 +179,7 @@ export default function MatchForm() {
         await dataService.updateMatch(id, matchData);
         await dataService.logActivity({
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: user?.name || 'System',
+          user_name: user?.full_name || 'System',
           action: 'עדכון כרטיס',
           details: `עדכון כרטיס משודך: ${formData.name}`,
           entity_type: 'match',
@@ -187,10 +187,10 @@ export default function MatchForm() {
         });
         toast.success('הכרטיס עודכן');
       } else {
-        const newMatch = await dataService.createMatch(matchData);
+        const newMatch = await dataService.createMatch(matchData, user || undefined);
         await dataService.logActivity({
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: user?.name || 'System',
+          user_name: user?.full_name || 'System',
           action: 'יצירת כרטיס',
           details: `יצירת כרטיס משודך: ${formData.name}`,
           entity_type: 'match',
@@ -384,17 +384,35 @@ export default function MatchForm() {
     setImporting(true);
     
     let successCount = 0;
+    let duplicateCount = 0;
+    let failCount = 0;
     for (const match of scannedMatches) {
       try {
-        await dataService.createMatch({ ...match, creation_source: 'csv' });
+        await dataService.createMatch({ ...match, creation_source: 'csv' }, user || undefined);
         successCount++;
       } catch (err) {
-        console.error('Error importing match:', err);
+        if (err instanceof Error && err.message === 'משודך עם שם וטלפון זהה כבר קיים במערכת') {
+          duplicateCount++;
+        } else {
+          console.error('Error importing match:', err);
+          failCount++;
+        }
       }
     }
     
     setImporting(false);
-    toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
+    const total = scannedMatches.length;
+
+    if (duplicateCount === total) {
+      toast.info('כל הכרטיסים כבר קיימים במערכת');
+    } else if (duplicateCount > 0 || failCount > 0) {
+      let message = `הועלו ${successCount} מתוך ${total} כרטיסים.`;
+      if (duplicateCount > 0) message += ` ${duplicateCount} כבר קיימים במערכת.`;
+      if (failCount > 0) message += ` ${failCount} נכשלו.`;
+      toast.info(message);
+    } else {
+      toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
+    }
     navigate('/');
   };
 
@@ -438,7 +456,7 @@ export default function MatchForm() {
                   last_published_at: null,
                   deleted_at: null,
                   created_by: user?.id || 'system',
-                  creator_name: user?.name || 'System',
+                  creator_name: user?.full_name || 'System',
                   creator_category: user?.category || 'general',
                   is_published_confirmed: 0,
                   crop_config: null,

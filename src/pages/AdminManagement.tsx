@@ -49,6 +49,8 @@ export default function AdminManagement() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showSyncImagesModal, setShowSyncImagesModal] = useState(false);
+  const [syncAdmins, setSyncAdmins] = useState<any[]>([]);
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedGroupForChat, setSelectedGroupForChat] = useState<WhatsAppGroup | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
@@ -56,7 +58,7 @@ export default function AdminManagement() {
   const [newGroupWhapiId, setNewGroupWhapiId] = useState('');
   
   const [formData, setFormData] = useState({
-    name: '',
+    full_name: '',
     username: '',
     email: '',
     password: '',
@@ -78,13 +80,13 @@ export default function AdminManagement() {
         dataService.getWhatsAppGroups()
       ]);
       
-      let admins = [...usersData];
+      let admins = usersData.filter(u => u.role === 'admin' || u.role === 'super_admin');
       if (!admins.find(a => a.username === 'god')) {
         admins.unshift({ 
           id: 'god-id',
           username: 'god', 
-          full_name: 'מנהל המערכת', 
-          role: 'admin',
+          full_name: 'מנהל ראשי', 
+          role: 'super_admin',
           status: 'active',
           email: '',
           category: null,
@@ -137,7 +139,7 @@ export default function AdminManagement() {
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
           user_name: currentUser?.name || 'System',
           action: 'עדכון מנהל',
-          details: `עדכון פרטי מנהל: ${formData.name}`,
+          details: `עדכון פרטי מנהל: ${formData.full_name}`,
           entity_type: 'user',
           entity_id: editingUser.id
         });
@@ -161,7 +163,7 @@ export default function AdminManagement() {
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
           user_name: currentUser?.name || 'System',
           action: 'יצירת מנהל',
-          details: `יצירת מנהל חדש: ${formData.name}`,
+          details: `יצירת מנהל חדש: ${formData.full_name}`,
           entity_type: 'user',
           entity_id: newUser.id
         });
@@ -171,7 +173,7 @@ export default function AdminManagement() {
       setShowModal(false);
       setEditingUser(null);
       setFormData({ 
-        name: '', 
+        full_name: '', 
         username: '', 
         email: '', 
         password: '', 
@@ -355,7 +357,7 @@ export default function AdminManagement() {
         user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
         user_name: currentUser?.name || 'System',
         action: 'מחיקת מנהל',
-        details: `מחיקת מנהל: ${userToDelete.name}`,
+        details: `מחיקת מנהל: ${userToDelete.full_name}`,
         entity_type: 'user',
         entity_id: userToDelete.id
       });
@@ -373,8 +375,8 @@ export default function AdminManagement() {
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setFormData({
-      name: user.name,
-      username: user.username,
+      full_name: user.full_name || '',
+      username: user.username || '',
       email: user.email,
       password: '',
       role: user.role,
@@ -462,6 +464,51 @@ export default function AdminManagement() {
     }
   };
 
+  const handleOpenSyncModal = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, email');
+      
+      if (error) throw error;
+      
+      setSyncAdmins(data.map(admin => ({
+        ...admin,
+        new_avatar_url: admin.avatar_url || ''
+      })));
+      setShowSyncImagesModal(true);
+    } catch (err) {
+      toast.error('שגיאה בטעינת מנהלים לסנכרון');
+    }
+  };
+
+  const handleSyncImages = async () => {
+    const processingToast = toast.loading('מעדכן תמונות...');
+    let success = 0;
+    let failed = 0;
+    
+    for (const admin of syncAdmins) {
+      if (admin.new_avatar_url !== admin.avatar_url) {
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ avatar_url: admin.new_avatar_url })
+            .eq('id', admin.id);
+          
+          if (error) throw error;
+          success++;
+        } catch (err) {
+          failed++;
+        }
+      }
+    }
+    
+    toast.dismiss(processingToast);
+    toast.success(`סונכרנו ${success} תמונות, נכשלו ${failed}`);
+    setShowSyncImagesModal(false);
+    fetchUsers();
+  };
+
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
 
   const handleUpdateGender = async (user: User, gender: 'male' | 'female') => {
@@ -469,10 +516,10 @@ export default function AdminManagement() {
     setUsers(prev => prev.map(u => u.id === user.id ? { ...u, gender } : u));
     
     try {
-      await dataService.updateUser(user.id, { gender });
+      const updatedUser = await dataService.updateUser(user.id, { gender });
+      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
       toast.success('מין עודכן בהצלחה');
       setGenderModalUser(null);
-      fetchUsers(); // Refresh
     } catch (e: any) {
       console.log('Update Error:', e);
       toast.error('שגיאה בעדכון המין');
@@ -487,13 +534,13 @@ export default function AdminManagement() {
     setUsers(prev => prev.map(u => u.id === phoneModalUser.id ? { ...u, phone: String(tempPhone), username: String(tempPhone) } : u));
 
     try {
-      await dataService.updateUser(phoneModalUser.id, { 
+      const updatedUser = await dataService.updateUser(phoneModalUser.id, { 
         phone: String(tempPhone), // Ensure string
         username: String(tempPhone)
       });
+      setUsers(prev => prev.map(u => u.id === phoneModalUser.id ? updatedUser : u));
       toast.success('מספר טלפון ושם משתמש עודכנו');
       setPhoneModalUser(null);
-      fetchUsers(); // Refresh
     } catch (e: any) {
       console.log('Update Error:', e);
       toast.error('שגיאה בעדכון');
@@ -644,11 +691,7 @@ export default function AdminManagement() {
 
         <div className="flex gap-3">
           <button 
-            onClick={async () => {
-              const res = await dataService.mirrorAllExternalImages();
-              toast.success(`סונכרנו ${res.success} תמונות, נכשלו ${res.failed}`);
-              fetchUsers();
-            }}
+            onClick={handleOpenSyncModal}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
           >
             <RefreshCw size={20} />
@@ -665,7 +708,7 @@ export default function AdminManagement() {
             onClick={() => {
               setEditingUser(null);
               setFormData({ 
-                name: '', 
+                full_name: '', 
                 username: '', 
                 email: '', 
                 password: '', 
@@ -777,7 +820,7 @@ export default function AdminManagement() {
             >
               <div className="text-center space-y-2">
                 <h3 className="text-2xl font-black text-slate-900">שינוי מין מנהל</h3>
-                <p className="text-slate-500 font-medium">בחר את המין עבור {genderModalUser.full_name || genderModalUser.name}</p>
+                <p className="text-slate-500 font-medium">בחר את המין עבור {genderModalUser.full_name}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -826,7 +869,7 @@ export default function AdminManagement() {
             >
               <div className="text-center space-y-2">
                 <h3 className="text-2xl font-black text-slate-900">עדכון מספר טלפון</h3>
-                <p className="text-slate-500 font-medium">עדכון מספר הטלפון יעדכן גם את שם המשתמש של {phoneModalUser.full_name || phoneModalUser.name}</p>
+                <p className="text-slate-500 font-medium">עדכון מספר הטלפון יעדכן גם את שם המשתמש של {phoneModalUser.full_name}</p>
               </div>
 
               <div className="space-y-4">
@@ -876,7 +919,7 @@ export default function AdminManagement() {
                   {impersonateUser.avatar_url ? (
                     <img 
                       src={impersonateUser.avatar_url} 
-                      alt={impersonateUser.name} 
+                      alt={impersonateUser.full_name} 
                       referrerPolicy="no-referrer"
                       className="w-full h-full rounded-full object-cover"
                     />
@@ -888,7 +931,7 @@ export default function AdminManagement() {
                   </div>
                 </div>
                 <h3 className="text-2xl font-black text-slate-900">כניסה כמנהל</h3>
-                <p className="text-slate-500 font-medium">אתה עומד להיכנס למערכת בשם <span className="font-bold text-slate-900">{impersonateUser.full_name || impersonateUser.name}</span></p>
+                <p className="text-slate-500 font-medium">אתה עומד להיכנס למערכת בשם <span className="font-bold text-slate-900">{impersonateUser.full_name}</span></p>
               </div>
 
               <div className="bg-slate-50 rounded-2xl p-4 space-y-3 border border-slate-100">
@@ -1079,7 +1122,8 @@ export default function AdminManagement() {
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מנהל</th>
+                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">שם מלא</th>
+                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">טלפון</th>
                 <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">סיסמא</th>
                 {!compactView && (
                   <>
@@ -1155,8 +1199,14 @@ export default function AdminManagement() {
                               {u.category || 'ללא קטגוריה'}
                             </span>
                           )}
-                          <span className="text-[8px] font-medium text-slate-400 uppercase">
-                            {u.role === 'super_admin' ? 'מנהל ראשי' : 
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 ${
+                            u.username === 'god' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 
+                            u.role === 'super_admin' ? 'bg-blue-100 text-blue-800 border border-blue-200' : 
+                            'text-slate-500 bg-slate-100'
+                          }`}>
+                            {u.username === 'god' && <Shield size={10} />}
+                            {u.username === 'god' ? 'מנהל על' : 
+                             u.role === 'super_admin' ? 'מנהל ראשי' : 
                              u.role === 'team_leader' ? 'ראש צוות' :
                              u.role === 'viewer' ? 'צופה' : 'מנהל'}
                           </span>
@@ -1164,11 +1214,22 @@ export default function AdminManagement() {
                       </div>
                       <div className="flex flex-col">
                         <span className={`font-bold ${u.username === 'god' ? 'text-slate-900' : u.role === 'super_admin' ? 'text-yellow-700' : 'text-text-main'}`}>
-                          {u.username === 'god' ? 'מנהל המערכת' : u.full_name}
+                          <span className="font-bold text-slate-800">{u.username === 'god' ? 'מנהל ראשי' : u.full_name}</span>
                         </span>
-                        <span className="text-[10px] text-slate-400">{u.username === 'god' ? '-' : u.email}</span>
+                        <span className="text-[10px] text-slate-400">{u.email}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-500 font-medium">{u.username}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-500">
+                          {u.last_login ? new Date(u.last_login).toLocaleString('he-IL') : 'לא התחבר'}
+                        </span>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <span className="text-sm font-medium text-text-secondary">{u.phone}</span>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1">
@@ -1238,7 +1299,7 @@ export default function AdminManagement() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-text-main font-medium">{u.username}</td>
+                      <td className="px-6 py-5 text-text-main font-medium">{u.username === 'god' ? 'מנהל מערכת' : u.username}</td>
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-text-main">{u.email}</span>
@@ -1418,7 +1479,7 @@ export default function AdminManagement() {
                   <Trash2 size={32} />
                 </div>
                 <h3 className="text-2xl font-black text-slate-900">מחיקת מנהל</h3>
-                <p className="text-slate-500 font-medium">האם אתה בטוח שברצונך למחוק את {userToDelete.name}?</p>
+                <p className="text-slate-500 font-medium">האם אתה בטוח שברצונך למחוק את {userToDelete.full_name}?</p>
               </div>
 
               <div className="flex gap-3">
@@ -1725,9 +1786,11 @@ export default function AdminManagement() {
                                   const parts = val.split(' - ');
                                   admin.phone = parts[0].trim();
                                   admin.name = parts[1].trim();
+                                  admin.full_name = parts[1].trim();
                                   admin.username = parts[0].trim();
                                 } else {
                                   admin.name = val;
+                                  admin.full_name = val;
                                 }
                               }
                               if (header === 'שם משתמש' || header === 'username') admin.username = val;
@@ -1812,7 +1875,7 @@ export default function AdminManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם מלא *</label>
-                    <input type="text" required className="input-field" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                    <input type="text" required className="input-field" value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם משתמש *</label>
@@ -1922,6 +1985,86 @@ export default function AdminManagement() {
           </div>
         )}
       </AnimatePresence>
+      {/* Image Sync Modal */}
+      <AnimatePresence>
+        {showSyncImagesModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-2xl space-y-6 max-h-[90vh] overflow-hidden flex flex-col"
+            >
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">סנכרון תמונות מנהלים</h3>
+                <p className="text-slate-500 font-medium">הדבק לינק לתמונה עבור כל מנהל כדי לעדכן את הפרופיל שלו</p>
+                <div className="flex justify-center gap-4 text-sm font-bold pt-2">
+                  <span className="text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100">סונכרנו: {syncAdmins.filter(a => a.avatar_url).length}</span>
+                  <span className="text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">חסרות: {syncAdmins.filter(a => !a.avatar_url).length}</span>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                {syncAdmins.map((admin, idx) => (
+                  <div key={admin.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="w-12 h-12 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border-2 border-white shadow-sm">
+                      {admin.new_avatar_url ? (
+                        <img 
+                          src={admin.new_avatar_url} 
+                          alt={admin.full_name} 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150?text=?';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <UserIcon size={20} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 truncate">{admin.full_name}</p>
+                      <p className="text-xs text-slate-500 truncate">{admin.email}</p>
+                    </div>
+                    <div className="flex-1">
+                      <input 
+                        type="text"
+                        placeholder="הדבק לינק לתמונה (URL)..."
+                        className="input-field text-xs"
+                        value={admin.new_avatar_url}
+                        onChange={(e) => {
+                          const newSyncAdmins = [...syncAdmins];
+                          newSyncAdmins[idx].new_avatar_url = e.target.value;
+                          setSyncAdmins(newSyncAdmins);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button 
+                  onClick={() => setShowSyncImagesModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={handleSyncImages}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={18} />
+                  סנכרן תמונות
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

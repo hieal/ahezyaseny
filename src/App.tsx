@@ -18,7 +18,8 @@ import CandidateDashboard from './pages/CandidateDashboard';
 import SpeedDate from './pages/SpeedDate';
 import GamesPortal from './pages/GamesPortal';
 import CandidatePortalAdmin from './pages/CandidatePortalAdmin';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2 } from 'lucide-react';
+import PublishedToday from './pages/PublishedToday';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -123,6 +124,8 @@ function Sidebar() {
           setAllAdmins(data);
         } catch (err) {
           console.error('Failed to fetch admins:', err);
+          setAllAdmins([]);
+          toast.error('לא נמצאו מנהלים');
         }
       };
       
@@ -193,21 +196,28 @@ function Sidebar() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const navItems = [
-    { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
-    { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-    { 
-      path: '/suggestions', 
-      label: 'הצעות יומיות', 
-      icon: <Sparkles size={20} />,
-      badge: formatTime(timeLeft)
-    },
-    { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
-    { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
-    { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
-    { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
-    { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
-  ];
+  const navItems = user?.role === 'candidate' 
+    ? [
+        { path: '/portal', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
+        { path: '/portal/published-today', label: 'פורסמו היום', icon: <Sparkles size={20} /> },
+        { path: '/portal/speed-date', label: 'ספיד-דייט', icon: <Zap size={20} /> },
+        { path: '/portal/games', label: 'משחקים', icon: <Gamepad2 size={20} /> },
+      ]
+    : [
+        { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
+        { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+        { 
+          path: '/suggestions', 
+          label: 'הצעות יומיות', 
+          icon: <Sparkles size={20} />,
+          badge: formatTime(timeLeft)
+        },
+        { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
+        { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
+        { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
+        { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
+        { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
+      ];
 
   const handleOpenTransferModal = () => {
     setShowTransferModal(true);
@@ -284,18 +294,20 @@ function Sidebar() {
             </div>
 
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
-              <button
-                onClick={handleOpenTransferModal}
-                className="w-full sidebar-item mb-2 bg-luxury-blue/5 text-luxury-blue border border-luxury-blue/10 hover:bg-luxury-blue/10 transition-all"
-              >
-                <ArrowLeftRight size={20} />
-                <span className="font-bold flex-1 text-right">העברת משודכים</span>
-                {pendingTransfersCount > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
-                    {pendingTransfersCount}
-                  </span>
-                )}
-              </button>
+              {user?.role !== 'candidate' && (
+                <button
+                  onClick={handleOpenTransferModal}
+                  className="w-full sidebar-item mb-2 bg-luxury-blue/5 text-luxury-blue border border-luxury-blue/10 hover:bg-luxury-blue/10 transition-all"
+                >
+                  <ArrowLeftRight size={20} />
+                  <span className="font-bold flex-1 text-right">העברת משודכים</span>
+                  {pendingTransfersCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                      {pendingTransfersCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {navItems.map((item) => (
                 <div key={item.path} className="relative group">
@@ -346,7 +358,7 @@ function Sidebar() {
                   {user?.avatar_url ? (
                     <img 
                       src={user.avatar_url} 
-                      alt={user.name} 
+                      alt={user.full_name} 
                       className="w-10 h-10 rounded-xl object-cover shadow-sm group-hover:opacity-75 transition-opacity" 
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -355,7 +367,7 @@ function Sidebar() {
                     />
                   ) : null}
                   <div className={`w-10 h-10 rounded-xl bg-luxury-blue text-white flex items-center justify-center font-bold text-lg shadow-sm group-hover:bg-luxury-blue/80 transition-colors ${user?.avatar_url ? 'hidden' : ''}`}>
-                    {user?.name?.[0]}
+                    {(user?.full_name)?.[0]}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Plus size={16} className="text-white drop-shadow-md" />
@@ -363,8 +375,8 @@ function Sidebar() {
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-text-main truncate">{user?.name}</p>
-                  <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}</p>
+                  <p className="text-sm font-bold text-text-main truncate">{user?.full_name}</p>
+                  <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}</p>
                 </div>
               </div>
               <button 
@@ -509,8 +521,8 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>{getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
-          <span className="text-text-main font-bold">{user?.name}</span>
+          <span>{user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
+          <span className="text-text-main font-bold">{user?.username === 'god' ? 'מנהל ראשי' : user?.full_name}</span>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -698,7 +710,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           if (userToImpersonate) {
             sessionStorage.setItem('current_user', JSON.stringify(userToImpersonate));
             await refreshUser();
-            toast.success(`התחברת בהצלחה כ-${userToImpersonate.name}`);
+            toast.success(`התחברת בהצלחה כ-${userToImpersonate.full_name}`);
             // Remove query param
             navigate(location.pathname, { replace: true });
           } else {
@@ -708,7 +720,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
             if (retryUser) {
               sessionStorage.setItem('current_user', JSON.stringify(retryUser));
               await refreshUser();
-              toast.success(`התחברת בהצלחה כ-${retryUser.name}`);
+              toast.success(`התחברת בהצלחה כ-${retryUser.full_name}`);
               navigate(location.pathname, { replace: true });
             } else {
               toast.error('מנהל לא נמצא - נסה שוב');
@@ -878,6 +890,7 @@ export default function App() {
               
               {/* Candidate Portal Routes */}
               <Route path="/portal" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+              <Route path="/portal/published-today" element={<ProtectedRoute><PublishedToday /></ProtectedRoute>} />
               <Route path="/portal/speed-date" element={<ProtectedRoute><SpeedDate /></ProtectedRoute>} />
               <Route path="/portal/games" element={<ProtectedRoute><GamesPortal /></ProtectedRoute>} />
               

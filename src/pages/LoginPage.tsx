@@ -122,7 +122,7 @@ export default function LoginPage() {
 
       // If auto-sync fails, check connection and tables to show manual SQL if needed
       const { error: adminsError } = await supabase.from('profiles').select('id, phone').limit(1);
-      const { error: matchesError } = await supabase.from('candidates').select('id, full_name').limit(1);
+      const { error: matchesError } = await supabase.from('matches').select('id, full_name').limit(1);
 
       if (!adminsError && !matchesError) {
         toast.success('חיבור תקין ומבנה נתונים מאומת!');
@@ -162,9 +162,6 @@ export default function LoginPage() {
         } else {
           navigate('/');
         }
-      } else {
-        setErrorMessage('שם משתמש או סיסמה שגויים. אנא נסה שוב.');
-        setShowErrorModal(true);
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'שגיאה בחיבור למסד הנתונים');
@@ -229,7 +226,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center p-6 rounded-3xl bg-white shadow-xl mb-6 border border-slate-100">
             <Logo size={80} showText={false} />
           </div>
-          <h1 className="text-4xl font-black text-text-main mb-2">ברוכים הבאים</h1>
+          <h1 className="text-4xl font-black text-text-main mb-2">ברוכים הבאים למערכת ניהול משודכים של החצי השני</h1>
           <p className="text-lg text-text-secondary max-w-md mx-auto font-medium leading-relaxed">
             המערכת נועדה לסייע לכם לפרסם כרטיסי משודכים ולהיות במעקב של פרסום בקבוצות המשודכים שלכם
           </p>

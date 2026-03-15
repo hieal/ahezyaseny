@@ -84,7 +84,8 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
           match.id,
           group.name,
           user.id,
-          user.name || 'מנהל'
+          user.full_name || 'מנהל',
+          group.id
         );
       }
       

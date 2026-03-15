@@ -38,7 +38,7 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User 
         if (status === 'SUBSCRIBED') {
           await channel.track({
             user_id: user.id,
-            full_name: user.name,
+            full_name: user.full_name,
             role: user.role,
           });
         }

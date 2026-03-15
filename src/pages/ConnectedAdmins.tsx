@@ -88,7 +88,7 @@ export default function ConnectedAdmins() {
         }
       }
 
-      const matchesSearch = a.name?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (a.full_name || '').toLowerCase().includes(searchTerm.toLowerCase());
       const isOnline = !!presenceState[a.id];
       const matchesStatus = statusFilter === 'all' || (statusFilter === 'online' ? isOnline : !isOnline);
       const matchesGender = genderFilter === 'all' || a.gender === genderFilter;
@@ -292,7 +292,7 @@ export default function ConnectedAdmins() {
                 >
                   <div className="flex items-center gap-2">
                     <UserCheck size={16} className="text-luxury-blue" />
-                    {selectedAdminId ? allAdmins.find(a => a.id === selectedAdminId)?.name : 'כל המנהלים בקבוצה'}
+                    {selectedAdminId ? (allAdmins.find(a => a.id === selectedAdminId)?.full_name || 'מנהל') : 'כל המנהלים בקבוצה'}
                   </div>
                   <ChevronDown size={16} className={`transition-transform ${showAdminDropdown ? 'rotate-180' : ''}`} />
                 </button>
@@ -327,7 +327,7 @@ export default function ConnectedAdmins() {
                               }}
                               className={`w-full text-right px-4 py-3 text-sm font-bold hover:bg-slate-50 transition-colors ${selectedAdminId === admin.id ? 'text-luxury-blue bg-blue-50/50' : 'text-slate-600'}`}
                             >
-                              {admin.name}
+                              {admin.full_name || 'מנהל'}
                             </button>
                           ))}
                       </motion.div>
@@ -396,7 +396,7 @@ export default function ConnectedAdmins() {
                               )}
                               {isOnline && <OnlineIndicator isOnline={true} className="absolute bottom-0 right-0" />}
                             </div>
-                            <div className="font-bold text-slate-900">{admin.name}</div>
+                            <div className="font-bold text-slate-900">{admin.full_name || 'מנהל'}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-slate-600">
@@ -428,7 +428,7 @@ export default function ConnectedAdmins() {
                               </button>
                             )}
                             <button 
-                              onClick={() => openChat({ id: admin.id, name: admin.name })} 
+                              onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
                               className="p-2 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" 
                               title="שלח הודעת צ'אט"
                             >

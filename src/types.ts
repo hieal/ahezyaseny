@@ -1,30 +1,31 @@
 export interface User {
   id: string;
-  name: string;
-  full_name?: string | null;
-  username: string;
+  name?: string;
+  full_name: string;
+  username?: string;
   email: string;
   role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate';
   status: 'active' | 'inactive';
   category: string | null;
-  secondary_category: string | null;
+  secondary_category?: string | null;
   gender: 'male' | 'female' | null;
   phone: string | null;
-  google_login_allowed: 'true' | 'false';
+  google_login_allowed?: 'true' | 'false';
   avatar_url: string | null;
-  deleted_at: string | null;
-  daily_message_template: string | null;
-  is_from_file: number;
-  is_approved: number;
+  deleted_at?: string | null;
+  daily_message_template?: string | null;
+  is_from_file?: number;
+  is_approved?: number;
   is_shaham_manager?: number;
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
   created_by?: string;
   creator_name?: string;
-  created_at: string;
+  created_at?: string;
   last_seen?: string;
   is_online?: boolean;
+  last_login?: string | null;
 }
 
 export interface GameScore {
@@ -89,6 +90,7 @@ export interface Match {
   creator_category?: string;
   creator_gender?: 'male' | 'female' | null;
   creator_phone?: string | null;
+  category?: string | null;
   created_at: string;
   last_published_at: string | null;
   manual_published_at?: string | null;
@@ -135,6 +137,7 @@ export interface PublishLog {
   match_name: string;
   user_id: string;
   user_name: string;
+  group_id?: string;
   group_name: string;
   created_at: string;
 }

@@ -215,7 +215,7 @@ export default function Dashboard() {
       const note = await dataService.createMatchNote({
         match_id: notesMatch.id,
         user_id: user.id,
-        user_name: user.name,
+        user_name: user.full_name,
         text: newNoteText,
         is_available: isNoteAvailable
       });
@@ -715,7 +715,7 @@ export default function Dashboard() {
     try {
       const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
         dataService.getStats(user || undefined),
-        dataService.getMatches(), // Fetch all matches for the viewer
+        dataService.getMatches(undefined, user || undefined), // Fetch all matches for the viewer
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()
@@ -868,7 +868,7 @@ export default function Dashboard() {
     if (!group) return;
 
     try {
-      await dataService.recordPublish(selectedMatch.id, group.name, user.id, user.name);
+      await dataService.recordPublish(selectedMatch.id, group.name, user.id, user.full_name, group.id);
       toast.success('הפרסום אושר ונרשם במערכת');
       setManualPublishConfirmed(true);
       setShowPublishModal(false);
@@ -1082,7 +1082,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           {user?.avatar_url ? (
-            <img src={user.avatar_url} alt={user.name} className="w-16 h-16 rounded-full object-cover border-2 border-luxury-blue shadow-lg" />
+            <img src={user.avatar_url} alt={user.full_name} className="w-16 h-16 rounded-full object-cover border-2 border-luxury-blue shadow-lg" />
           ) : (
             <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-slate-200">
               <Users size={32} />
@@ -3046,29 +3046,100 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                {adminsInSameGroups.map(u => (
-                  <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${u.is_online ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-                      <div>
-                        <p className="font-bold text-slate-800">{u.name}</p>
-                        <p className="text-xs text-slate-500">{u.category || 'ללא קטגוריה'} | {u.is_online ? 'מחובר' : 'לא מחובר'}</p>
+              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+                {/* Team Leaders Section */}
+                {adminsInSameGroups.filter(u => u.role === 'team_leader').length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black text-luxury-blue uppercase tracking-widest border-b border-blue-100 pb-2">ראשי צוותים</h4>
+                    {adminsInSameGroups.filter(u => u.role === 'team_leader').map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                          <div>
+                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="text-[10px] text-slate-500">
+                              ראש צוות | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                            <Phone size={18} />
+                          </button>
+                          <button onClick={() => {
+                            setShowSameGroupsAdminsModal(false);
+                            openChat({ id: u.id, name: u.full_name || u.name });
+                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                            <MessageSquare size={18} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
-                        <Phone size={18} />
-                      </button>
-                      <button onClick={() => {
-                        setShowSameGroupsAdminsModal(false);
-                        openChat({ id: u.id, name: u.name });
-                      }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                        <MessageSquare size={18} />
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Admins Section */}
+                {adminsInSameGroups.filter(u => u.role === 'admin' || u.role === 'super_admin').length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">מנהלים</h4>
+                    {adminsInSameGroups.filter(u => u.role === 'admin' || u.role === 'super_admin').map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                          <div>
+                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="text-[10px] text-slate-500">
+                              מנהל | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                            <Phone size={18} />
+                          </button>
+                          <button onClick={() => {
+                            setShowSameGroupsAdminsModal(false);
+                            openChat({ id: u.id, name: u.full_name || u.name });
+                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                            <MessageSquare size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Viewers Section */}
+                {adminsInSameGroups.filter(u => u.role === 'viewer').length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">צופים</h4>
+                    {adminsInSameGroups.filter(u => u.role === 'viewer').map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                          <div>
+                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="text-[10px] text-slate-500">
+                              צופה | {u.category || 'ללא קטגוריה'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
+                            <Phone size={18} />
+                          </button>
+                          <button onClick={() => {
+                            setShowSameGroupsAdminsModal(false);
+                            openChat({ id: u.id, name: u.full_name || u.name });
+                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                            <MessageSquare size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {adminsInSameGroups.length === 0 && (
                   <div className="text-center py-8 text-slate-400 italic">לא נמצאו מנהלים נוספים בקבוצות שלך</div>
                 )}
@@ -3100,7 +3171,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3">
                       <OnlineIndicator isOnline={!!presenceState[u.id]} />
                       <div>
-                        <p className="font-bold text-slate-800">{u.name}</p>
+                        <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
                         <p className="text-xs text-slate-500">{!!presenceState[u.id] ? 'מחובר' : 'לא מחובר'}</p>
                       </div>
                     </div>

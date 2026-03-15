@@ -279,7 +279,8 @@ export function WhatsAppWidget({
             currentMatch.id,
             groupName,
             user.id,
-            user.name || 'מנהל'
+            user.full_name || 'מנהל',
+            groupIdNum || undefined
           );
         }
 

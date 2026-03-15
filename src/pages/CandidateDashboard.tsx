@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, MessageSquare, Users, Trophy, Gamepad2, 
   Zap, Clock, Send, ChevronLeft, Star, TrendingUp,
-  User, Shield, LogOut
+  User, Shield, LogOut, Sparkles
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -53,7 +53,7 @@ export default function CandidateDashboard() {
       if (user.created_by) {
         await dataService.sendInternalMessage({
           sender_id: user.id,
-          sender_name: user.name,
+          sender_name: user.full_name,
           receiver_id: user.created_by,
           content: message
         });
@@ -173,9 +173,23 @@ export default function CandidateDashboard() {
         </section>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <button 
-            onClick={() => navigate('/speed-date')}
+            onClick={() => navigate('/portal/published-today')}
+            className="bg-gradient-to-br from-amber-500 to-orange-600 p-6 rounded-[2rem] text-white text-right space-y-3 shadow-lg shadow-orange-200 relative overflow-hidden group"
+          >
+            <div className="absolute -top-4 -left-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center">
+              <Sparkles size={24} />
+            </div>
+            <div>
+              <h3 className="font-black text-xl">פורסמו היום</h3>
+              <p className="text-xs opacity-80 font-bold">הצעות חדשות מהשטח</p>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => navigate('/portal/speed-date')}
             className="bg-gradient-to-br from-purple-600 to-indigo-700 p-6 rounded-[2rem] text-white text-right space-y-3 shadow-lg shadow-purple-200 relative overflow-hidden group"
           >
             <div className="absolute -top-4 -left-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
@@ -189,7 +203,7 @@ export default function CandidateDashboard() {
           </button>
 
           <button 
-            onClick={() => navigate('/games')}
+            onClick={() => navigate('/portal/games')}
             className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-[2rem] text-white text-right space-y-3 shadow-lg shadow-emerald-200 relative overflow-hidden group"
           >
             <div className="absolute -top-4 -left-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />

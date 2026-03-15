@@ -44,7 +44,7 @@ export default function GamesPortal() {
     try {
       await dataService.saveGameScore({
         candidate_id: user.id,
-        candidate_name: user.name,
+        candidate_name: user.full_name,
         game_type: type,
         score
       });
