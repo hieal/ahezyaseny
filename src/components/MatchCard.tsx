@@ -40,7 +40,6 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
   const [showViewerSelector, setShowViewerSelector] = React.useState(false);
-  const [showViewerGroupsModal, setShowViewerGroupsModal] = React.useState(false);
   const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
 
   React.useEffect(() => {
@@ -310,7 +309,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           />
           
           {/* Synced Indicator */}
-          {match.image_url?.includes('supabase.co') && (
+          {user?.role === 'super_admin' && match.image_url?.includes('supabase.co') && (
             <div className="absolute top-2 right-2 z-20 bg-green-500/90 backdrop-blur-sm text-white p-1 rounded-full shadow-lg border border-white/20" title="תמונה מסונכרנת ומאובטחת">
               <CheckCircle size={14} />
             </div>
@@ -565,18 +564,6 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                 <ImageIcon size={18} />
               </button>
             )}
-            {viewerGroupIds.length > 0 && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowViewerGroupsModal(true);
-                }}
-                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all"
-                title="צפה בקבוצות של צופה זה"
-              >
-                <Eye size={18} className="animate-pulse" />
-              </button>
-            )}
             {!isViewer && (
               <div className="relative">
                 <button 
@@ -796,21 +783,6 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           </div>
         )}
       </AnimatePresence>
-      {showViewerGroupsModal && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowViewerGroupsModal(false)}>
-          <div className="bg-white p-6 rounded-2xl w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-4">קבוצות צפייה</h3>
-            <div className="space-y-2">
-              {allGroups.filter(g => viewerGroupIds.includes(g.id) && g.type === match.type).map(g => (
-                <a key={g.id} href={g.link} target="_blank" rel="noreferrer" className="block p-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-sm text-slate-700 font-medium transition-all">
-                  {g.name}
-                </a>
-              ))}
-            </div>
-            <button onClick={() => setShowViewerGroupsModal(false)} className="mt-6 w-full p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-700 transition-all">סגור</button>
-          </div>
-        </div>
-      )}
     </div>
   </motion.div>
   );

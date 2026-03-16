@@ -19,17 +19,27 @@ export default function GamesPortal() {
   const [activeGame, setActiveGame] = useState<GameType>('menu');
   const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
   const [settings, setSettings] = useState<PortalSettings | null>(null);
+  const [candidateImages, setCandidateImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [scores, portalSettings] = await Promise.all([
+        const [scores, portalSettings, matches] = await Promise.all([
           dataService.getLeaderboard(),
-          dataService.getPortalSettings()
+          dataService.getPortalSettings(),
+          dataService.getMatches()
         ]);
         setLeaderboard(scores);
         setSettings(portalSettings);
+        
+        // Extract candidate images
+        const images = matches
+          .map(m => m.image_url)
+          .filter((url): url is string => !!url)
+          .slice(0, 8); // Take top 8 for a 4x4 grid
+        
+        setCandidateImages(images.length >= 4 ? images : JSON.parse(portalSettings?.memory_game_images || '[]'));
       } catch (err) {
         console.error('Error fetching games data:', err);
       } finally {
@@ -183,7 +193,7 @@ export default function GamesPortal() {
 
         {activeGame === 'memory' && (
           <MemoryGame 
-            images={JSON.parse(settings?.memory_game_images || '[]')} 
+            images={candidateImages} 
             onComplete={(score) => {
               saveScore(score, 'memory');
               setActiveGame('menu');

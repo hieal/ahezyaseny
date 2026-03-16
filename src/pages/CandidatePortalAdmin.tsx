@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, Image as ImageIcon, Zap, Trophy, 
   Save, Plus, Trash2, Layout, BarChart3,
-  Users, Gamepad2, Clock, X
+  Users, Gamepad2, Clock, X, MessageSquare
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MatchesManagement from '../components/MatchesManagement';
@@ -153,6 +153,28 @@ export default function CandidatePortalAdmin() {
                   settings?.is_speed_date_active ? 'right-9' : 'right-1'
                 }`} />
               </button>
+            </div>
+          </section>
+
+          {/* WhatsApp Group ID */}
+          <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
+                <MessageSquare size={28} />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900">מזהה קבוצת וואטסאפ (Whapi)</h2>
+                <p className="text-sm text-slate-500 font-medium">הגדר את מזהה הקבוצה המרכזית לפורטל (עבור סנכרון הודעות)</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={settings?.whatsapp_group_id || ''}
+                onChange={(e) => setSettings(s => s ? { ...s, whatsapp_group_id: e.target.value } : null)}
+                placeholder="הכנס מזהה קבוצה (למשל: 123456789@g.us)"
+                className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 font-medium"
+              />
             </div>
           </section>
 

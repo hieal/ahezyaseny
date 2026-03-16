@@ -1050,8 +1050,11 @@ export default function Dashboard() {
     })();
 
     // Manager & Group filters (Super Admin)
-    const matchesManager = filterManager === 'all' || m.created_by === filterManager;
-    const matchesGroup = filterGroup === 'all' || m.category === filterGroup;
+    const matchesManager = (filterManager === 'all' || m.created_by === filterManager) &&
+                          (selectedManagerIds.length === 0 || selectedManagerIds.includes(m.created_by || ''));
+    const matchesGroup = (filterGroup === 'all' || m.category === filterGroup) &&
+                        (selectedGroupType === 'all' || 
+                         (selectedGroupType === 'פרויקט שח"ם' ? m.category?.startsWith('פרויקט שח"ם') : m.category === selectedGroupType));
 
     // Completion filter
     const matchesCompletion = completionFilter === 'all' || 

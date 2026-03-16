@@ -41,6 +41,7 @@ export interface PortalSettings {
   id: string;
   memory_game_images: string; // JSON array of URLs
   is_speed_date_active: boolean;
+  whatsapp_group_id?: string;
   created_at: string;
 }
 
@@ -153,6 +154,8 @@ export interface PublishLog {
   group_id?: string;
   group_name: string;
   created_at: string;
+  match?: Match;
+  admin?: any;
 }
 
 export interface MatchNote {

@@ -526,6 +526,7 @@ class DataService {
             gender: cand.type === 'male' ? 'male' : 'female',
             phone: cand.phone,
             avatar_url: cand.image_url,
+            created_by: cand.created_by,
             last_login: null,
             is_shaham_manager: 0
           } as User;
@@ -1620,18 +1621,60 @@ class DataService {
     return data as Match;
   }
 
-  async getCandidateGroupInfo(category: string, gender: string): Promise<{ mainGroup: WhatsAppGroup | null, observerGroups: WhatsAppGroup[] }> {
-    const { data: groups } = await supabase
-      .from('whatsapp_groups')
-      .select('*')
-      .eq('category', category);
-    
-    if (!groups) return { mainGroup: null, observerGroups: [] };
+  async getAdminById(id: string): Promise<User | null> {
+    const data = await this.handleSupabase(
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single()
+    );
+    return data as User;
+  }
 
-    const mainGroup = groups.find(g => g.type === (gender === 'male' ? 'male' : 'female')) || null;
-    const observerGroups = groups.filter(g => g.id !== mainGroup?.id);
+  async getCandidateGroupInfo(category: string, gender: string, viewerGroupIds?: string[], overrideGroupId?: string): Promise<{ mainGroup: WhatsAppGroup | null, observerGroups: WhatsAppGroup[] }> {
+    const { data: allGroups } = await supabase
+      .from('whatsapp_groups')
+      .select('*');
+    
+    if (!allGroups) return { mainGroup: null, observerGroups: [] };
+
+    let mainGroup = allGroups.find(g => g.category === category && g.type === (gender === 'male' ? 'male' : 'female')) || null;
+    
+    // If override ID is provided from settings, try to use it as main group
+    if (overrideGroupId) {
+      const override = allGroups.find(g => g.id === overrideGroupId);
+      if (override) mainGroup = override;
+    }
+    
+    let observerGroups: WhatsAppGroup[] = [];
+    if (viewerGroupIds && viewerGroupIds.length > 0) {
+      // Only same gender and explicitly added
+      observerGroups = allGroups.filter(g => 
+        viewerGroupIds.includes(g.id) && 
+        g.type === (gender === 'male' ? 'male' : 'female')
+      );
+    }
 
     return { mainGroup, observerGroups };
+  }
+
+  async getPublishedCardsForGroup(groupId: string): Promise<PublishLog[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const { data, error } = await supabase
+      .from('publish_logs')
+      .select(`
+        *,
+        match:candidates(*)
+      `)
+      .eq('group_id', groupId)
+      .gte('created_at', today.toISOString())
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
   }
 
   async getCandidateByPhone(phone: string): Promise<Match | null> {
