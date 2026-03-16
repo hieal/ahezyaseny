@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "GameSession": {
+      "title": "GameSession",
+      "description": "Represents an active or completed maze game session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "type": "string" },
+        "player1_id": { "type": "string" },
+        "player2_id": { "type": "string" },
+        "maze_data": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "status", "created_at"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "Represents a player in a game session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "game_id": { "type": "string" },
+        "position": { "type": "object" },
+        "keys": { "type": "array" }
+      }
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A message sent within a game session.",
+      "type": "object",
+      "properties": {
+        "game_id": { "type": "string" },
+        "sender_id": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": { "$ref": "GameSession" },
+      "description": "Active game sessions."
+    },
+    "/games/{gameId}/players/{playerId}": {
+      "schema": { "$ref": "Player" },
+      "description": "Players in a specific game."
+    },
+    "/games/{gameId}/messages/{messageId}": {
+      "schema": { "$ref": "ChatMessage" },
+      "description": "Chat messages for a game."
+    }
+  }
+}

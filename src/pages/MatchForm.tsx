@@ -40,7 +40,8 @@ export default function MatchForm() {
     creation_source: 'manual'
   });
 
-  const [additionalImages, setAdditionalImages] = useState<string[]>([]);
+  const [images, setImages] = useState<(string | null)[]>([null, null, null]);
+  const [mainImageIndex, setMainImageIndex] = useState(0);
 
   const [aiText, setAiText] = useState('');
   const [parsing, setParsing] = useState(false);
@@ -52,6 +53,7 @@ export default function MatchForm() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [tempImageUrl, setTempImageUrl] = useState<string | null>(null);
+  const [tempImageIndex, setTempImageIndex] = useState<number>(0);
 
   const [activeTab, setActiveTab] = useState<'manual' | 'ai' | 'csv'>('manual');
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -67,11 +69,12 @@ export default function MatchForm() {
           const match = data.find((m: Match) => m.id === id);
           if (match) {
             setFormData(match);
-            try {
-              setAdditionalImages(JSON.parse(match.additional_images || '[]'));
-            } catch (e) {
-              setAdditionalImages([]);
-            }
+            const additional = JSON.parse(match.additional_images || '[]');
+            const allImages = [match.image_url, ...additional];
+            const newImages = [null, null, null];
+            allImages.forEach((img, i) => { if (i < 3) newImages[i] = img; });
+            setImages(newImages);
+            setMainImageIndex(match.main_image_index || 0);
           }
         });
     }
@@ -172,7 +175,9 @@ export default function MatchForm() {
     try {
       const matchData = {
         ...formData,
-        additional_images: JSON.stringify(additionalImages)
+        image_url: images[mainImageIndex],
+        additional_images: JSON.stringify(images.filter((_, i) => i !== mainImageIndex)),
+        main_image_index: mainImageIndex
       } as Omit<Match, 'id' | 'created_at'>;
 
       if (isEdit && id) {
@@ -207,7 +212,7 @@ export default function MatchForm() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isMain: boolean) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -218,12 +223,9 @@ export default function MatchForm() {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      if (isMain) {
-        setTempImageUrl(base64);
-        setShowCropper(true);
-      } else {
-        setAdditionalImages(prev => [...prev, base64]);
-      }
+      setTempImageUrl(base64);
+      setTempImageIndex(index);
+      setShowCropper(true);
     };
     reader.readAsDataURL(file);
   };
@@ -266,11 +268,11 @@ export default function MatchForm() {
     if (tempImageUrl && croppedAreaPixels) {
       try {
         const croppedImage = await getCroppedImg(tempImageUrl, croppedAreaPixels);
-        setFormData(prev => ({ 
-          ...prev, 
-          image_url: croppedImage,
-          crop_config: null // No longer need crop config since we save the cropped image
-        }));
+        setImages(prev => {
+          const newImages = [...prev];
+          newImages[tempImageIndex] = croppedImage;
+          return newImages;
+        });
         setShowCropper(false);
         setTempImageUrl(null);
       } catch (e) {
@@ -281,7 +283,11 @@ export default function MatchForm() {
   };
 
   const removeAdditionalImage = (index: number) => {
-    setAdditionalImages(prev => prev.filter((_, i) => i !== index));
+    setImages(prev => {
+      const newImages = [...prev];
+      newImages[index] = null;
+      return newImages;
+    });
   };
 
   const handleCsvScan = async () => {
@@ -460,6 +466,8 @@ export default function MatchForm() {
                   creator_category: user?.category || 'general',
                   is_published_confirmed: 0,
                   crop_config: null,
+                  images: null,
+                  image_position: null,
                   viewer_group_ids: '[]'
                 });
                 toast.success('נוצר משודך דמו בהצלחה');
@@ -772,69 +780,67 @@ export default function MatchForm() {
               <Camera size={20} className="text-luxury-blue" />
               תמונות
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונה ראשית</label>
-                <div className="relative group aspect-square max-w-[250px] rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-luxury-blue">
-                  {formData.image_url ? (
-                    <>
-                      <img 
-                        src={formData.image_url} 
-                        alt="Main" 
-                        className="w-full h-full object-cover" 
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button type="button" onClick={() => {
-                          setTempImageUrl(formData.image_url!);
-                          setCrop({ x: 0, y: 0 });
-                          setZoom(1);
-                          setShowCropper(true);
-                        }} className="p-2 bg-luxury-blue text-white rounded-full hover:bg-luxury-blue/90">
-                          <Crop size={20} />
-                        </button>
-                        <button type="button" onClick={() => setFormData({...formData, image_url: null, crop_config: null})} className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600">
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer relative group">
-                      <img 
-                        src={formData.type === 'male' ? 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400&h=400' : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400&h=400'} 
-                        alt="Demo" 
-                        className="w-full h-full object-cover opacity-50 grayscale" 
-                      />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
-                        <Camera size={40} className="text-white mb-2 drop-shadow-md" />
-                        <span className="text-sm font-bold text-white drop-shadow-md bg-black/50 px-3 py-1 rounded-full">לחץ להעלאת תמונה</span>
-                      </div>
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, true)} />
-                    </label>
-                  )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {images.map((img, index) => (
+                <div key={index} className="space-y-2">
+                  <div className="relative group aspect-square rounded-2xl border-2 border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-luxury-blue">
+                    {img ? (
+                      <>
+                        <img src={img} alt={`Image ${index}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button type="button" onClick={() => {
+                            setTempImageUrl(img);
+                            setTempImageIndex(index);
+                            setCrop({ x: 0, y: 0 });
+                            setZoom(1);
+                            setShowCropper(true);
+                          }} className="p-2 bg-luxury-blue text-white rounded-full hover:bg-luxury-blue/90">
+                            <Crop size={20} />
+                          </button>
+                          <button type="button" onClick={() => {
+                            setImages(prev => {
+                              const newImages = [...prev];
+                              newImages[index] = null;
+                              return newImages;
+                            });
+                          }} className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600">
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                        <Camera size={30} className="text-slate-300 mb-2" />
+                        <span className="text-xs font-bold text-slate-400">העלאה</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, index)} />
+                      </label>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMainImageIndex(index)}
+                    className={`w-full py-2 rounded-xl text-xs font-bold transition-all ${
+                      mainImageIndex === index ? 'bg-luxury-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {mainImageIndex === index ? 'תמונה ראשית' : 'הגדר כראשית'}
+                  </button>
+                  <input
+                    type="text"
+                    placeholder="או הדבק קישור לתמונה"
+                    className="w-full p-2 text-xs rounded-xl border border-slate-200"
+                    value={img || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setImages(prev => {
+                        const newImages = [...prev];
+                        newImages[index] = val;
+                        return newImages;
+                      });
+                    }}
+                  />
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">תמונות נוספות</label>
-                <div className="grid grid-cols-2 gap-4">
-                  {additionalImages.map((img, idx) => (
-                    <div key={idx} className="relative group aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
-                      <img src={img} alt={`Extra ${idx}`} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <button type="button" onClick={() => removeAdditionalImage(idx)} className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {additionalImages.length < 4 && (
-                    <label className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center cursor-pointer hover:border-luxury-blue transition-all">
-                      <Plus size={24} className="text-slate-300" />
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, false)} />
-                    </label>
-                  )}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 

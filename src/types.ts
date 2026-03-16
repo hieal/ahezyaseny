@@ -66,10 +66,17 @@ export interface WhatsAppGroup {
   last_initial_sent_method?: 'auto' | 'manual' | null;
 }
 
+export interface ImagePosition {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 export interface Match {
   id: string;
   type: 'male' | 'female';
   name: string;
+  full_name?: string;
   age: number;
   height: string;
   ethnicity: string;
@@ -85,6 +92,9 @@ export interface Match {
   age_range: string;
   image_url: string | null;
   additional_images: string | null; // JSON string of array
+  images: string[] | null; // Array of image URLs
+  image_position: ImagePosition | null; // Object of {x, y, zoom}
+  main_image_index?: number; // Index of the primary image in the combined list
   created_by: string;
   creator_name?: string;
   creator_category?: string;
@@ -102,7 +112,7 @@ export interface Match {
   is_available?: boolean;
   is_archived?: boolean;
   status?: 'available' | 'active' | 'inactive' | 'archived';
-  crop_config: string | null; // JSON string of { x, y, zoom }
+  crop_config: ImagePosition | null; // Object of { x, y, zoom }
   creation_source: 'manual' | 'ai' | 'csv' | null;
   viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs
 }

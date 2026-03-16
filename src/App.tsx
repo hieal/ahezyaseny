@@ -19,7 +19,9 @@ import SpeedDate from './pages/SpeedDate';
 import GamesPortal from './pages/GamesPortal';
 import CandidatePortalAdmin from './pages/CandidatePortalAdmin';
 import PublishedToday from './pages/PublishedToday';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap } from 'lucide-react';
+import AdminLiveTracker from './pages/AdminLiveTracker';
+import Leaderboard from './pages/Leaderboard';
+import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -42,10 +44,15 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 
   if (!user) return <Navigate to="/login" />;
   
-  if (user.role === 'candidate') return <Navigate to="/candidate-profile" />;
+  if (user.role === 'candidate') {
+    const location = window.location.pathname;
+    if (!location.startsWith('/candidate-dashboard') && !location.startsWith('/portal')) {
+      return <Navigate to="/candidate-dashboard" />;
+    }
+  }
   
   if (superAdminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
-  if (adminOnly && user.role !== 'super_admin' && user.role !== 'team_leader') return <Navigate to="/" />;
+  if (adminOnly && user.role !== 'super_admin' && user.role !== 'team_leader' && user.role !== 'admin') return <Navigate to="/" />;
   
   return <>{children}</>;
 }
@@ -85,7 +92,7 @@ function Sidebar() {
   }, []);
 
   React.useEffect(() => {
-    if (user) {
+    if (user && user.role !== 'candidate') {
       const fetchPendingCount = async () => {
         try {
           const pending = await dataService.getPendingTransfersForMe(user.id);
@@ -119,7 +126,7 @@ function Sidebar() {
   }, [allAdmins]);
 
   React.useEffect(() => {
-    if (user) {
+    if (user && user.role !== 'candidate') {
       const fetchAdmins = async () => {
         try {
           const data = await dataService.getUsers();
@@ -200,7 +207,7 @@ function Sidebar() {
 
   const navItems = user?.role === 'candidate' 
     ? [
-        { path: '/candidate-profile', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
+        { path: '/candidate-dashboard', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
         { path: '/portal/published-today', label: 'פורסמו היום', icon: <Sparkles size={20} /> },
         { path: '/portal/speed-date', label: 'ספיד-דייט', icon: <Zap size={20} /> },
         { path: '/portal/games', label: 'משחקים', icon: <Gamepad2 size={20} /> },
@@ -235,7 +242,6 @@ function Sidebar() {
 
   if (user?.role === 'super_admin') {
     navItems.push(
-      { path: '/portal-admin', label: 'ניהול פורטל', icon: <Gamepad2 size={20} /> },
       { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
     );
   }
@@ -343,6 +349,40 @@ function Sidebar() {
                   </Link>
                 </div>
               ))}
+
+              {user?.role !== 'candidate' && (
+                <div className="pt-4 mt-4 border-t border-slate-50">
+                  <div className="px-4 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">ניהול פורטל</div>
+                  <div className="space-y-1">
+                    {user?.role === 'super_admin' && (
+                      <Link
+                        to="/portal-admin"
+                        onClick={() => setIsOpen(false)}
+                        className={`sidebar-item ${location.pathname === '/portal-admin' ? 'sidebar-item-active' : ''}`}
+                      >
+                        <Gamepad2 size={20} />
+                        <span className="font-medium flex-1">הגדרות פורטל</span>
+                      </Link>
+                    )}
+                    <Link
+                      to="/admin-live-tracker"
+                      onClick={() => setIsOpen(false)}
+                      className={`sidebar-item ${location.pathname === '/admin-live-tracker' ? 'sidebar-item-active' : ''}`}
+                    >
+                      <Gamepad2 size={20} />
+                      <span className="font-medium flex-1">מבוך שיתוף פעולה</span>
+                    </Link>
+                    <Link
+                      to="/leaderboard"
+                      onClick={() => setIsOpen(false)}
+                      className={`sidebar-item ${location.pathname === '/leaderboard' ? 'sidebar-item-active' : ''}`}
+                    >
+                      <Trophy size={20} />
+                      <span className="font-medium flex-1">טבלת מובילים - מבוך</span>
+                    </Link>
+                  </div>
+                </div>
+              )}
             </nav>
 
             <div className="p-6 border-t border-slate-50">
@@ -378,7 +418,7 @@ function Sidebar() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-text-main truncate">{user?.full_name}</p>
-                  <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}</p>
+                  <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? 'ראש צוות' : user?.role === 'candidate' ? 'משודך' : 'מנהל'}</p>
                 </div>
               </div>
               <button 
@@ -890,8 +930,13 @@ export default function App() {
               <Route path="/settings" element={<ProtectedRoute superAdminOnly><SettingsPage /></ProtectedRoute>} />
               <Route path="/portal-admin" element={<ProtectedRoute superAdminOnly><CandidatePortalAdmin /></ProtectedRoute>} />
               
+              {/* Maze Management Routes */}
+              <Route path="/admin-live-tracker" element={<ProtectedRoute adminOnly><AdminLiveTracker /></ProtectedRoute>} />
+              <Route path="/leaderboard" element={<ProtectedRoute adminOnly><Leaderboard /></ProtectedRoute>} />
+              
               {/* Candidate Portal Routes */}
-              <Route path="/candidate-profile" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+              <Route path="/candidate-dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+              <Route path="/candidate-profile" element={<Navigate to="/candidate-dashboard" replace />} />
               <Route path="/portal/published-today" element={<ProtectedRoute><PublishedToday /></ProtectedRoute>} />
               <Route path="/portal/speed-date" element={<ProtectedRoute><SpeedDate /></ProtectedRoute>} />
               <Route path="/portal/games" element={<ProtectedRoute><GamesPortal /></ProtectedRoute>} />

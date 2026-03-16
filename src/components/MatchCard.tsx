@@ -1,5 +1,5 @@
 import React from 'react';
-import { Match, WhatsAppGroup } from '../types';
+import { Match, WhatsAppGroup, ImagePosition } from '../types';
 import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,6 +40,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
   const [showViewerSelector, setShowViewerSelector] = React.useState(false);
+  const [showViewerGroupsModal, setShowViewerGroupsModal] = React.useState(false);
   const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
 
   React.useEffect(() => {
@@ -50,30 +51,19 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     }
   }, [allGroupsProp]);
 
-  const [localCropConfig, setLocalCropConfig] = React.useState(() => {
-    if (!match.crop_config) return { x: 50, y: 50, zoom: 1 };
-    try {
-      return JSON.parse(match.crop_config);
-    } catch (e) {
-      return { x: 50, y: 50, zoom: 1 };
-    }
+  const [localCropConfig, setLocalCropConfig] = React.useState<ImagePosition>(() => {
+    const pos = typeof match.image_position === 'string' ? JSON.parse(match.image_position) : match.image_position;
+    return (pos || match.crop_config || { x: 50, y: 50, zoom: 1 }) as ImagePosition;
   });
 
   React.useEffect(() => {
     if (!isAdjusting) {
-      if (!match.crop_config) {
-        setLocalCropConfig({ x: 50, y: 50, zoom: 1 });
-      } else {
-        try {
-          setLocalCropConfig(JSON.parse(match.crop_config));
-        } catch (e) {
-          setLocalCropConfig({ x: 50, y: 50, zoom: 1 });
-        }
-      }
+      const pos = typeof match.image_position === 'string' ? JSON.parse(match.image_position) : match.image_position;
+      setLocalCropConfig(pos || match.crop_config || { x: 50, y: 50, zoom: 1 } as ImagePosition);
     }
-  }, [match.crop_config, isAdjusting]);
+  }, [match.image_position, match.crop_config, isAdjusting]);
 
-  const handleAdjust = (e: React.MouseEvent, updates: any) => {
+  const handleAdjust = (e: React.MouseEvent, updates: Partial<ImagePosition>) => {
     if (isViewer) return;
     e.stopPropagation();
     setIsAdjusting(true);
@@ -81,9 +71,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isAdjusting) {
-      setIsAdjusting(true);
-    }
+    if (isViewer) return;
+    setIsAdjusting(true);
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -122,7 +111,11 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     e.stopPropagation();
     try {
       if (onQuickUpdate) {
-        await onQuickUpdate(match.id, { crop_config: JSON.stringify(localCropConfig) });
+        const updates: Partial<Match> = { 
+          image_position: localCropConfig,
+          crop_config: localCropConfig
+        };
+        await onQuickUpdate(match.id, updates);
       }
       setIsAdjusting(false);
       toast.success('מיקום התמונה נשמר');
@@ -210,11 +203,32 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     }
   };
 
+  const images = React.useMemo(() => {
+    try {
+      const additional = JSON.parse(match.additional_images || '[]');
+      return [match.image_url, ...additional].filter(Boolean);
+    } catch (e) {
+      return [match.image_url].filter(Boolean);
+    }
+  }, [match.image_url, match.additional_images]);
+
+  const mainImage = images[match.main_image_index || 0] || match.image_url;
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isAdjusting && !(e.target as HTMLElement).closest('.match-card-container')) {
+        setIsAdjusting(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAdjusting]);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`card flex flex-col h-full hover:shadow-md transition-all group relative ${
+      className={`match-card-container card flex flex-col h-full hover:shadow-md transition-all group relative ${
         size === 'small' ? 'max-w-xs' : size === 'medium' ? 'max-w-sm' : 'max-w-md'
       } ${
         isNotAvailable ? 'ring-2 ring-black ring-inset' : 
@@ -282,7 +296,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
             </button>
           )}
           <img 
-            src={dataService.getPublicImageUrl(match.image_url)} 
+            src={dataService.getPublicImageUrl(mainImage)} 
             alt={match.name} 
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover transition-all pointer-events-none select-none" 
@@ -296,7 +310,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           />
           
           {/* Synced Indicator */}
-          {match.image_url.includes('supabase.co') && (
+          {match.image_url?.includes('supabase.co') && (
             <div className="absolute top-2 right-2 z-20 bg-green-500/90 backdrop-blur-sm text-white p-1 rounded-full shadow-lg border border-white/20" title="תמונה מסונכרנת ומאובטחת">
               <CheckCircle size={14} />
             </div>
@@ -315,42 +329,46 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           {/* Adjustment Controls Overlay */}
           {!isViewer && (
             <div className={`absolute inset-0 bg-black/10 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
-              <div className={`flex flex-col items-center gap-3 bg-white/40 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-white/20 w-[220px] transition-opacity ${isDragging ? 'opacity-0' : 'opacity-100'}`} onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col items-center gap-3 bg-white/40 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-white/20 w-[220px] transition-opacity opacity-100" onClick={e => e.stopPropagation()}>
                 <div className="text-[11px] font-bold text-slate-800 text-center leading-tight">
                   שיפור מקום התמונה<br/>
                   <span className="text-[9px] font-medium opacity-70">לחץ על אישור לשמירה</span>
                 </div>
                 
                 <div className="flex flex-col items-center gap-2 w-full">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronUp size={20} /></button>
-                  
-                  <div className="flex items-center justify-between w-full gap-2">
-                    <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronRight size={20} /></button>
-                    
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/20">
-                        <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הגדל"><ZoomIn size={18} /></button>
-                        <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הקטן"><ZoomOut size={18} /></button>
+                  {!isDragging && (
+                    <>
+                      <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronUp size={20} /></button>
+                      
+                      <div className="flex items-center justify-between w-full gap-2">
+                        <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronRight size={20} /></button>
+                        
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/20">
+                            <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הגדל"><ZoomIn size={18} /></button>
+                            <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הקטן"><ZoomOut size={18} /></button>
+                          </div>
+
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsAdjusting(true);
+                              toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
+                            }} 
+                            className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-2xl transition-all shadow-md ${isAdjusting ? 'bg-gradient-to-br from-luxury-blue to-blue-700 text-white scale-105 ring-4 ring-blue-100' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-100'}`}
+                            title="הזזה חופשית"
+                          >
+                            <Move size={22} />
+                            <span className="text-[9px] font-bold">הזזה חופשית</span>
+                          </button>
+                        </div>
+
+                        <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronLeft size={20} /></button>
                       </div>
-
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsAdjusting(true);
-                          toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
-                        }} 
-                        className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-2xl transition-all shadow-md ${isAdjusting ? 'bg-gradient-to-br from-luxury-blue to-blue-700 text-white scale-105 ring-4 ring-blue-100' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-100'}`}
-                        title="הזזה חופשית"
-                      >
-                        <Move size={22} />
-                        <span className="text-[9px] font-bold">הזזה חופשית</span>
-                      </button>
-                    </div>
-
-                    <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronLeft size={20} /></button>
-                  </div>
-                  
-                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronDown size={20} /></button>
+                      
+                      <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronDown size={20} /></button>
+                    </>
+                  )}
                 </div>
                 
                 {isAdjusting && (
@@ -545,6 +563,18 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                 title="צפה בכרטיס מעוצב"
               >
                 <ImageIcon size={18} />
+              </button>
+            )}
+            {viewerGroupIds.length > 0 && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowViewerGroupsModal(true);
+                }}
+                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all"
+                title="צפה בקבוצות של צופה זה"
+              >
+                <Eye size={18} className="animate-pulse" />
               </button>
             )}
             {!isViewer && (
@@ -766,6 +796,21 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           </div>
         )}
       </AnimatePresence>
+      {showViewerGroupsModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowViewerGroupsModal(false)}>
+          <div className="bg-white p-6 rounded-2xl w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">קבוצות צפייה</h3>
+            <div className="space-y-2">
+              {allGroups.filter(g => viewerGroupIds.includes(g.id) && g.type === match.type).map(g => (
+                <a key={g.id} href={g.link} target="_blank" rel="noreferrer" className="block p-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-sm text-slate-700 font-medium transition-all">
+                  {g.name}
+                </a>
+              ))}
+            </div>
+            <button onClick={() => setShowViewerGroupsModal(false)} className="mt-6 w-full p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-700 transition-all">סגור</button>
+          </div>
+        </div>
+      )}
     </div>
   </motion.div>
   );

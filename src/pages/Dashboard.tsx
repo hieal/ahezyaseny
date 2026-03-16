@@ -415,7 +415,7 @@ export default function Dashboard() {
         ctx.clip();
         
         if (match.crop_config) {
-          const config = JSON.parse(match.crop_config);
+          const config = typeof match.crop_config === 'string' ? JSON.parse(match.crop_config) : match.crop_config;
           const { x, y, zoom } = config;
           
           const scale = Math.max(imgW / img.width, imgH / img.height) * (zoom || 1);
@@ -1018,13 +1018,50 @@ export default function Dashboard() {
   const filteredMatches = matches.filter(m => {
     const matchesSearch = (m.name || '').toLowerCase().includes(search.toLowerCase()) || 
                          (m.city || '').toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = filter === 'all' || m.category === filter;
-    const matchesType = type === 'all' || (type === 'males' ? m.type === 'male' : m.type === 'female');
+    
+    // Type filter (from URL /matches/:type or dropdown)
+    const matchesType = (() => {
+      if (type === 'males') return m.type === 'male';
+      if (type === 'females') return m.type === 'female';
+      if (type === 'all') return true;
+      if (!type) {
+        if (filter === 'male') return m.type === 'male';
+        if (filter === 'female') return m.type === 'female';
+        return true;
+      }
+      return true;
+    })();
+
+    // Category filter
+    const matchesCategory = (filter === 'all' || filter === 'male' || filter === 'female' || 
+                            filter === 'not_published' || filter === 'published_today') || 
+                            m.category === filter;
+    
+    // Status filter
+    const matchesStatus = (() => {
+      if (filter === 'not_published') return !m.last_published_at;
+      if (filter === 'published_today') {
+        if (!m.last_published_at) return false;
+        const today = new Date().toISOString().split('T')[0];
+        const pubDate = new Date(m.last_published_at).toISOString().split('T')[0];
+        return pubDate === today;
+      }
+      return true;
+    })();
+
+    // Manager & Group filters (Super Admin)
+    const matchesManager = filterManager === 'all' || m.created_by === filterManager;
+    const matchesGroup = filterGroup === 'all' || m.category === filterGroup;
+
+    // Completion filter
+    const matchesCompletion = completionFilter === 'all' || 
+                             (completionFilter === 'complete' ? getMissingFields(m).length === 0 : getMissingFields(m).length > 0);
     
     // Restore "deleted" filter: only show if not archived or status is active
     const isNotDeleted = !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status);
     
-    return matchesSearch && matchesCategory && matchesType && isNotDeleted;
+    return matchesSearch && matchesType && matchesCategory && matchesStatus && 
+           matchesManager && matchesGroup && matchesCompletion && isNotDeleted;
   }).sort((a, b) => {
     if (sortAlphabetically) {
       return (a.name || '').localeCompare(b.name || '', 'he');
@@ -1053,7 +1090,7 @@ export default function Dashboard() {
 
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען נתונים...</div>;
 
-  const pageTitle = type === 'males' ? 'משודכים (בנים)' : type === 'females' ? 'משודכות (בנות)' : 'Dashboard';
+  const pageTitle = type === 'males' ? 'משודכים (בנים)' : type === 'females' ? 'משודכות (בנות)' : type === 'all' ? 'כל המשודכים' : 'Dashboard';
 
   const isViewer = user?.role === 'viewer';
 
@@ -3518,7 +3555,7 @@ export default function Dashboard() {
                 onRefreshStatus={fetchData}
                 onAdjustImage={async (direction) => {
                   if (!selectedMatch) return;
-                  const config = selectedMatch.crop_config ? JSON.parse(selectedMatch.crop_config) : { x: 50, y: 50, zoom: 1 };
+                  const config = selectedMatch.crop_config || { x: 50, y: 50, zoom: 1 };
                   let newConfig = { ...config };
                   
                   switch(direction) {
@@ -3530,7 +3567,7 @@ export default function Dashboard() {
                     case 'zoomOut': newConfig.zoom = Math.max(1, (config.zoom || 1) - 0.1); break;
                   }
                   
-                  const updated = await dataService.updateMatch(selectedMatch.id, { crop_config: JSON.stringify(newConfig) });
+                  const updated = await dataService.updateMatch(selectedMatch.id, { crop_config: newConfig });
                   setSelectedMatch(updated);
                   generateDesignedImage(updated);
                 }}

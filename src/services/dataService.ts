@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   is_from_file INTEGER DEFAULT 0,
   is_approved INTEGER DEFAULT 0,
   is_shaham_manager INTEGER DEFAULT 0,
+  last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
   assigned_group_id UUID,
   created_by UUID,
@@ -184,6 +185,7 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS secondary_category TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_message_template TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS full_name TEXT;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS text TEXT;
@@ -404,6 +406,7 @@ class DataService {
           .single();
         
         if (error) {
+          console.error('God login error:', error);
           if (error.code === '406') throw new Error('Database connection error (406)');
           throw error;
         }
@@ -434,16 +437,19 @@ class DataService {
     try {
       if (type === 'admin') {
         // 1. Check profiles table (Admins)
-        let query = supabase.from('profiles')
-          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager');
+        const { data: profilesData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager')
+          .or(`phone.eq.${input},email.eq.${input},username.eq.${input}`)
+          .limit(1);
         
-        // Search exactly as entered
-        query = query.or(`phone.eq."${input}",email.eq."${input}",username.eq."${input}"`);
+        if (profileError) {
+          console.error('Admin login query error:', profileError);
+          throw profileError;
+        }
         
-        const profilesData = await this.handleSupabase(query);
-        
-        if (profilesData && (profilesData as any[]).length > 0) {
-          const user = (profilesData as any[])[0];
+        if (profilesData && profilesData.length > 0) {
+          const user = profilesData[0];
           
           // Check password against password_plain
           if (user.password_plain === password_plain) {
@@ -454,46 +460,83 @@ class DataService {
         }
       } else if (type === 'candidate') {
         // 2. Check candidates table (Candidates)
-        // Candidates use phone as username and default password '12345678'
+        // Candidates use phone as username and passwords are in profiles table
         const sanitizedPhone = input.replace(/[^0-9]/g, '');
-        const { data: candidates, error: candError } = await supabase
+        
+        // Fallback: If phone starts with '0', try both versions
+        let phoneQuery = sanitizedPhone;
+        let altPhoneQuery = '';
+        if (sanitizedPhone.startsWith('0')) {
+          altPhoneQuery = sanitizedPhone.substring(1);
+        } else if (sanitizedPhone.length > 0) {
+          altPhoneQuery = '0' + sanitizedPhone;
+        }
+
+        // 1. Find candidate
+        let candQuery = supabase
           .from('candidates')
-          .select('id, full_name, phone, type, category, image_url, created_at, created_by, deleted_at, password')
-          .eq('phone', sanitizedPhone)
+          .select('id, full_name, phone, type, category, image_url, created_at, created_by, deleted_at')
+          .is('deleted_at', null);
+
+        if (altPhoneQuery) {
+          candQuery = candQuery.or(`phone.eq.${phoneQuery},phone.eq.${altPhoneQuery}`);
+        } else {
+          candQuery = candQuery.eq('phone', phoneQuery);
+        }
+
+        const { data: candidates, error: candError } = await candQuery.limit(1);
+
+        if (candError) {
+          console.error('Candidate login query error:', candError);
+          throw candError;
+        }
+
+        if (!candidates || candidates.length === 0) {
+          throw new Error('משודך לא נמצא במערכת');
+        }
+
+        const cand = candidates[0];
+        const candPhone = cand.phone;
+
+        // 2. Find password in profiles table
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('password_plain')
+          .eq('phone', candPhone)
           .limit(1);
 
-        if (candidates && candidates.length > 0) {
-          const cand = candidates[0];
-          console.log('Candidate found:', cand);
-          
-          const storedPassword = cand.password || '12345678';
-          console.log('Stored password:', storedPassword, 'Input password:', password_plain);
-          
-          if (password_plain === storedPassword) {
-            // Map candidate to User type
-            return {
-              id: cand.id,
-              full_name: cand.full_name,
-              username: cand.phone || '',
-              email: '',
-              role: 'candidate',
-              status: 'active',
-              category: cand.category,
-              gender: cand.type === 'male' ? 'male' : 'female',
-              phone: cand.phone,
-              avatar_url: cand.image_url,
-              last_login: null,
-              is_shaham_manager: 0
-            } as User;
-          } else {
-            throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-          }
+        if (profileError) {
+          console.error('Candidate profile password query error:', profileError);
+        }
+
+        const dbPassword = (profileData && profileData.length > 0) 
+          ? profileData[0].password_plain 
+          : '12345678'; // Default fallback
+
+        if (dbPassword === password_plain) {
+          // Map candidate to User type
+          return {
+            id: cand.id,
+            full_name: cand.full_name,
+            username: cand.phone || '',
+            email: '',
+            role: 'candidate',
+            status: 'active',
+            category: cand.category,
+            gender: cand.type === 'male' ? 'male' : 'female',
+            phone: cand.phone,
+            avatar_url: cand.image_url,
+            last_login: null,
+            is_shaham_manager: 0
+          } as User;
+        } else {
+          throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
         }
       }
       
       throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('Login error details:', err);
       throw err;
     }
   }
@@ -554,7 +597,7 @@ class DataService {
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
       'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
-      'crop_config', 'creation_source', 'password'
+      'crop_config', 'creation_source'
     ];
     
     const sanitized: any = {};
@@ -574,7 +617,9 @@ class DataService {
     const { data, error } = await supabase
       .from('candidates')
       .select('created_by')
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .not('full_name', 'ilike', '%דמו%')
+      .not('name', 'ilike', '%דמו%');
     
     if (error) throw error;
     
@@ -588,7 +633,11 @@ class DataService {
   }
 
   async getGlobalStatsBreakdown() {
-    const { data: candidates } = await supabase.from('candidates').select('type, creator_category, created_by, creator_name').is('deleted_at', null);
+    const { data: candidates } = await supabase.from('candidates')
+      .select('type, creator_category, created_by, creator_name')
+      .is('deleted_at', null)
+      .not('full_name', 'ilike', '%דמו%')
+      .not('name', 'ilike', '%דמו%');
     if (!candidates) return {};
 
     const breakdown: Record<string, { 
@@ -774,6 +823,24 @@ class DataService {
       }
     }
 
+    // 3. Fetch passwords from profiles table
+    const phones = uniqueCandidates.map(c => c.phone).filter(Boolean) as string[];
+    if (phones.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('phone, password_plain')
+        .in('phone', phones);
+      
+      if (profiles) {
+        const passwordMap = new Map(profiles.map(p => [p.phone, p.password_plain]));
+        uniqueCandidates.forEach(c => {
+          if (c.phone && passwordMap.has(c.phone)) {
+            c.password = passwordMap.get(c.phone);
+          }
+        });
+      }
+    }
+
     return uniqueCandidates;
   }
 
@@ -817,6 +884,32 @@ class DataService {
     }
 
     const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
+    
+    // Handle password in profiles table
+    if (match.password && match.phone) {
+      const phone = match.phone.replace(/[^0-9]/g, '');
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', phone)
+        .maybeSingle();
+      
+      if (existingProfile) {
+        await supabase.from('profiles').update({
+          password_plain: match.password,
+          full_name: match.full_name || match.name
+        }).eq('id', existingProfile.id);
+      } else {
+        await supabase.from('profiles').insert({
+          phone: phone,
+          password_plain: match.password,
+          role: 'candidate',
+          full_name: match.full_name || match.name,
+          username: phone // Use phone as username for candidates
+        });
+      }
+    }
+
     return data as Match;
   }
 
@@ -832,7 +925,35 @@ class DataService {
       }
     }
 
-    const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
+    const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().maybeSingle());
+    
+    // Handle password in profiles table
+    if (updates.password && (updates.phone || (data as Match)?.phone)) {
+      const phone = (updates.phone || (data as Match)?.phone)?.replace(/[^0-9]/g, '');
+      if (phone) {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('phone', phone)
+          .maybeSingle();
+        
+        if (existingProfile) {
+          await supabase.from('profiles').update({
+            password_plain: updates.password,
+            full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name
+          }).eq('id', existingProfile.id);
+        } else {
+          await supabase.from('profiles').insert({
+            phone: phone,
+            password_plain: updates.password,
+            role: 'candidate',
+            full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name,
+            username: phone
+          });
+        }
+      }
+    }
+
     return data as Match;
   }
 
@@ -854,12 +975,12 @@ class DataService {
 
   async getPendingTransfersForMe(userId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase
+      // 1. Fetch transfers first
+      const { data: transfers, error } = await supabase
         .from('candidate_transfers')
         .select(`
           *,
-          candidate:candidates(*),
-          sender:profiles!sender_id(full_name)
+          candidate:candidates(*)
         `)
         .eq('receiver_id', userId)
         .eq('status', 'pending');
@@ -870,7 +991,22 @@ class DataService {
         }
         return [];
       }
-      return data || [];
+
+      if (!transfers || transfers.length === 0) return [];
+
+      // 2. Fetch sender names separately to avoid join issues
+      const senderIds = [...new Set(transfers.map(t => t.sender_id))];
+      const { data: senders } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', senderIds);
+
+      const senderMap = new Map(senders?.map(s => [s.id, s.full_name]) || []);
+
+      return transfers.map(t => ({
+        ...t,
+        sender: { full_name: senderMap.get(t.sender_id) || 'מנהל לא ידוע' }
+      }));
     } catch (err) {
       console.error('Error fetching pending transfers:', err);
       return [];
@@ -879,12 +1015,12 @@ class DataService {
 
   async getSentTransfersByMe(userId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase
+      // 1. Fetch transfers first
+      const { data: transfers, error } = await supabase
         .from('candidate_transfers')
         .select(`
           *,
-          candidate:candidates(*),
-          receiver:profiles!receiver_id(full_name)
+          candidate:candidates(*)
         `)
         .eq('sender_id', userId);
       
@@ -894,7 +1030,22 @@ class DataService {
         }
         return [];
       }
-      return data || [];
+
+      if (!transfers || transfers.length === 0) return [];
+
+      // 2. Fetch receiver names separately
+      const receiverIds = [...new Set(transfers.map(t => t.receiver_id))];
+      const { data: receivers } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', receiverIds);
+
+      const receiverMap = new Map(receivers?.map(r => [r.id, r.full_name]) || []);
+
+      return transfers.map(t => ({
+        ...t,
+        receiver: { full_name: receiverMap.get(t.receiver_id) || 'מנהל לא ידוע' }
+      }));
     } catch (err) {
       console.error('Error fetching sent transfers:', err);
       return [];
@@ -942,6 +1093,10 @@ class DataService {
 
   // Users (Admins)
   async getUsers(): Promise<User[]> {
+    const stored = sessionStorage.getItem('current_user');
+    const currentUser = stored ? JSON.parse(stored) : null;
+    if (currentUser?.role === 'candidate') return [];
+
     try {
       console.log('Fetching all admins from profiles table...');
       // Select only necessary fields to avoid 400 errors and improve performance
@@ -1465,6 +1620,20 @@ class DataService {
     return data as Match;
   }
 
+  async getCandidateGroupInfo(category: string, gender: string): Promise<{ mainGroup: WhatsAppGroup | null, observerGroups: WhatsAppGroup[] }> {
+    const { data: groups } = await supabase
+      .from('whatsapp_groups')
+      .select('*')
+      .eq('category', category);
+    
+    if (!groups) return { mainGroup: null, observerGroups: [] };
+
+    const mainGroup = groups.find(g => g.type === (gender === 'male' ? 'male' : 'female')) || null;
+    const observerGroups = groups.filter(g => g.id !== mainGroup?.id);
+
+    return { mainGroup, observerGroups };
+  }
+
   async getCandidateByPhone(phone: string): Promise<Match | null> {
     const { data, error } = await supabase
       .from('candidates')
@@ -1814,8 +1983,14 @@ class DataService {
       { count: totalGames },
       { count: speedDatesToday }
     ] = await Promise.all([
-      supabase.from('candidates').select('*', { count: 'exact', head: true }),
-      supabase.from('game_scores').select('*', { count: 'exact', head: true }),
+      supabase.from('candidates')
+        .select('*', { count: 'exact', head: true })
+        .is('deleted_at', null)
+        .not('full_name', 'ilike', '%דמו%')
+        .not('name', 'ilike', '%דמו%'),
+      supabase.from('game_scores')
+        .select('*', { count: 'exact', head: true })
+        .not('candidate_name', 'ilike', '%דמו%'),
       supabase.from('speed_date_sessions').select('*', { count: 'exact', head: true })
         .gte('created_at', new Date().toISOString().split('T')[0])
     ]);
