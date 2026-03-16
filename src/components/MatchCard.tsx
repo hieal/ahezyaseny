@@ -1,6 +1,6 @@
 import React from 'react';
 import { Match, WhatsAppGroup, ImagePosition } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move } from 'lucide-react';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move, TrendingUp, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
@@ -28,13 +28,13 @@ interface MatchCardProps {
    onSelect?: (id: string, selected: boolean) => void;
    isViewer?: boolean;
    size?: 'small' | 'medium' | 'large';
-   viewMode?: 'standard' | 'whatsapp';
+   viewMode?: 'standard' | 'whatsapp' | 'designed';
  }
 
 export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium', viewMode: viewModeProp = 'standard' }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
-  const [viewMode, setViewMode] = React.useState<'standard' | 'whatsapp'>(viewModeProp);
+  const [viewMode, setViewMode] = React.useState<'standard' | 'whatsapp' | 'designed'>(viewModeProp);
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
@@ -672,7 +672,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               </div>
             )}
           </>
-        ) : (
+        ) : viewMode === 'whatsapp' ? (
           <div className="bg-[#E7F3EF] p-4 rounded-2xl border border-emerald-100 space-y-2 font-medium text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
             <p>✨ *כרטיס משודך חדש* ✨</p>
             <p>👤 *שם:* {match.name}</p>
@@ -702,6 +702,77 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               <MessageSquare size={14} />
               העתק טקסט לוואטסאפ
             </button>
+          </div>
+        ) : (
+          <div 
+            className={`p-0 rounded-[2rem] text-white shadow-xl relative overflow-hidden aspect-[9/16] w-full border-4 ${
+              match.type === 'female' 
+                ? 'bg-gradient-to-b from-[#831843] via-[#db2777] to-[#f472b6] border-pink-400' 
+                : 'bg-gradient-to-b from-[#0f172a] via-[#1e3a8a] to-[#fbbf24] border-white/20'
+            }`}
+          >
+            <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-black/40 to-transparent z-10" />
+            <div className="relative z-20 h-full flex flex-col p-4">
+              <div className="mt-4 px-2">
+                <div className="aspect-square rounded-2xl overflow-hidden border-2 border-white/30 shadow-lg relative bg-slate-800">
+                  <img 
+                    src={match.image_url || 'https://picsum.photos/seed/profile/600/600'} 
+                    alt="" 
+                    style={{ 
+                      transform: `translate(${match.image_position?.x || 0}px, ${match.image_position?.y || 0}px) scale(${match.image_position?.zoom || 1})` 
+                    }}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 pt-4 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+                <div className="text-center">
+                  <h3 className="text-xl font-black mb-0.5 drop-shadow-md">{match.name}</h3>
+                  <div className="flex items-center justify-center gap-1 text-xs font-bold opacity-90">
+                    <MapPin size={12} />
+                    {match.age} • {match.city}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10">
+                    <TrendingUp size={14} />
+                    <span className="text-[10px] font-bold">{match.height}</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10">
+                    <Heart size={14} />
+                    <span className="text-[10px] font-bold">{match.marital_status}</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10 col-span-2">
+                    <Shield size={14} />
+                    <span className="text-[10px] font-bold">{match.religious_level}</span>
+                  </div>
+                </div>
+
+                {match.about && (
+                  <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10">
+                    <p className="text-[8px] font-black uppercase opacity-60 mb-0.5">קצת עליי</p>
+                    <p className="text-[10px] leading-tight line-clamp-2">{match.about}</p>
+                  </div>
+                )}
+                
+                {match.looking_for && (
+                  <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10">
+                    <p className="text-[8px] font-black uppercase opacity-60 mb-0.5">מחפש/ת</p>
+                    <p className="text-[10px] leading-tight line-clamp-2">{match.looking_for}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-auto pt-2 flex justify-between items-center opacity-60">
+                <div className="flex items-center gap-1.5">
+                  <Heart size={12} className="fill-white" />
+                  <span className="text-[8px] font-black uppercase tracking-tighter">פורטל יוחאי</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

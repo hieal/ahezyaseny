@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { Match, WhatsAppGroup } from '../types';
 import { motion } from 'motion/react';
+import MatchCard from '../components/MatchCard';
 import { 
   Sparkles, Calendar, User, MessageSquare, 
   ChevronLeft, Info, MapPin, Heart, Users
@@ -85,95 +86,51 @@ export default function PublishedToday() {
             <p className="text-slate-400 text-sm mt-2">חזור מאוחר יותר להתעדכן!</p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {publishedMatches.map((log, index) => (
               <motion.div 
                 key={log.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl shadow-slate-200/50 border border-slate-100"
+                className="flex flex-col h-full"
               >
-                {/* Designed Card Image */}
-                <div className="relative aspect-[4/3] md:aspect-video">
-                  <img 
-                    src={log.match?.image_url || 'https://picsum.photos/seed/match/800/600'} 
-                    alt={log.match?.name}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
+                <div className="flex-1">
+                  <MatchCard 
+                    match={log.match} 
+                    viewMode="designed"
+                    isViewer={true}
+                    minimal={true}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute bottom-6 right-6 left-6 text-white">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        פורסם היום
-                      </span>
-                      <span className="bg-white/20 backdrop-blur-md text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        {new Date(log.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <h3 className="text-3xl font-black mb-1">{log.match?.name}, {log.match?.age}</h3>
-                    <p className="text-sm font-medium opacity-90 flex items-center gap-2">
-                      <MapPin size={14} />
-                      {log.match?.city} • {log.match?.religious_level}
-                    </p>
-                  </div>
                 </div>
-
-                <div className="p-8 space-y-6">
-                  {/* Match Text */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-emerald-600 font-black text-sm">
-                      <Info size={16} />
-                      <span>קצת עליי</span>
-                    </div>
-                    <p className="text-slate-600 leading-relaxed font-medium bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      {log.match?.about}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-emerald-600 font-black text-sm">
-                      <Heart size={16} />
-                      <span>מה אני מחפש/ת</span>
-                    </div>
-                    <p className="text-slate-600 leading-relaxed font-medium bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      {log.match?.looking_for}
-                    </p>
-                  </div>
-
-                  {/* Admin Info */}
-                  <div className="pt-6 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                        <User size={28} />
+                
+                <div className="mt-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400">
+                        <User size={20} />
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400 font-black uppercase tracking-wider">המנהל המפרסם</p>
-                        <h4 className="text-lg font-black text-slate-900">{log.user_name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black">
-                            <Users size={10} />
-                            <span>{log.group_name}</span>
-                          </div>
-                        </div>
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">המנהל המפרסם</p>
+                        <h4 className="text-sm font-black text-slate-900">{log.user_name}</h4>
                       </div>
                     </div>
-
-                    <div className="flex gap-3">
-                      {log.admin?.phone && (
-                        <a 
-                          href={`https://wa.me/${log.admin.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`שלום ${log.user_name}, ראיתי את הכרטיס של ${log.match?.name} שפורסם היום בקבוצת ${log.group_name} ואשמח לשמוע פרטים נוספים.`)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex-1 md:flex-none px-6 py-3 bg-[#25D366] text-white rounded-2xl font-black hover:bg-[#128C7E] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-100"
-                        >
-                          <MessageSquare size={20} />
-                          שלח וואטזאפ למנהל
-                        </a>
-                      )}
+                    <div className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black">
+                      {log.group_name}
                     </div>
                   </div>
+
+                  {log.admin?.phone && (
+                    <a 
+                      href={`https://wa.me/${log.admin.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`שלום ${log.user_name}, ראיתי את הכרטיס של ${log.match?.name} שפורסם היום בקבוצת ${log.group_name} ואשמח לשמוע פרטים נוספים.`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full py-3 bg-[#25D366] text-white rounded-xl font-black hover:bg-[#128C7E] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-100 text-sm"
+                    >
+                      <MessageSquare size={18} />
+                      שלח וואטזאפ למנהל
+                    </a>
+                  )}
                 </div>
               </motion.div>
             ))}

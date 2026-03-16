@@ -415,7 +415,18 @@ export default function Dashboard() {
         ctx.roundRect(imgX, imgY, imgW, imgH, 60);
         ctx.clip();
         
-        if (match.crop_config) {
+        if (match.image_position) {
+          const { x, y, zoom } = match.image_position;
+          const scale = Math.max(imgW / img.width, imgH / img.height) * (zoom || 1);
+          const drawW = img.width * scale;
+          const drawH = img.height * scale;
+          
+          // Use absolute pixel offsets from image_position
+          const drawX = imgX + (imgW - drawW) / 2 + x;
+          const drawY = imgY + (imgH - drawH) / 2 + y;
+          
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        } else if (match.crop_config) {
           const config = typeof match.crop_config === 'string' ? JSON.parse(match.crop_config) : match.crop_config;
           const { x, y, zoom } = config;
           

@@ -8,7 +8,7 @@ import {
   Heart, MessageSquare, Users, Trophy, Gamepad2, 
   Zap, Clock, Send, ChevronLeft, Star, TrendingUp,
   User, Shield, LogOut, Sparkles, Download, Eye,
-  Layout, Smartphone, ExternalLink, Info, MapPin
+  Layout, Smartphone, ExternalLink, Info, MapPin, Plus, Minus
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import html2canvas from 'html2canvas';
@@ -29,6 +29,7 @@ export default function CandidateDashboard() {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [viewMode, setViewMode] = useState<'standard' | 'designed'>('standard');
+  const [imagePos, setImagePos] = useState({ x: 0, y: 0, zoom: 1 });
   const cardRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async (isRefresh = false) => {
@@ -49,6 +50,10 @@ export default function CandidateDashboard() {
       setLeaderboard(topScores);
       setMyMatch(match);
       setPortalSettings(settings);
+
+      if (match?.image_position) {
+        setImagePos(match.image_position);
+      }
 
       // Fetch manager details if assigned
       if (user.created_by) {
@@ -144,6 +149,16 @@ export default function CandidateDashboard() {
     } catch (err) {
       console.error('Error generating card image:', err);
       toast.error('שגיאה ביצירת הכרטיס', { id: 'downloading' });
+    }
+  };
+
+  const handleSaveImagePosition = async () => {
+    if (!myMatch) return;
+    try {
+      await dataService.updateMatch(myMatch.id, { image_position: imagePos });
+      toast.success('מיקום התמונה נשמר בהצלחה!');
+    } catch (err) {
+      toast.error('שגיאה בשמירת מיקום התמונה');
     }
   };
 
@@ -417,7 +432,11 @@ export default function CandidateDashboard() {
               >
                 <div 
                   ref={cardRef}
-                  className="bg-gradient-to-b from-[#0f172a] via-[#1e3a8a] to-[#fbbf24] p-0 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden aspect-[9/16] max-w-[320px] mx-auto border-4 border-white/20"
+                  className={`p-0 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden aspect-[9/16] max-w-[320px] mx-auto border-4 ${
+                    myMatch?.type === 'female' 
+                      ? 'bg-gradient-to-b from-[#831843] via-[#db2777] to-[#f472b6] border-pink-400' 
+                      : 'bg-gradient-to-b from-[#0f172a] via-[#1e3a8a] to-[#fbbf24] border-white/20'
+                  }`}
                 >
                   {/* WhatsApp Style Header */}
                   <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-black/40 to-transparent z-10" />
@@ -425,54 +444,85 @@ export default function CandidateDashboard() {
                   <div className="relative z-20 h-full flex flex-col">
                     {/* Profile Image - Large with rounded corners */}
                     <div className="mt-12 px-6">
-                      <div className="aspect-square rounded-[2rem] overflow-hidden border-4 border-white/30 shadow-2xl">
-                        <img 
+                      <div className="aspect-square rounded-[2rem] overflow-hidden border-4 border-white/30 shadow-2xl relative bg-slate-800">
+                        <motion.img 
+                          drag
+                          dragMomentum={false}
+                          onDragEnd={(_, info) => {
+                            setImagePos(prev => ({ 
+                              ...prev, 
+                              x: prev.x + info.offset.x, 
+                              y: prev.y + info.offset.y 
+                            }));
+                          }}
+                          animate={{ x: imagePos.x, y: imagePos.y, scale: imagePos.zoom }}
                           src={myMatch?.image_url || 'https://picsum.photos/seed/profile/600/600'} 
                           alt="" 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover cursor-move"
                           referrerPolicy="no-referrer"
                         />
                       </div>
+                      <div className="mt-2 flex justify-center gap-2">
+                        <button 
+                          onClick={() => setImagePos(prev => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 3) }))}
+                          className="p-1 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
+                          title="הגדל"
+                        >
+                          <Plus size={14} />
+                        </button>
+                        <button 
+                          onClick={() => setImagePos(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
+                          className="p-1 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
+                          title="הקטן"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <button 
+                          onClick={handleSaveImagePosition}
+                          className="px-3 py-1 bg-emerald-500 text-white text-[10px] font-black rounded-lg hover:bg-emerald-600 transition-colors"
+                        >
+                          שמור מיקום
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex-1 px-8 pt-8 space-y-8">
+                    <div className="flex-1 px-8 pt-6 space-y-4 overflow-y-auto custom-scrollbar">
                       <div className="text-center">
-                        <h3 className="text-4xl font-black mb-2 drop-shadow-lg">{myMatch?.name}</h3>
-                        <div className="flex items-center justify-center gap-2 text-xl font-bold opacity-90">
-                          <MapPin size={20} />
+                        <h3 className="text-3xl font-black mb-1 drop-shadow-lg">{myMatch?.name}</h3>
+                        <div className="flex items-center justify-center gap-2 text-lg font-bold opacity-90">
+                          <MapPin size={18} />
                           {myMatch?.age} • {myMatch?.city}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4">
-                        <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20">
-                          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                            <TrendingUp size={20} />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black uppercase opacity-60">גובה</p>
-                            <p className="font-bold text-lg">{myMatch?.height}</p>
-                          </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
+                          <TrendingUp size={18} />
+                          <p className="font-bold text-base">{myMatch?.height}</p>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20">
-                          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                            <Heart size={20} />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black uppercase opacity-60">מצב משפחתי</p>
-                            <p className="font-bold text-lg">{myMatch?.marital_status}</p>
-                          </div>
+                        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
+                          <Heart size={18} />
+                          <p className="font-bold text-base">{myMatch?.marital_status}</p>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20">
-                          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                            <Shield size={20} />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black uppercase opacity-60">רמה דתית</p>
-                            <p className="font-bold text-lg">{myMatch?.religious_level}</p>
-                          </div>
+                        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 col-span-2">
+                          <Shield size={18} />
+                          <p className="font-bold text-base">{myMatch?.religious_level}</p>
                         </div>
                       </div>
+
+                      {myMatch?.about && (
+                        <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
+                          <p className="text-[10px] font-black uppercase opacity-60 mb-1">קצת עליי</p>
+                          <p className="text-sm leading-relaxed line-clamp-3">{myMatch?.about}</p>
+                        </div>
+                      )}
+                      
+                      {myMatch?.looking_for && (
+                        <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
+                          <p className="text-[10px] font-black uppercase opacity-60 mb-1">מחפש/ת</p>
+                          <p className="text-sm leading-relaxed line-clamp-3">{myMatch?.looking_for}</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Footer */}
