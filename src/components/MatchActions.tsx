@@ -3,7 +3,7 @@ import { Match, WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
-import { Send, Edit, Trash2, History as HistoryIcon, MessageSquare, Paperclip, ImageIcon, FileText, MessageCircle } from 'lucide-react';
+import { Send, Edit, Trash2, History as HistoryIcon, MessageSquare, Paperclip, ImageIcon, FileText, MessageCircle, Info } from 'lucide-react';
 
 interface MatchActionsProps {
   match: Match;
@@ -139,7 +139,7 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
 
   return (
     <div className="flex flex-col gap-1 mt-2">
-      <div className="grid grid-cols-8 gap-1">
+      <div className="grid grid-cols-9 gap-1">
         <button onClick={(e) => {
           if (handleViewerClick(e)) return;
           if (match.is_available === false) {
@@ -172,6 +172,11 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
         <button onClick={(e) => {
           sendMessageToManager(match);
         }} className="bg-blue-500 text-white p-2 rounded-lg flex items-center justify-center" title="שליחת הודעה למנהל"><MessageCircle size={16} /></button>
+        <button onClick={(e) => {
+          if (handleViewerClick(e)) return;
+          const message = `שלום ${match.name}, רצינו להסביר לך על החצי השני...`;
+          window.open(`https://wa.me/${match.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+        }} className="bg-emerald-500 text-white p-2 rounded-lg flex items-center justify-center" title="שליחת הודעת הסבר"><Info size={16} /></button>
       </div>
       {!isViewer && (
         <div className="grid grid-cols-4 gap-1">

@@ -1,30 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { dataService } from '../services/dataService';
 import { PortalSettings, GameScore } from '../types';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, Image as ImageIcon, Zap, Trophy, 
   Save, Plus, Trash2, Layout, BarChart3,
-  Users, Gamepad2, Clock
+  Users, Gamepad2, Clock, X
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import MatchesManagement from '../components/MatchesManagement';
 
 export default function CandidatePortalAdmin() {
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
+  const [stats, setStats] = useState({ registeredMatches: 0, totalGames: 0, speedDatesToday: 0 });
   const [loading, setLoading] = useState(true);
   const [newImageUrl, setNewImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showMatchesManagement, setShowMatchesManagement] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [portalSettings, scores] = await Promise.all([
+        const [portalSettings, scores, portalStats] = await Promise.all([
           dataService.getPortalSettings(),
-          dataService.getLeaderboard()
+          dataService.getLeaderboard(),
+          dataService.getPortalStats()
         ]);
         setSettings(portalSettings);
         setLeaderboard(scores);
+        setStats(portalStats);
       } catch (err) {
         console.error('Error fetching portal settings:', err);
       } finally {
@@ -83,15 +88,45 @@ export default function CandidatePortalAdmin() {
           <h1 className="text-3xl font-black text-slate-900">ניהול פורטל משודכים</h1>
           <p className="text-slate-500 font-medium">ניהול הגדרות, משחקים וסטטיסטיקות של אזור המשודכים</p>
         </div>
-        <button
-          onClick={handleSaveSettings}
-          disabled={saving}
-          className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
-        >
-          {saving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
-          שמור שינויים
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={() => setShowMatchesManagement(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-2xl font-bold hover:bg-blue-600 transition-all shadow-lg shadow-blue-200"
+          >
+            <Users size={20} />
+            ניהול משודכים
+          </button>
+          <button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
+          >
+            {saving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
+            שמור שינויים
+          </button>
+        </div>
       </div>
+
+      <AnimatePresence>
+        {showMatchesManagement && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">ניהול משודכים</h2>
+                <button onClick={() => setShowMatchesManagement(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={24} />
+                </button>
+              </div>
+              <MatchesManagement />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Settings */}
@@ -184,27 +219,27 @@ export default function CandidatePortalAdmin() {
               <h2 className="text-xl font-black text-slate-900">סטטיסטיקות פורטל</h2>
             </div>
 
-            <div className="space-y-4">
+              <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                 <div className="flex items-center gap-3">
                   <Users className="text-blue-500" size={20} />
                   <span className="font-bold text-slate-700">משודכים רשומים</span>
                 </div>
-                <span className="font-black text-slate-900">24</span>
+                <span className="font-black text-slate-900">{stats.registeredMatches}</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                 <div className="flex items-center gap-3">
                   <Gamepad2 className="text-purple-500" size={20} />
                   <span className="font-bold text-slate-700">משחקים ששוחקו</span>
                 </div>
-                <span className="font-black text-slate-900">{leaderboard.length}</span>
+                <span className="font-black text-slate-900">{stats.totalGames}</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                 <div className="flex items-center gap-3">
                   <Clock className="text-emerald-500" size={20} />
                   <span className="font-bold text-slate-700">ספיד-דייטים היום</span>
                 </div>
-                <span className="font-black text-slate-900">12</span>
+                <span className="font-black text-slate-900">{stats.speedDatesToday}</span>
               </div>
             </div>
           </section>

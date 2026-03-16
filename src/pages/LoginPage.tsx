@@ -122,7 +122,7 @@ export default function LoginPage() {
 
       // If auto-sync fails, check connection and tables to show manual SQL if needed
       const { error: adminsError } = await supabase.from('profiles').select('id, phone').limit(1);
-      const { error: matchesError } = await supabase.from('matches').select('id, full_name').limit(1);
+      const { error: matchesError } = await supabase.from('candidates').select('id, full_name').limit(1);
 
       if (!adminsError && !matchesError) {
         toast.success('חיבור תקין ומבנה נתונים מאומת!');
@@ -153,15 +153,32 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const user = await dataService.login(username, password);
+      let user = null;
+      
+      // Try admin login first if it's not explicitly candidate login
+      if (loginType !== 'candidate') {
+        try {
+          user = await dataService.login(username, password, 'admin');
+        } catch (err) {
+          // Ignore error, try candidate
+        }
+      }
+
+      // If not found or it's candidate login, try candidate login
+      if (!user) {
+        user = await dataService.login(username, password, 'candidate');
+      }
+
       if (user) {
         login(user);
         toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
         if (user.role === 'candidate') {
-          navigate('/portal');
+          navigate('/candidate-profile');
         } else {
           navigate('/');
         }
+      } else {
+        throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'שגיאה בחיבור למסד הנתונים');
@@ -183,7 +200,7 @@ export default function LoginPage() {
         return;
       }
 
-      const user = await dataService.login('god', 'good');
+      const user = await dataService.login('god', 'good', 'admin');
       if (user) {
         login(user);
         toast.success('כניסה מהירה בוצעה בהצלחה!');
@@ -194,7 +211,7 @@ export default function LoginPage() {
         }
       } else {
         // Fallback to 'good' if 'god' doesn't exist yet
-        const fallbackUser = await dataService.login('good', 'good');
+        const fallbackUser = await dataService.login('good', 'good', 'admin');
         if (fallbackUser) {
           login(fallbackUser);
           toast.success('כניסה מהירה בוצעה בהצלחה!');

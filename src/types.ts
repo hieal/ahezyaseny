@@ -97,8 +97,11 @@ export interface Match {
   publish_count: number;
   deleted_at: string | null;
   phone: string | null;
+  password?: string | null;
   is_published_confirmed: number;
   is_available?: boolean;
+  is_archived?: boolean;
+  status?: 'available' | 'active' | 'inactive' | 'archived';
   crop_config: string | null; // JSON string of { x, y, zoom }
   creation_source: 'manual' | 'ai' | 'csv' | null;
   viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs

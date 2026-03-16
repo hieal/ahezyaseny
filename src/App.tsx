@@ -42,6 +42,8 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 
   if (!user) return <Navigate to="/login" />;
   
+  if (user.role === 'candidate') return <Navigate to="/candidate-profile" />;
+  
   if (superAdminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
   if (adminOnly && user.role !== 'super_admin' && user.role !== 'team_leader') return <Navigate to="/" />;
   
@@ -198,7 +200,7 @@ function Sidebar() {
 
   const navItems = user?.role === 'candidate' 
     ? [
-        { path: '/portal', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
+        { path: '/candidate-profile', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
         { path: '/portal/published-today', label: 'פורסמו היום', icon: <Sparkles size={20} /> },
         { path: '/portal/speed-date', label: 'ספיד-דייט', icon: <Zap size={20} /> },
         { path: '/portal/games', label: 'משחקים', icon: <Gamepad2 size={20} /> },
@@ -889,7 +891,7 @@ export default function App() {
               <Route path="/portal-admin" element={<ProtectedRoute superAdminOnly><CandidatePortalAdmin /></ProtectedRoute>} />
               
               {/* Candidate Portal Routes */}
-              <Route path="/portal" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+              <Route path="/candidate-profile" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
               <Route path="/portal/published-today" element={<ProtectedRoute><PublishedToday /></ProtectedRoute>} />
               <Route path="/portal/speed-date" element={<ProtectedRoute><SpeedDate /></ProtectedRoute>} />
               <Route path="/portal/games" element={<ProtectedRoute><GamesPortal /></ProtectedRoute>} />

@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   is_online BOOLEAN DEFAULT false
 );
 
--- Create matches table (Matchmaking cards)
-CREATE TABLE IF NOT EXISTS public.matches (
+-- Create candidates table (Matchmaking cards)
+CREATE TABLE IF NOT EXISTS public.candidates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type TEXT,
   name TEXT,
@@ -70,9 +70,11 @@ CREATE TABLE IF NOT EXISTS public.matches (
   phone TEXT,
   category TEXT,
   status TEXT DEFAULT 'available',
+  is_archived BOOLEAN DEFAULT FALSE,
   is_published_confirmed INTEGER DEFAULT 0,
   crop_config TEXT,
-  creation_source TEXT
+  creation_source TEXT,
+  password TEXT DEFAULT '12345678'
 );
 
 -- Create activity_logs table
@@ -385,7 +387,7 @@ class DataService {
     }
   }
 
-  async login(usernameOrEmailOrPhone: string, password_plain: string): Promise<User | null> {
+  async login(usernameOrEmailOrPhone: string, password_plain: string, type: 'admin' | 'candidate'): Promise<User | null> {
     // Clear cache
     localStorage.removeItem('current_user');
     sessionStorage.removeItem('current_user');
@@ -393,7 +395,7 @@ class DataService {
     const input = usernameOrEmailOrPhone.trim();
 
     // Direct Login Override for 'god'
-    if (input === 'god') {
+    if (input === 'god' && type === 'admin') {
       try {
         const { data: user, error } = await supabase
           .from('profiles')
@@ -430,60 +432,62 @@ class DataService {
     }
     
     try {
-      // 1. Check profiles table first (Admins)
-      // Select only necessary fields to avoid 400 errors
-      let query = supabase.from('profiles')
-        .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager');
-      
-      // Search exactly as entered
-      query = query.or(`phone.eq."${input}",email.eq."${input}",username.eq."${input}"`);
-      
-      const profilesData = await this.handleSupabase(query);
-      
-      if (profilesData && (profilesData as any[]).length > 0) {
-        const user = (profilesData as any[])[0];
+      if (type === 'admin') {
+        // 1. Check profiles table (Admins)
+        let query = supabase.from('profiles')
+          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager');
         
-        console.log('DEBUG LOGIN:', { input_phone: input, db_user: user });
+        // Search exactly as entered
+        query = query.or(`phone.eq."${input}",email.eq."${input}",username.eq."${input}"`);
         
-        // Check password against password_plain
-        if (user.password_plain === password_plain) {
-          return user as User;
-        } else {
-          throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+        const profilesData = await this.handleSupabase(query);
+        
+        if (profilesData && (profilesData as any[]).length > 0) {
+          const user = (profilesData as any[])[0];
+          
+          // Check password against password_plain
+          if (user.password_plain === password_plain) {
+            return user as User;
+          } else {
+            throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+          }
         }
-      }
+      } else if (type === 'candidate') {
+        // 2. Check candidates table (Candidates)
+        // Candidates use phone as username and default password '12345678'
+        const sanitizedPhone = input.replace(/[^0-9]/g, '');
+        const { data: candidates, error: candError } = await supabase
+          .from('candidates')
+          .select('id, full_name, phone, type, category, image_url, created_at, created_by, deleted_at, password')
+          .eq('phone', sanitizedPhone)
+          .limit(1);
 
-      // 2. Check candidates table (Candidates)
-      // Candidates use phone as username and default password '12345678'
-      const { data: matches, error: candError } = await supabase
-        .from('matches')
-        .select('id, full_name, phone, type, category, image_url, created_at, created_by, deleted_at')
-        .eq('phone', input)
-        .limit(1);
-
-      if (candidates && candidates.length > 0) {
-        const cand = candidates[0];
-        
-        console.log('DEBUG LOGIN (Candidate):', { input_phone: input, db_user: cand });
-        
-        if (password_plain === '12345678') {
-          // Map candidate to User type
-          return {
-            id: cand.id,
-            full_name: cand.full_name,
-            username: cand.phone || '',
-            email: '',
-            role: 'candidate',
-            status: 'active',
-            category: cand.category,
-            gender: cand.type === 'male' ? 'male' : 'female',
-            phone: cand.phone,
-            avatar_url: cand.image_url,
-            last_login: null,
-            is_shaham_manager: 0
-          } as User;
-        } else {
-          throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+        if (candidates && candidates.length > 0) {
+          const cand = candidates[0];
+          console.log('Candidate found:', cand);
+          
+          const storedPassword = cand.password || '12345678';
+          console.log('Stored password:', storedPassword, 'Input password:', password_plain);
+          
+          if (password_plain === storedPassword) {
+            // Map candidate to User type
+            return {
+              id: cand.id,
+              full_name: cand.full_name,
+              username: cand.phone || '',
+              email: '',
+              role: 'candidate',
+              status: 'active',
+              category: cand.category,
+              gender: cand.type === 'male' ? 'male' : 'female',
+              phone: cand.phone,
+              avatar_url: cand.image_url,
+              last_login: null,
+              is_shaham_manager: 0
+            } as User;
+          } else {
+            throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+          }
         }
       }
       
@@ -550,13 +554,17 @@ class DataService {
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
       'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
-      'crop_config', 'creation_source'
+      'crop_config', 'creation_source', 'password'
     ];
     
     const sanitized: any = {};
     allowedFields.forEach(field => {
       if (match[field] !== undefined) {
-        sanitized[field] = match[field];
+        if (field === 'phone' && typeof match[field] === 'string') {
+          sanitized[field] = match[field].replace(/[^0-9]/g, '');
+        } else {
+          sanitized[field] = match[field];
+        }
       }
     });
     return sanitized;
@@ -580,8 +588,8 @@ class DataService {
   }
 
   async getGlobalStatsBreakdown() {
-    const { data: matches } = await supabase.from('matches').select('type, creator_category, created_by, creator_name').is('deleted_at', null);
-    if (!matches) return {};
+    const { data: candidates } = await supabase.from('candidates').select('type, creator_category, created_by, creator_name').is('deleted_at', null);
+    if (!candidates) return {};
 
     const breakdown: Record<string, { 
       total: number, 
@@ -590,7 +598,7 @@ class DataService {
       managers: Record<string, { name: string, total: number, males: number, females: number }> 
     }> = {};
 
-    matches.forEach(m => {
+    candidates.forEach(m => {
       const cat = m.creator_category || 'אחר';
       if (!breakdown[cat]) {
         breakdown[cat] = { total: 0, males: 0, females: 0, managers: {} };
@@ -734,42 +742,39 @@ class DataService {
 
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
-    let query = supabase.from('candidates').select('*, deleted_at').is('deleted_at', null);
-    if (type) query = query.eq('type', type);
-    
-    if (user && user.role !== 'super_admin') {
-      if (user.role === 'team_leader') {
-        // Unified view for team leader: see all in my category if assigned
-        if (user.category || user.secondary_category) {
-          const categories = [user.category, user.secondary_category].filter(Boolean);
-          query = query.in('category', categories);
-        } else {
-          // Fallback: Fetch all admins created by this team leader
-          const { data: subAdmins } = await supabase.from('profiles').select('id').eq('created_by', user.id);
-          const adminIds = [user.id, ...(subAdmins?.map(a => a.id) || [])];
-          query = query.in('created_by', adminIds);
-        }
-      } else if (user.role === 'viewer') {
-        // Viewers see matches created by their creator
-        if (user.created_by) {
-          query = query.eq('created_by', user.created_by);
-        } else {
-          // If no creator, they see nothing or only their own (unlikely for viewers)
-          query = query.eq('created_by', user.id);
-        }
-      } else {
-        // Unified view: see all in my category if assigned, otherwise only mine
-        if (user.category || user.secondary_category) {
-          const categories = [user.category, user.secondary_category].filter(Boolean);
-          query = query.in('category', categories);
-        } else {
-          query = query.eq('created_by', user.id);
-        }
-      }
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching matches:', error);
+      throw error;
     }
     
-    const data = await this.handleSupabase(query);
-    return data || [];
+    let candidates = data || [];
+
+    // 1. Remove "trash" (no name or clearly invalid)
+    candidates = candidates.filter(c => c.name && c.name.trim().length > 1);
+
+    // 2. Remove duplicates by phone number (keep newest)
+    const uniqueCandidates: Match[] = [];
+    const seenPhones = new Set<string>();
+
+    for (const c of candidates) {
+      const phone = (c.phone || '').replace(/\D/g, '');
+      if (phone && phone.length >= 7) {
+        if (!seenPhones.has(phone)) {
+          seenPhones.add(phone);
+          uniqueCandidates.push(c as Match);
+        }
+      } else {
+        // Keep records without a valid phone as they might be unique manual entries
+        uniqueCandidates.push(c as Match);
+      }
+    }
+
+    return uniqueCandidates;
   }
 
   async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User): Promise<Match> {
@@ -827,7 +832,7 @@ class DataService {
       }
     }
 
-    const data = await this.handleSupabase(supabase.from('matches').update(sanitized).eq('id', id).select().single());
+    const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().single());
     return data as Match;
   }
 
@@ -853,7 +858,7 @@ class DataService {
         .from('candidate_transfers')
         .select(`
           *,
-          candidate:matches(*),
+          candidate:candidates(*),
           sender:profiles!sender_id(full_name)
         `)
         .eq('receiver_id', userId)
@@ -878,7 +883,7 @@ class DataService {
         .from('candidate_transfers')
         .select(`
           *,
-          candidate:matches(*),
+          candidate:candidates(*),
           receiver:profiles!receiver_id(full_name)
         `)
         .eq('sender_id', userId);
@@ -1460,6 +1465,19 @@ class DataService {
     return data as Match;
   }
 
+  async getCandidateByPhone(phone: string): Promise<Match | null> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('phone', phone)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    
+    if (error || !data) return null;
+    return data as Match;
+  }
+
   async recordPublish(matchId: string, groupName: string, userId: string, userName: string, groupId?: string) {
     // 1. Fetch match to get name and current count
     const match = await this.getMatchById(matchId);
@@ -1506,7 +1524,11 @@ class DataService {
   // Stats
   async getStats(user?: User): Promise<Stats> {
     try {
-      let matchesQuery = supabase.from('candidates').select('type, publish_count').is('deleted_at', null);
+      const uniqueCandidates = await this.getMatches(undefined, user);
+      const activeCandidates = uniqueCandidates.filter(m => 
+        !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status)
+      );
+
       let adminsQuery = supabase.from('profiles').select('gender, category');
       let publishLogsQuery = supabase.from('publish_logs').select('created_at, user_id');
 
@@ -1528,27 +1550,19 @@ class DataService {
           // adminsQuery = adminsQuery.in('created_by', [user.id]);
           publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([...adminIds, ...groupAdminIds])));
         } else {
-          matchesQuery = matchesQuery.eq('created_by', user.id);
           adminsQuery = adminsQuery.eq('id', user.id);
           publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([user.id, ...groupAdminIds])));
         }
       }
 
-      const [matchesData, adminsData, publishLogsData, totalMatchesRes, groupMatchesRes] = await Promise.all([
-        matchesQuery,
+      const [adminsData, publishLogsData] = await Promise.all([
         adminsQuery,
-        publishLogsQuery,
-        supabase.from('candidates').select('*', { count: 'exact', head: true }).is('deleted_at', null),
-        groupAdminIds.length > 0 
-          ? supabase.from('candidates').select('type').in('created_by', groupAdminIds).is('deleted_at', null)
-          : Promise.resolve({ data: [] })
+        publishLogsQuery
       ]);
 
-      const matches = matchesData.data || [];
       const admins = adminsData.data || [];
       const publishLogs = publishLogsData.data || [];
-      const totalMatchesSite = totalMatchesRes.count || 0;
-      const groupMatches = (groupMatchesRes as any).data || [];
+      const totalMatchesSite = activeCandidates.length;
 
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1575,16 +1589,14 @@ class DataService {
       }).length : publishedThisMonthCount;
 
       return {
-        males: matches.filter(m => m.type === 'male').length,
-        females: matches.filter(m => m.type === 'female').length,
-        malesGroup: groupMatches.filter((m: any) => m.type === 'male').length,
-        femalesGroup: groupMatches.filter((m: any) => m.type === 'female').length,
+        males: activeCandidates.filter(m => m.type === 'male').length,
+        females: activeCandidates.filter(m => m.type === 'female').length,
         totalMatchesSite,
         publishedToday: publishedTodayCount,
         publishedThisMonth: publishedThisMonthCount,
         publishedThisMonthMe: publishedThisMonthMeCount,
         publishedThisMonthGroup: publishedThisMonthGroupCount,
-        neverPublished: matches.filter(m => m.publish_count === 0).length,
+        neverPublished: activeCandidates.filter(m => !m.last_published_at).length,
         totalAdmins: admins.length,
         adminMales: admins.filter(a => a.gender === 'male').length,
         adminFemales: admins.filter(a => a.gender === 'female').length
@@ -1796,18 +1808,23 @@ class DataService {
     return null;
   }
 
-  async getOnlineStats(): Promise<{ males: number; females: number }> {
-    const { data: profiles } = await supabase.from('profiles').select('gender').eq('is_online', true);
-    
-    let males = 0;
-    let females = 0;
-    
-    profiles?.forEach(p => {
-      if (p.gender === 'male') males++;
-      else if (p.gender === 'female') females++;
-    });
-    
-    return { males, females };
+  async getPortalStats(): Promise<{ registeredMatches: number, totalGames: number, speedDatesToday: number }> {
+    const [
+      { count: registeredMatches },
+      { count: totalGames },
+      { count: speedDatesToday }
+    ] = await Promise.all([
+      supabase.from('candidates').select('*', { count: 'exact', head: true }),
+      supabase.from('game_scores').select('*', { count: 'exact', head: true }),
+      supabase.from('speed_date_sessions').select('*', { count: 'exact', head: true })
+        .gte('created_at', new Date().toISOString().split('T')[0])
+    ]);
+
+    return {
+      registeredMatches: registeredMatches || 0,
+      totalGames: totalGames || 0,
+      speedDatesToday: speedDatesToday || 0
+    };
   }
 
   async startSpeedDate(userId: string, gender: 'male' | 'female'): Promise<SpeedDateSession | null> {
@@ -1875,6 +1892,12 @@ class DataService {
     if (shareDetails?.female !== undefined) updates.share_details_female = shareDetails.female;
     
     await this.handleSupabase(supabase.from('speed_date_sessions').update(updates).eq('id', sessionId));
+  }
+
+  async getOnlineStats() {
+    const { data: males } = await supabase.from('profiles').select('id').eq('gender', 'male').eq('is_online', true);
+    const { data: females } = await supabase.from('profiles').select('id').eq('gender', 'female').eq('is_online', true);
+    return { males: males?.length || 0, females: females?.length || 0 };
   }
 }
 

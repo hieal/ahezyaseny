@@ -81,7 +81,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isAdjusting) return;
+    if (!isAdjusting) {
+      setIsAdjusting(true);
+    }
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -166,11 +168,13 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     if (!m.negiah) missing.push('שומר נגיעה');
     if (!m.smoking) missing.push('מעשן');
     if (!m.age_range) missing.push('טווח גילאים');
+    if (!m.service) missing.push('שירות');
     return missing;
   };
 
   const missingFields = getMissingFields(match);
-  const isCsvMissing = match.creation_source === 'csv' && missingFields.length > 0;
+  const hasMissingFields = missingFields.length > 0;
+  const isCsvMissing = match.creation_source === 'csv' && hasMissingFields;
 
   const isRecentlyPublished = match.last_published_at 
     ? new Date(match.last_published_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -218,10 +222,19 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         ''
       } ${selected ? 'ring-2 ring-luxury-blue bg-blue-50/30' : ''} ${isCsvMissing ? 'border-red-200' : ''}`}
     >
-      {isCsvMissing && (
-        <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-[10px] font-bold py-1 px-3 flex items-center justify-center gap-2 z-20 animate-pulse">
-          <AlertTriangle size={12} />
-          <span>חסרים פרטים: {missingFields.join(', ')}</span>
+      {hasMissingFields && (
+        <div className="bg-red-50 border-b border-red-100 py-2 px-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 z-20">
+          <div className="flex items-center gap-1.5 text-red-600 font-black text-[11px]">
+            <AlertTriangle size={14} />
+            <span>חסר:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {missingFields.map((field, idx) => (
+              <span key={idx} className="text-red-500 text-[11px] font-bold bg-red-100/50 px-2 py-0.5 rounded-md">
+                {field}
+              </span>
+            ))}
+          </div>
         </div>
       )}
       
@@ -251,7 +264,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {match.image_url && !minimal && (
         <div 
-          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? 'cursor-pointer' : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : isAdjusting ? 'cursor-grab' : ''}`}
+          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? 'cursor-grab' : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : ''}`}
           onClick={() => !isViewer && !isAdjusting && onImageClick?.(match)}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -288,24 +301,34 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               <CheckCircle size={14} />
             </div>
           )}
+
+          {/* Manager Label - Bottom Right */}
+          {showCreator && match.creator_name && (
+            <div className={`absolute bottom-2 right-2 z-30 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-xl border border-white/20 flex items-center gap-2 ${
+              match.creator_gender === 'female' ? 'bg-pink-500/80' : 'bg-blue-500/80'
+            }`}>
+              <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+              <span>{match.creator_gender === 'female' ? 'מנהלת' : 'מנהל'}: {match.creator_name}</span>
+            </div>
+          )}
           
           {/* Adjustment Controls Overlay */}
           {!isViewer && (
-            <div className={`absolute inset-0 bg-black/20 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
-              <div className="flex flex-col items-center gap-3 bg-white/95 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-slate-200 w-[220px]" onClick={e => e.stopPropagation()}>
-                <div className="text-[11px] font-bold text-slate-500 text-center leading-tight">
+            <div className={`absolute inset-0 bg-black/10 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
+              <div className={`flex flex-col items-center gap-3 bg-white/40 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-white/20 w-[220px] transition-opacity ${isDragging ? 'opacity-0' : 'opacity-100'}`} onClick={e => e.stopPropagation()}>
+                <div className="text-[11px] font-bold text-slate-800 text-center leading-tight">
                   שיפור מקום התמונה<br/>
                   <span className="text-[9px] font-medium opacity-70">לחץ על אישור לשמירה</span>
                 </div>
                 
                 <div className="flex flex-col items-center gap-2 w-full">
-                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronUp size={20} /></button>
+                  <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronUp size={20} /></button>
                   
                   <div className="flex items-center justify-between w-full gap-2">
-                    <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronRight size={20} /></button>
+                    <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronRight size={20} /></button>
                     
                     <div className="flex flex-col gap-2">
-                      <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                      <div className="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/20">
                         <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הגדל"><ZoomIn size={18} /></button>
                         <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הקטן"><ZoomOut size={18} /></button>
                       </div>
@@ -324,14 +347,14 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                       </button>
                     </div>
 
-                    <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronLeft size={20} /></button>
+                    <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronLeft size={20} /></button>
                   </div>
                   
-                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-900 border border-slate-100 shadow-sm"><ChevronDown size={20} /></button>
+                  <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronDown size={20} /></button>
                 </div>
                 
-                {isAdjusting ? (
-                  <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100 w-full justify-center">
+                {isAdjusting && (
+                  <div className="flex gap-2 mt-2 pt-2 border-t border-white/20 w-full justify-center">
                     <button 
                       onClick={saveAdjustment}
                       className="flex items-center gap-1 px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm font-bold text-xs"
@@ -346,10 +369,6 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                       <X size={14} />
                       <span>ביטול</span>
                     </button>
-                  </div>
-                ) : (
-                  <div className="mt-1 pt-1 border-t border-slate-100 w-full flex justify-center">
-                    <button onClick={() => onImageClick?.(match)} className="text-[10px] font-bold text-luxury-blue hover:underline">החלף תמונה</button>
                   </div>
                 )}
               </div>
@@ -412,11 +431,6 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       <div className="p-6 flex flex-col flex-1">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            {showCreator && match.creator_name && (
-              <div className="absolute top-2 left-2 bg-luxury-blue/90 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg z-30 border border-white/20">
-                מנהל: {match.creator_name} | קבוצה: {match.creator_category || 'ללא'}
-              </div>
-            )}
             <div>
               <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
             <div className="flex items-center gap-2 text-xs font-semibold mt-1">
@@ -585,18 +599,18 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
       <div className="flex-1 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar mb-4">
         <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-6">
-          <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={match.creation_source === 'csv' && !match.city} />
+          <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={!match.city} />
           {!minimal && (
             <>
-              <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={match.creation_source === 'csv' && !match.religious_level} />
-              <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={match.creation_source === 'csv' && !match.occupation} />
-              <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} />
-              <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} />
-              <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} />
-              <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} />
-              <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} />
-              <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} />
-              <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} />
+              <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={!match.religious_level} />
+              <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={!match.occupation} />
+              <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} isMissing={!match.height} />
+              <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} isMissing={!match.ethnicity} />
+              <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} isMissing={!match.marital_status} />
+              <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} isMissing={!match.service} />
+              <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} isMissing={!match.smoking} />
+              <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} isMissing={!match.negiah} />
+              <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} isMissing={!match.age_range} />
               <InfoItem icon={<HistoryIcon size={14} />} label="פרסום אוטומטי" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
               <InfoItem icon={<CheckCircle size={14} />} label="פרסום ידני" value={match.manual_published_at ? new Date(match.manual_published_at).toLocaleDateString('he-IL') : 'טרם'} />
             </>

@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 interface SyncItem {
   id: string;
   name: string;
-  type: 'admin' | 'match';
+  type: 'admin' | 'candidate';
   url: string;
   isSynced: boolean;
   status: 'pending' | 'syncing' | 'success' | 'failed';
@@ -16,12 +16,12 @@ interface SyncItem {
 export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [items, setItems] = useState<SyncItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'admin' | 'match' | 'pending'>('all');
+  const [filter, setFilter] = useState<'all' | 'admin' | 'candidate' | 'pending'>('all');
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
   const filteredItems = items.filter(item => {
     if (filter === 'admin') return item.type === 'admin';
-    if (filter === 'match') return item.type === 'match';
+    if (filter === 'candidate') return item.type === 'candidate';
     if (filter === 'pending') return !item.isSynced;
     return true;
   });
@@ -99,7 +99,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     synced: items.filter(i => i.isSynced).length,
     pending: items.filter(i => !i.isSynced).length,
     admins: items.filter(i => i.type === 'admin').length,
-    matches: items.filter(i => i.type === 'match').length,
+    candidates: items.filter(i => i.type === 'candidate').length,
   };
 
   return (
@@ -129,7 +129,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
 
         <div className="p-6 bg-white border-b border-slate-100">
           <div className="flex gap-2 mb-6">
-            {(['all', 'admin', 'match', 'pending'] as const).map(f => (
+            {(['all', 'admin', 'candidate', 'pending'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -137,7 +137,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
                   filter === f ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {f === 'all' ? 'הכל' : f === 'admin' ? 'מנהלים' : f === 'match' ? 'משודכים' : 'לא סונכרנו'}
+                {f === 'all' ? 'הכל' : f === 'admin' ? 'מנהלים' : f === 'candidate' ? 'משודכים' : 'לא סונכרנו'}
               </button>
             ))}
           </div>
@@ -160,7 +160,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
             </div>
             <div className="bg-pink-50 p-3 rounded-2xl border border-pink-100 text-center">
               <p className="text-[10px] font-black text-pink-600 uppercase">משודכים</p>
-              <p className="text-2xl font-black text-pink-900">{stats.matches}</p>
+              <p className="text-2xl font-black text-pink-900">{stats.candidates}</p>
             </div>
           </div>
         </div>

@@ -404,12 +404,12 @@ export default function MatchForm() {
     const total = scannedMatches.length;
 
     if (duplicateCount === total) {
-      toast.info('כל הכרטיסים כבר קיימים במערכת');
+      toast('כל הכרטיסים כבר קיימים במערכת');
     } else if (duplicateCount > 0 || failCount > 0) {
       let message = `הועלו ${successCount} מתוך ${total} כרטיסים.`;
       if (duplicateCount > 0) message += ` ${duplicateCount} כבר קיימים במערכת.`;
       if (failCount > 0) message += ` ${failCount} נכשלו.`;
-      toast.info(message);
+      toast(message);
     } else {
       toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
     }

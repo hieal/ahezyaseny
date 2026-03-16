@@ -11,8 +11,11 @@ import { MatchActions } from '../components/MatchActions';
 import { MatchCarousel } from '../components/MatchCarousel';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { MatchSuggestions } from '../components/MatchSuggestions';
+import MatchesManagement from '../components/MatchesManagement';
+import NewMatchesModal from '../components/NewMatchesModal';
 
 import { dataService } from '../services/dataService';
+import { supabase } from '../services/supabase';
 import { useChat } from '../contexts/ChatContext';
 import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
@@ -38,6 +41,7 @@ export default function Dashboard() {
   const [customGroupLink, setCustomGroupLink] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [showAdminBreakdown, setShowAdminBreakdown] = useState(false);
+  const [showMatchesManagement, setShowMatchesManagement] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [showPersonalTemplateModal, setShowPersonalTemplateModal] = useState(false);
   const [personalTemplate, setPersonalTemplate] = useState('');
@@ -87,6 +91,7 @@ export default function Dashboard() {
   const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
 
   const [showGlobalBreakdownModal, setShowGlobalBreakdownModal] = useState(false);
+  const [showNewMatchesModal, setShowNewMatchesModal] = useState(false);
   const [globalBreakdownData, setGlobalBreakdownData] = useState<any>(null);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [loadingGlobalBreakdown, setLoadingGlobalBreakdown] = useState(false);
@@ -712,17 +717,27 @@ export default function Dashboard() {
   };
 
   const fetchData = async () => {
+    setLoading(true);
     try {
-      const [statsData, matchesData, settingsData, groupsData, usersData] = await Promise.all([
+      const matchesData = await dataService.getMatches(undefined, user || undefined);
+      
+      // Filter out trash and archived/inactive candidates for the main dashboard view
+      const activeMatches = matchesData.filter(m => {
+        const isNotTrash = m.name && m.name.trim().length > 1;
+        const isNotDeleted = !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status);
+        return isNotTrash && isNotDeleted;
+      });
+      
+      setMatches(activeMatches);
+      
+      const [statsData, settingsData, groupsData, usersData] = await Promise.all([
         dataService.getStats(user || undefined),
-        dataService.getMatches(undefined, user || undefined), // Fetch all matches for the viewer
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()
       ]);
       
       setStats(statsData);
-      setMatches(matchesData);
       setTemplate(settingsData.whatsapp_template || '');
       setInitialMessage(settingsData.whatsapp_initial_message || '');
       setWhatsappGroups(groupsData);
@@ -1001,47 +1016,18 @@ export default function Dashboard() {
   };
 
   const filteredMatches = matches.filter(m => {
-    // Main dashboard should show user's matches or matches in their category (Manager Unification)
-    const isOwner = user?.role === 'super_admin' || 
-                   user?.role === 'team_leader' ||
-                   m.created_by === user?.id || 
-                   (user?.category && m.creator_category === user.category) ||
-                   (user?.secondary_category && m.creator_category === user.secondary_category) ||
-                   (user?.role === 'viewer' && m.created_by === user.created_by);
+    const matchesSearch = (m.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                         (m.city || '').toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = filter === 'all' || m.category === filter;
+    const matchesType = type === 'all' || (type === 'males' ? m.type === 'male' : m.type === 'female');
     
-    if (!isOwner) return false;
-
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
-                         m.city?.toLowerCase().includes(search.toLowerCase());
+    // Restore "deleted" filter: only show if not archived or status is active
+    const isNotDeleted = !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status);
     
-    const typeFilter = type === 'males' ? m.type === 'male' : type === 'females' ? m.type === 'female' : true;
-    if (!typeFilter) return false;
-
-    const matchesType = filter === 'all' || 
-                       (filter === 'male' && m.type === 'male') || 
-                       (filter === 'female' && m.type === 'female') ||
-                       (filter === 'not_published' && !m.last_published_at) ||
-                       (filter === 'published_today' && m.last_published_at && new Date(m.last_published_at).toDateString() === new Date().toDateString());
-    
-    // Multi-filtering
-    const matchesGroupType = filterGroup === 'all' || m.creator_category === filterGroup;
-    const matchesManager = filterManager === 'all' || m.created_by === filterManager;
-
-    // Multi-selection filters (buttons)
-    const matchesMultiGroup = selectedGroupType === 'all' || 
-                             (selectedGroupType === 'פרויקט שח"ם' ? (m.creator_category === 'פרויקט שח"ם 20-35' || m.creator_category === 'פרויקט שח"ם 36-50') : m.creator_category === selectedGroupType);
-    const matchesMultiManager = selectedManagerIds.length === 0 || selectedManagerIds.includes(m.created_by);
-    
-    // Completion filter
-    const missing = getMissingFields(m);
-    const matchesCompletion = completionFilter === 'all' || 
-                             (completionFilter === 'complete' && missing.length === 0) ||
-                             (completionFilter === 'incomplete' && missing.length > 0);
-
-    return matchesSearch && matchesType && matchesGroupType && matchesManager && matchesMultiGroup && matchesMultiManager && matchesCompletion;
+    return matchesSearch && matchesCategory && matchesType && isNotDeleted;
   }).sort((a, b) => {
     if (sortAlphabetically) {
-      return a.name.localeCompare(b.name, 'he');
+      return (a.name || '').localeCompare(b.name || '', 'he');
     }
     if (sortByDate) {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -1219,6 +1205,13 @@ export default function Dashboard() {
             <Eye size={20} />
             צפיית כרטיסי מנהלים
           </button>
+          <button 
+            onClick={() => setShowNewMatchesModal(true)} 
+            className="btn-secondary flex items-center gap-2 px-6 py-3 text-sm md:text-lg border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+          >
+            <Sparkles size={20} />
+            משודכים חדשים
+          </button>
           {user?.role === 'team_leader' && (
             <button 
               onClick={() => setShowTeamLeaderDashboard(true)} 
@@ -1238,6 +1231,14 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* New Matches Modal */}
+      {showNewMatchesModal && (
+        <NewMatchesModal 
+          matches={matches} 
+          onClose={() => setShowNewMatchesModal(false)} 
+        />
+      )}
 
       {/* Team Leader Dashboard Modal */}
       {showTeamLeaderDashboard && (
@@ -2221,8 +2222,8 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
             {(['small', 'medium', 'large'] as const).map((size) => (
               <button
@@ -2237,6 +2238,50 @@ export default function Dashboard() {
             ))}
           </div>
 
+          <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
+            <label className="flex items-center gap-2 px-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={sliderViewEnabled} 
+                onChange={(e) => setSliderViewEnabled(e.target.checked)}
+                className="w-4 h-4 text-luxury-blue rounded focus:ring-luxury-blue"
+              />
+              <span className="text-xs font-bold text-text-secondary">מצב סליידר</span>
+            </label>
+            {sliderViewEnabled && (
+              <>
+                <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
+                  <span className="text-xs font-bold text-text-secondary px-2">שורות:</span>
+                  {[1, 2, 3].map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => setRowsPerPage(count)}
+                      className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                        rowsPerPage === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
+                  <span className="text-xs font-bold text-text-secondary px-2">כרטיסים בשורה:</span>
+                  {[1, 2, 3].map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => setCardsPerRow(count)}
+                      className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                        cardsPerRow === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             onClick={() => setShowMinimal(!showMinimal)}
             className={`px-4 py-2 rounded-xl border font-bold text-xs transition-all ${
@@ -2245,50 +2290,6 @@ export default function Dashboard() {
           >
             תצוגה מצומצמת
           </button>
-        </div>
-
-        <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
-          <label className="flex items-center gap-2 px-2 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={sliderViewEnabled} 
-              onChange={(e) => setSliderViewEnabled(e.target.checked)}
-              className="w-4 h-4 text-luxury-blue rounded focus:ring-luxury-blue"
-            />
-            <span className="text-xs font-bold text-text-secondary">מצב סליידר</span>
-          </label>
-          {sliderViewEnabled && (
-            <>
-              <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
-                <span className="text-xs font-bold text-text-secondary px-2">שורות:</span>
-                {[1, 2, 3].map((count) => (
-                  <button
-                    key={count}
-                    onClick={() => setRowsPerPage(count)}
-                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
-                      rowsPerPage === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
-                    }`}
-                  >
-                    {count}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1 border-r border-slate-200 pr-3">
-                <span className="text-xs font-bold text-text-secondary px-2">כרטיסים בשורה:</span>
-                {[1, 2, 3].map((count) => (
-                  <button
-                    key={count}
-                    onClick={() => setCardsPerRow(count)}
-                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
-                      cardsPerRow === count ? 'bg-luxury-blue text-white shadow-sm' : 'text-text-secondary hover:bg-slate-50'
-                    }`}
-                  >
-                    {count}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       </div>
 
@@ -2379,7 +2380,7 @@ export default function Dashboard() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 text-slate-400 mb-4">
                 <Search size={32} />
               </div>
-              <h3 className="text-xl font-bold text-slate-900">לא נמצאו כרטיסים</h3>
+              <h3 className="text-xl font-bold text-slate-900">המערכת לא מצאה משודכים בטבלה</h3>
               <p className="text-slate-500 mt-1">נסה לשנות את מסנני החיפוש או ליצור כרטיס חדש</p>
             </div>
           )}
@@ -3078,7 +3079,34 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Admins Section */}
+                {showMatchesManagement && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">ניהול משודכים</h2>
+                <button onClick={() => setShowMatchesManagement(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={24} />
+                </button>
+              </div>
+              <MatchesManagement />
+            </motion.div>
+          </div>
+        )}
+
+        {/* Admins Section */}
+        {user?.role === 'super_admin' && (
+          <button 
+            onClick={() => setShowMatchesManagement(true)}
+            className="bg-luxury-blue text-white px-4 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all mb-4"
+          >
+            ניהול משודכים
+          </button>
+        )}
                 {adminsInSameGroups.filter(u => u.role === 'admin' || u.role === 'super_admin').length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">מנהלים</h4>
