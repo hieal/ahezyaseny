@@ -792,10 +792,23 @@ class DataService {
 
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
-    const { data, error } = await supabase
+    let query = supabase
       .from('candidates')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (type) {
+      query = query.eq('type', type);
+    }
+
+    // Backend Guard: If user is a manager (admin), restrict to their group (category)
+    if (user && user.role === 'admin') {
+      if (user.category) {
+        query = query.eq('category', user.category);
+      }
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching matches:', error);
@@ -1803,6 +1816,10 @@ class DataService {
       return {
         males: activeCandidates.filter(m => m.type === 'male').length,
         females: activeCandidates.filter(m => m.type === 'female').length,
+        malesMe: user ? activeCandidates.filter(m => m.type === 'male' && m.created_by === user.id).length : 0,
+        femalesMe: user ? activeCandidates.filter(m => m.type === 'female' && m.created_by === user.id).length : 0,
+        malesGroup: activeCandidates.filter(m => m.type === 'male').length, // For managers, this is already the group
+        femalesGroup: activeCandidates.filter(m => m.type === 'female').length, // For managers, this is already the group
         totalMatchesSite,
         publishedToday: publishedTodayCount,
         publishedThisMonth: publishedThisMonthCount,

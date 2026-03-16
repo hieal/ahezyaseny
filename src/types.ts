@@ -123,6 +123,8 @@ export interface Stats {
   females: number;
   malesGroup?: number;
   femalesGroup?: number;
+  malesMe?: number;
+  femalesMe?: number;
   totalMatchesSite?: number;
   publishedToday: number;
   publishedThisMonth?: number;

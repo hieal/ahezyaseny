@@ -89,6 +89,7 @@ export default function Dashboard() {
   const [sortAlphabetically, setSortAlphabetically] = useState(false);
   const [sortByDate, setSortByDate] = useState(true); // Default newest first
   const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
+  const [managerFilter, setManagerFilter] = useState<'all' | 'me' | 'group'>('all');
 
   const [showGlobalBreakdownModal, setShowGlobalBreakdownModal] = useState(false);
   const [showNewMatchesModal, setShowNewMatchesModal] = useState(false);
@@ -1056,6 +1057,14 @@ export default function Dashboard() {
                         (selectedGroupType === 'all' || 
                          (selectedGroupType === 'פרויקט שח"ם' ? m.category?.startsWith('פרויקט שח"ם') : m.category === selectedGroupType));
 
+    // Manager View (Strict Filtering)
+    const matchesManagerView = (() => {
+      if (user?.role !== 'admin') return true;
+      if (managerFilter === 'me') return m.created_by === user.id;
+      if (managerFilter === 'group') return m.created_by !== user.id;
+      return true;
+    })();
+
     // Completion filter
     const matchesCompletion = completionFilter === 'all' || 
                              (completionFilter === 'complete' ? getMissingFields(m).length === 0 : getMissingFields(m).length > 0);
@@ -1064,7 +1073,7 @@ export default function Dashboard() {
     const isNotDeleted = !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status);
     
     return matchesSearch && matchesType && matchesCategory && matchesStatus && 
-           matchesManager && matchesGroup && matchesCompletion && isNotDeleted;
+           matchesManager && matchesGroup && matchesCompletion && isNotDeleted && matchesManagerView;
   }).sort((a, b) => {
     if (sortAlphabetically) {
       return (a.name || '').localeCompare(b.name || '', 'he');
@@ -2000,7 +2009,7 @@ export default function Dashboard() {
               <StatCard 
                 icon={<UserCheck className="text-luxury-blue" />} 
                 label="סה״כ בנים" 
-                value={user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.males || 0) : (stats?.malesGroup || 0))} 
+                value={user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.malesMe || 0) : (stats?.malesGroup || 0))} 
                 color="border-blue-100 bg-blue-50/30"
               />
             </div>
@@ -2008,7 +2017,7 @@ export default function Dashboard() {
               <StatCard 
                 icon={<Heart className="text-pink-600" fill="currentColor" />} 
                 label="סה״כ בנות" 
-                value={user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.females || 0) : (stats?.femalesGroup || 0))} 
+                value={user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.femalesMe || 0) : (stats?.femalesGroup || 0))} 
                 color="border-pink-100 bg-pink-50/30"
               />
             </div>
@@ -2053,6 +2062,38 @@ export default function Dashboard() {
 
       {/* Filters & Search */}
       <div className="card p-6 space-y-6">
+        {user?.role === 'admin' && (
+          <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-50">
+            <button
+              onClick={() => setManagerFilter('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                managerFilter === 'all' ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <Users size={16} />
+              כל המועמדים בקבוצה
+            </button>
+            <button
+              onClick={() => setManagerFilter('me')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                managerFilter === 'me' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <UserCheck size={16} />
+              המועמדים שלי
+            </button>
+            <button
+              onClick={() => setManagerFilter('group')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                managerFilter === 'group' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <Users size={16} />
+              מועמדי הקבוצה (אחרים)
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row gap-4 items-center">
           <div className="relative flex-1 w-full">
             <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -2141,6 +2182,7 @@ export default function Dashboard() {
                 setCompletionFilter('all');
                 setSelectedGroupType('all');
                 setSelectedManagerIds([]);
+                setManagerFilter('all');
               }}
               className="p-3 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-xl transition-all"
               title="נקה מסננים"
