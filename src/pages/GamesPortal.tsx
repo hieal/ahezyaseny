@@ -11,7 +11,9 @@ import {
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-type GameType = 'menu' | 'memory' | 'this_or_that';
+import ConnectionMaze from './ConnectionMaze';
+
+type GameType = 'menu' | 'memory' | 'this_or_that' | 'maze';
 
 export default function GamesPortal() {
   const { user } = useAuth();
@@ -139,6 +141,23 @@ export default function GamesPortal() {
                   <ChevronLeft size={18} />
                 </div>
               </button>
+
+              <button 
+                onClick={() => setActiveGame('maze')}
+                className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 text-right space-y-4 hover:shadow-xl hover:shadow-slate-200 transition-all group"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Gamepad2 size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">מבוך שיתוף פעולה</h3>
+                  <p className="text-slate-500 font-medium">עבדו יחד כדי לצאת מהמבוך ולצבור נקודות.</p>
+                </div>
+                <div className="flex items-center gap-2 text-blue-600 font-bold">
+                  <span>שחק עכשיו</span>
+                  <ChevronLeft size={18} />
+                </div>
+              </button>
             </div>
 
             {/* Leaderboard */}
@@ -208,6 +227,12 @@ export default function GamesPortal() {
               setActiveGame('menu');
             }}
           />
+        )}
+
+        {activeGame === 'maze' && (
+          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+            <ConnectionMaze />
+          </div>
         )}
       </main>
     </div>

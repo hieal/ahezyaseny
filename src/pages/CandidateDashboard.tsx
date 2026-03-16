@@ -357,41 +357,49 @@ export default function CandidateDashboard() {
                 className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100"
               >
                 {myMatch ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="aspect-[3/4] rounded-3xl overflow-hidden shadow-lg border border-slate-100">
-                      <img 
-                        src={myMatch.image_url || 'https://picsum.photos/seed/profile/600/800'} 
-                        alt={myMatch.name}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-3xl font-black text-slate-900">{myMatch.name}</h3>
-                        <p className="text-emerald-600 font-bold">{myMatch.age} • {myMatch.city}</p>
+                  <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row gap-8">
+                      <div className="w-full md:w-1/3 aspect-[3/4] rounded-3xl overflow-hidden shadow-lg border border-slate-100 shrink-0">
+                        <img 
+                          src={myMatch.image_url || 'https://picsum.photos/seed/profile/600/800'} 
+                          alt={myMatch.name}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-3 bg-slate-50 rounded-2xl">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">גובה</p>
-                          <p className="font-bold text-slate-700">{myMatch.height}</p>
+                      <div className="flex-1 space-y-4">
+                        <div className="bg-[#DCF8C6] p-4 rounded-2xl rounded-tr-none shadow-sm relative">
+                          <div className="absolute top-0 -right-2 w-0 h-0 border-t-[10px] border-t-[#DCF8C6] border-r-[10px] border-r-transparent" />
+                          <h3 className="font-black text-slate-900 mb-2">פרטי כרטיס (פורמט הודעה):</h3>
+                          <div className="space-y-1 text-sm font-medium text-slate-800 whitespace-pre-wrap leading-relaxed">
+                            <p>✨ *כרטיס משודך חדש* ✨</p>
+                            <p>👤 *שם:* {myMatch.name}</p>
+                            <p>🎂 *גיל:* {myMatch.age}</p>
+                            <p>📍 *עיר:* {myMatch.city}</p>
+                            <p>📏 *גובה:* {myMatch.height}</p>
+                            <p>💍 *מצב משפחתי:* {myMatch.marital_status}</p>
+                            <p>🕍 *מגזר:* {myMatch.religious_level}</p>
+                            <p>💼 *עיסוק:* {myMatch.occupation}</p>
+                            <p>✡️ *עדה:* {myMatch.ethnicity}</p>
+                            <p>🎖️ *שירות:* {myMatch.service}</p>
+                            <p>🚬 *מעשן:* {myMatch.smoking}</p>
+                            <p>👐 *שומר נגיעה:* {myMatch.negiah}</p>
+                            <p>📝 *קצת עלי:* {myMatch.about || 'לא צוין'}</p>
+                            <p>🎯 *מה מחפש:* {myMatch.looking_for || 'לא צוין'}</p>
+                            <p className="mt-4 text-[10px] opacity-60">פורסם באמצעות פורטל יוחאי</p>
+                          </div>
                         </div>
-                        <div className="p-3 bg-slate-50 rounded-2xl">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">מצב משפחתי</p>
-                          <p className="font-bold text-slate-700">{myMatch.marital_status}</p>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">סטטוס פירסום</p>
+                            <p className="font-bold text-emerald-600">{myMatch.last_published_at ? 'פורסם' : 'טרם פורסם'}</p>
+                          </div>
+                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">קבוצת בית</p>
+                            <p className="font-bold text-slate-700">{groupInfo.mainGroup?.name || 'לא משויך'}</p>
+                          </div>
                         </div>
-                        <div className="p-3 bg-slate-50 rounded-2xl">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">רמה דתית</p>
-                          <p className="font-bold text-slate-700">{myMatch.religious_level}</p>
-                        </div>
-                        <div className="p-3 bg-slate-50 rounded-2xl">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">עיסוק</p>
-                          <p className="font-bold text-slate-700 truncate">{myMatch.occupation}</p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">קצת עלי</p>
-                        <p className="text-sm text-slate-600 leading-relaxed">{myMatch.about || 'לא צוין'}</p>
                       </div>
                     </div>
                   </div>

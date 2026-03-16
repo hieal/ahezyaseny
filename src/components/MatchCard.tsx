@@ -28,11 +28,13 @@ interface MatchCardProps {
    onSelect?: (id: string, selected: boolean) => void;
    isViewer?: boolean;
    size?: 'small' | 'medium' | 'large';
+   viewMode?: 'standard' | 'whatsapp';
  }
 
-export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium' }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium', viewMode: viewModeProp = 'standard' }: MatchCardProps) {
   const { user } = useAuth();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
+  const [viewMode, setViewMode] = React.useState<'standard' | 'whatsapp'>(viewModeProp);
   const [isEditingGender, setIsEditingGender] = React.useState(false);
   const [isEditingPhone, setIsEditingPhone] = React.useState(false);
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
@@ -449,7 +451,23 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div>
-              <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg scale-75 origin-right">
+                  <button 
+                    onClick={() => setViewMode('standard')}
+                    className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'standard' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500'}`}
+                  >
+                    רגיל
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('whatsapp')}
+                    className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'whatsapp' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500'}`}
+                  >
+                    וואטסאפ
+                  </button>
+                </div>
+              </div>
             <div className="flex items-center gap-2 text-xs font-semibold mt-1">
               <div className="relative">
                 <button 
@@ -495,17 +513,19 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               {naturalGroup && (
                 <div className={`px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold ${
                   match.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'
-                }`} title={`משויך לקבוצת ${naturalGroup.name}`}>
+                }`} title={`משויך לקבוצת ${naturalGroup.name} (${naturalGroup.whapi_id || 'ללא ID'})`}>
                   <Users size={10} />
                   <span>{naturalGroup.name}</span>
+                  {naturalGroup.whapi_id && <span className="opacity-50 text-[8px]">#{naturalGroup.whapi_id.slice(-4)}</span>}
                 </div>
               )}
               {viewerGroups.length > 0 && (
                 <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
                   {viewerGroups.map(vg => (
-                    <div key={vg.id} className="px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap" title={`צופה בקבוצת ${vg.name}`}>
+                    <div key={vg.id} className="px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap" title={`צופה בקבוצת ${vg.name} (${vg.whapi_id || 'ללא ID'})`}>
                       <Eye size={10} />
                       <span>{vg.name}</span>
+                      {vg.whapi_id && <span className="opacity-50 text-[8px]">#{vg.whapi_id.slice(-4)}</span>}
                     </div>
                   ))}
                 </div>
@@ -615,38 +635,73 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         </div>
 
       <div className="flex-1 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar mb-4">
-        <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-6">
-          <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={!match.city} />
-          {!minimal && (
-            <>
-              <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={!match.religious_level} />
-              <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={!match.occupation} />
-              <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} isMissing={!match.height} />
-              <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} isMissing={!match.ethnicity} />
-              <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} isMissing={!match.marital_status} />
-              <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} isMissing={!match.service} />
-              <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} isMissing={!match.smoking} />
-              <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} isMissing={!match.negiah} />
-              <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} isMissing={!match.age_range} />
-              <InfoItem icon={<HistoryIcon size={14} />} label="פרסום אוטומטי" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
-              <InfoItem icon={<CheckCircle size={14} />} label="פרסום ידני" value={match.manual_published_at ? new Date(match.manual_published_at).toLocaleDateString('he-IL') : 'טרם'} />
-            </>
-          )}
-        </div>
-
-        {(!minimal && (match.about || match.creation_source === 'csv')) && (
-          <div className="mb-6">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-text-secondary mb-1.5">
-              <Info size={12} />
-              <span>קצת עליי</span>
+        {viewMode === 'standard' ? (
+          <>
+            <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-6">
+              <InfoItem icon={<MapPin size={14} />} label="עיר" value={match.city} isMissing={!match.city} />
+              {!minimal && (
+                <>
+                  <InfoItem icon={<GraduationCap size={14} />} label="מגזר" value={match.religious_level} isMissing={!match.religious_level} />
+                  <InfoItem icon={<Briefcase size={14} />} label="עיסוק" value={match.occupation} isMissing={!match.occupation} />
+                  <InfoItem icon={<MapPin size={14} />} label="גובה" value={match.height} isMissing={!match.height} />
+                  <InfoItem icon={<User size={14} />} label="עדה" value={match.ethnicity} isMissing={!match.ethnicity} />
+                  <InfoItem icon={<Heart size={14} />} label="מצב משפחתי" value={match.marital_status} isMissing={!match.marital_status} />
+                  <InfoItem icon={<CheckCircle size={14} />} label="שירות" value={match.service} isMissing={!match.service} />
+                  <InfoItem icon={<AlertTriangle size={14} />} label="מעשן/ת" value={match.smoking} isMissing={!match.smoking} />
+                  <InfoItem icon={<Check size={14} />} label="שומר/ת נגיעה" value={match.negiah} isMissing={!match.negiah} />
+                  <InfoItem icon={<Calendar size={14} />} label="טווח גילאים" value={match.age_range} isMissing={!match.age_range} />
+                  <InfoItem icon={<HistoryIcon size={14} />} label="פרסום אוטומטי" value={match.last_published_at ? new Date(match.last_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+                  <InfoItem icon={<CheckCircle size={14} />} label="פרסום ידני" value={match.manual_published_at ? new Date(match.manual_published_at).toLocaleDateString('he-IL') : 'טרם'} />
+                </>
+              )}
             </div>
-            <p className={`text-sm text-text-main leading-relaxed p-3 rounded-xl border ${
-              match.creation_source === 'csv' && (!match.about || match.about.length < 5) 
-                ? 'bg-red-50 border-red-200 text-red-700' 
-                : 'bg-slate-50 border-slate-100'
-            }`}>
-              {match.about || 'חסר תיאור...'}
-            </p>
+
+            {(!minimal && (match.about || match.creation_source === 'csv')) && (
+              <div className="mb-6">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-text-secondary mb-1.5">
+                  <Info size={12} />
+                  <span>קצת עליי</span>
+                </div>
+                <p className={`text-sm text-text-main leading-relaxed p-3 rounded-xl border ${
+                  match.creation_source === 'csv' && (!match.about || match.about.length < 5) 
+                    ? 'bg-red-50 border-red-200 text-red-700' 
+                    : 'bg-slate-50 border-slate-100'
+                }`}>
+                  {match.about || 'חסר תיאור...'}
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="bg-[#E7F3EF] p-4 rounded-2xl border border-emerald-100 space-y-2 font-medium text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+            <p>✨ *כרטיס משודך חדש* ✨</p>
+            <p>👤 *שם:* {match.name}</p>
+            <p>🎂 *גיל:* {match.age}</p>
+            <p>📍 *עיר:* {match.city}</p>
+            <p>📏 *גובה:* {match.height}</p>
+            <p>💍 *מצב משפחתי:* {match.marital_status}</p>
+            <p>🕍 *מגזר:* {match.religious_level}</p>
+            <p>💼 *עיסוק:* {match.occupation}</p>
+            <p>✡️ *עדה:* {match.ethnicity}</p>
+            <p>🎖️ *שירות:* {match.service}</p>
+            <p>🚬 *מעשן:* {match.smoking}</p>
+            <p>👐 *שומר נגיעה:* {match.negiah}</p>
+            <p>📝 *קצת עלי:* {match.about || 'לא צוין'}</p>
+            <p>🎯 *מה מחפש:* {match.looking_for || 'לא צוין'}</p>
+            <p className="mt-4 text-[10px] opacity-60">פורסם באמצעות פורטל יוחאי</p>
+            
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                const text = `✨ *כרטיס משודך חדש* ✨\n👤 *שם:* ${match.name}\n🎂 *גיל:* ${match.age}\n📍 *עיר:* ${match.city}\n📏 *גובה:* ${match.height}\n💍 *מצב משפחתי:* ${match.marital_status}\n🕍 *מגזר:* ${match.religious_level}\n💼 *עיסוק:* ${match.occupation}\n✡️ *עדה:* ${match.ethnicity}\n🎖️ *שירות:* ${match.service}\n🚬 *מעשן:* ${match.smoking}\n👐 *שומר נגיעה:* ${match.negiah}\n📝 *קצת עלי:* ${match.about || 'לא צוין'}\n🎯 *מה מחפש:* ${match.looking_for || 'לא צוין'}\n\nפורסם באמצעות פורטל יוחאי`;
+                navigator.clipboard.writeText(text);
+                toast.success('הטקסט הועתק!');
+              }}
+              className="mt-4 w-full py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
+            >
+              <MessageSquare size={14} />
+              העתק טקסט לוואטסאפ
+            </button>
           </div>
         )}
       </div>
