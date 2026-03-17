@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import IdentitySelector from './pages/IdentitySelector';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import DailySuggestionsPage from './pages/DailySuggestionsPage';
@@ -37,6 +38,7 @@ import { Logo } from './components/Logo';
 import { dataService } from './services/dataService';
 import { supabase } from './services/supabase';
 import { InternalChat } from './components/InternalChat';
+import { OnlineMonitor } from './components/OnlineMonitor';
 import { ChatProvider } from './contexts/ChatContext';
 import { TransferModal } from './components/TransferModal';
 
@@ -67,7 +69,6 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 function Sidebar() {
   const { user, effectiveUser, logout, refreshUser } = useAuth();
   const activeUser = effectiveUser || user;
-  const { airtableSyncEnabled } = useSettings();
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -275,10 +276,6 @@ function Sidebar() {
     });
   }
 
-  if (!airtableSyncEnabled) {
-    navItems = navItems.filter(item => item.path !== '/blacklist' && item.path !== '/pending-contact');
-  }
-
   const handleOpenTransferModal = () => {
     setShowTransferModal(true);
     setIsOpen(false);
@@ -292,12 +289,10 @@ function Sidebar() {
   }
 
   if (activeUser?.role === 'super_admin') {
-    if (airtableSyncEnabled) {
-      navItems.push(
-        { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
-        { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
-      );
-    }
+    navItems.push(
+      { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
+      { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
+    );
     navItems.push(
       { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
     );
@@ -361,6 +356,15 @@ function Sidebar() {
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
               {user?.role !== 'candidate' && (
                 <button
+                  onClick={() => setShowConnectedAdmins(true)}
+                  className="w-full sidebar-item mb-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-all"
+                >
+                  <Users size={20} />
+                  <span className="font-bold flex-1 text-right">מחוברים כעת</span>
+                </button>
+              )}
+              {user?.role !== 'candidate' && (
+                <button
                   onClick={handleOpenTransferModal}
                   className="w-full sidebar-item mb-2 bg-luxury-blue/5 text-luxury-blue border border-luxury-blue/10 hover:bg-luxury-blue/10 transition-all"
                 >
@@ -381,6 +385,10 @@ function Sidebar() {
                     onClick={() => setIsOpen(false)}
                     className={`sidebar-item flex-1 ${
                       location.pathname === item.path ? 'sidebar-item-active' : ''
+                    } ${
+                      item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
+                    } ${
+                      item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
                     }`}
                   >
                     {item.icon}
@@ -652,18 +660,19 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const { user, effectiveUser, setImpersonation, refreshUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isImpersonating, setIsImpersonating] = React.useState(false);
-  const [activeChats, setActiveChats] = React.useState<{id: string, name: string, initialMessage?: string}[]>([]);
-  const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
-  const [multiChatMode, setMultiChatMode] = React.useState(() => {
+  const [isImpersonating, setIsImpersonating] = useState(false);
+  const [activeChats, setActiveChats] = useState<{id: string, name: string, initialMessage?: string}[]>([]);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [multiChatMode, setMultiChatMode] = useState(() => {
     return localStorage.getItem('multi_chat_mode') === 'true';
   });
-  const [autoPopup, setAutoPopup] = React.useState(() => {
+  const [autoPopup, setAutoPopup] = useState(() => {
     return localStorage.getItem('chat_auto_popup') !== 'false';
   });
-  const [showLimitModal, setShowLimitModal] = React.useState(false);
-  const [showMoveLimitModal, setShowMoveLimitModal] = React.useState(false);
-  const [chatResetKeys, setChatResetKeys] = React.useState<Record<string, number>>({});
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showMoveLimitModal, setShowMoveLimitModal] = useState(false);
+  const [chatResetKeys, setChatResetKeys] = useState<Record<string, number>>({});
+  const [showConnectedAdmins, setShowConnectedAdmins] = useState(false);
 
   const originalAdmin = React.useMemo(() => {
     const stored = localStorage.getItem('original_admin_user');
@@ -873,17 +882,26 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
           {effectiveUser && (
-            <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center justify-between sticky top-0 z-[40]">
-              <div className="flex items-center gap-3 text-amber-800 font-bold text-sm">
-                <ShieldAlert size={18} className="text-amber-500" />
-                <span>מבצע פעולות בשם: {effectiveUser.full_name || effectiveUser.name} - מצב צפייה בנתוני מנהל - מסונן</span>
+            <div className={`border-b px-6 py-2 flex items-center justify-between sticky top-0 z-[40] ${effectiveUser.role === 'super_observer' ? 'bg-red-600 text-white' : 'bg-amber-50 border-amber-100'}`}>
+              <div className="flex items-center gap-3 font-bold text-sm">
+                {effectiveUser.role === 'super_observer' ? (
+                  <>
+                    <ShieldAlert size={18} className="text-white" />
+                    <span>מלאכי צוריאל - מנהל עמותת החצי השני</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert size={18} className="text-amber-500" />
+                    <span>מבצע פעולות בשם: {effectiveUser.full_name || effectiveUser.name} - מצב צפייה בנתוני מנהל - מסונן</span>
+                  </>
+                )}
               </div>
               <button 
-                onClick={handleReturnToAdmin}
-                className="px-4 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-black hover:bg-amber-700 transition-all shadow-sm flex items-center gap-2"
+                onClick={effectiveUser.role === 'super_observer' ? () => navigate('/identity-selector') : handleReturnToAdmin}
+                className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all shadow-sm flex items-center gap-2 ${effectiveUser.role === 'super_observer' ? 'bg-white text-red-600 hover:bg-red-50' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
               >
                 <ArrowLeftRight size={14} />
-                חזור לניהול שלי
+                {effectiveUser.role === 'super_observer' ? 'החלף זהות צפייה' : 'חזור לניהול שלי'}
               </button>
             </div>
           )}
@@ -929,6 +947,15 @@ function MainLayout({ children }: { children: React.ReactNode }) {
             )}
           </AnimatePresence>
         </div>
+
+        <OnlineMonitor 
+          isOpen={showConnectedAdmins} 
+          onClose={() => setShowConnectedAdmins(false)} 
+          onOpenChat={(user) => {
+            setShowConnectedAdmins(false);
+            openChat(user);
+          }}
+        />
 
         {/* Auto Popup Toggle Floating Button removed from here, moved to ConnectedAdmins.tsx */}
 
@@ -1008,6 +1035,7 @@ export default function App() {
             <MainLayout>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/identity-selector" element={<ProtectedRoute><IdentitySelector /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
               <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

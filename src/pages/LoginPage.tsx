@@ -172,7 +172,9 @@ export default function LoginPage() {
       if (user) {
         login(user);
         toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
-        if (user.role === 'candidate') {
+        if (user.role === 'super_observer') {
+          navigate('/identity-selector');
+        } else if (user.role === 'candidate') {
           navigate('/candidate-profile');
         } else {
           navigate('/');

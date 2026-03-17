@@ -11,6 +11,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   setImpersonation: (user: User | null) => void;
+  isReadOnly: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -146,8 +147,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionStorage.removeItem('effective_user');
   };
 
+  const isReadOnly = effectiveUser?.role === 'super_observer';
+
   return (
-    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation }}>
+    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation, isReadOnly }}>
       {children}
     </AuthContext.Provider>
   );

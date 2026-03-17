@@ -3,6 +3,7 @@ import { Match, WhatsAppGroup, ImagePosition } from '../types';
 import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move, TrendingUp, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { useActionDisabled } from '../hooks/useActionDisabled';
 import { dataService } from '../services/dataService';
 import { toast } from 'react-hot-toast';
 import { CATEGORIES } from '../constants';
@@ -33,6 +34,7 @@ interface MatchCardProps {
 
 export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium', viewMode: viewModeProp = 'standard' }: MatchCardProps) {
   const { user } = useAuth();
+  const isActionDisabled = useActionDisabled();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
   const [viewMode, setViewMode] = React.useState<'standard' | 'whatsapp' | 'designed'>(viewModeProp);
   const [isEditingGender, setIsEditingGender] = React.useState(false);
@@ -554,7 +556,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                   e.stopPropagation();
                   onEdit(match.id);
                 }} 
-                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all"
+                disabled={isActionDisabled}
+                className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-slate-50 rounded-lg transition-all disabled:opacity-50"
                 title="ערוך כרטיס"
               >
                 <Edit size={18} />
@@ -566,7 +569,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                   e.stopPropagation();
                   onDelete(match.id);
                 }} 
-                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                disabled={isActionDisabled}
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
                 title="מחק כרטיס"
               >
                 <Trash2 size={18} />

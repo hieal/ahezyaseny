@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useActionDisabled } from '../hooks/useActionDisabled';
 import { toast } from 'react-hot-toast';
 import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, GraduationCap, Info, Image as ImageIcon, Plus, Trash2, Camera, Crop, X, Check, FileUp, Database, Loader2, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +14,7 @@ import { dataService } from '../services/dataService';
 
 export default function MatchForm() {
   const { user } = useAuth();
+  const isActionDisabled = useActionDisabled();
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
@@ -863,7 +865,7 @@ export default function MatchForm() {
 
         <div className="flex justify-end gap-4 pt-10 border-t border-slate-50">
           <button type="button" onClick={() => navigate(-1)} className="btn-secondary px-8 py-3.5 text-lg font-bold">ביטול</button>
-          <button type="submit" disabled={saving} className="btn-primary px-10 py-3.5 text-lg font-bold flex items-center gap-2 shadow-lg">
+          <button type="submit" disabled={isActionDisabled || saving} className="btn-primary px-10 py-3.5 text-lg font-bold flex items-center gap-2 shadow-lg disabled:opacity-50">
             <Save size={22} />
             {saving ? 'שומר...' : 'שמור כרטיס במערכת'}
           </button>

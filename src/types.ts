@@ -4,7 +4,7 @@ export interface User {
   full_name: string;
   username?: string;
   email: string;
-  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate';
+  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate' | 'super_observer';
   status: 'active' | 'inactive';
   category?: string | null;
   secondary_category?: string | null;

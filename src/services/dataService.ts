@@ -441,15 +441,6 @@ class DataService {
     });
   }
 
-  async syncCandidatesFromAirtable(token: string, baseId: string, profilesPromise: any): Promise<{ success: boolean; message: string }> {
-    // const { data: profilesData } = await profilesPromise;
-    // const existingAdmins = profilesData || [];
-    // Implement Airtable API logic here, using existingAdmins if needed
-    // Direct Airtable access only
-    console.log('Direct Airtable sync initiated for base:', baseId);
-    return { success: false, message: 'טרם מומש' };
-  }
-
   async isBlacklisted(email: string, phone: string, full_name: string): Promise<Blacklist | null> {
     const { data, error } = await supabase
       .from('blacklist')
@@ -503,7 +494,7 @@ class DataService {
       const data = await this.handleSupabase(
         supabase
           .from('profiles')
-          .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, created_by, daily_message_template, is_from_file, is_approved, is_shaham_manager')
+          .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved, is_shaham_manager')
           .eq('id', user.id)
           .limit(1)
           .single()
@@ -609,6 +600,17 @@ class DataService {
         if (profilesData && profilesData.length > 0) {
           const user = profilesData[0];
           
+          // Malachi (super_observer) default password logic
+          if (user.role === 'super_observer') {
+            const defaultPassword = '12345678';
+            const passwordToCheck = user.password_plain || defaultPassword;
+            if (password_plain === passwordToCheck) {
+              return user as User;
+            } else {
+              throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+            }
+          }
+
           // Check password against password_plain
           if (user.password_plain === password_plain) {
             return user as User;
@@ -659,19 +661,21 @@ class DataService {
         // 2. Find password in profiles table
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('password_plain')
+          .select('password_plain, role')
           .eq('phone', candPhone)
-          .limit(1);
+          .eq('role', 'candidate')
+          .maybeSingle();
 
         if (profileError) {
           console.error('Candidate profile password query error:', profileError);
+          throw profileError;
         }
 
-        const dbPassword = (profileData && profileData.length > 0) 
-          ? profileData[0].password_plain 
-          : '12345678'; // Default fallback
+        if (!profileData) {
+          throw new Error('משתמש לא נמצא בטבלת הפרופילים או שאינו מוגדר כמשודך');
+        }
 
-        if (dbPassword === password_plain) {
+        if (profileData.password_plain === password_plain) {
           // Map candidate to User type
           return {
             id: cand.id,
@@ -723,7 +727,6 @@ class DataService {
       'is_approved',
       'is_shaham_manager',
       'google_login_allowed',
-      'created_by',
       'creator_name',
       'last_login',
       'last_seen',
@@ -986,7 +989,9 @@ class DataService {
 
     if (activeUser) {
       if (activeUser.role === 'admin') {
-        if (activeUser.category) {
+        if (activeUser.affiliation_group === 'פרויקט שח"ם') {
+          query = query.in('category', ['פרויקט שח"ם', 'פרויקט שח"ם 20-35', 'פרויקט שח"ם 36-50']);
+        } else if (activeUser.category) {
           query = query.eq('category', activeUser.category);
         }
         if (effectiveUserId) {
@@ -1271,20 +1276,15 @@ class DataService {
     const query = supabase
       .from('candidates')
       .select('*')
-      .or(`target_admin_id.eq.${effectiveUserId},receiver_id.eq.${effectiveUserId}`)
-      .eq('transfer_status', 'pending')
       .is('deleted_at', null);
 
     return this.safeQuery(query, []);
   }
 
   async getOrphanedCandidatesCount(): Promise<number> {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    
     const query = supabase
       .from('candidates')
       .select('id')
-      .or(`managed_by.is.null,admin_id.is.null,transfer_status.eq.orphaned,and(transfer_status.eq.approved,transfer_approved_at.gt.${twentyFourHoursAgo})`)
       .is('deleted_at', null);
 
     const data = await this.safeQuery(query, []);
@@ -1423,7 +1423,7 @@ class DataService {
       const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
       return {
         ...u,
-        affiliation_group: u.affiliation_group || 'כללי',
+        affiliation_group: u.affiliation_group || null,
         username: u.username || u.email || u.id,
         gender: u.gender || 'male',
         name: u.full_name || u.email?.split('@')[0] || fallbackName
@@ -1547,12 +1547,10 @@ class DataService {
   }
 
   async getOrphanedCandidates(): Promise<Match[]> {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    
     const { data, error } = await supabase
       .from('candidates')
       .select('*')
-      .or(`managed_by.is.null,transfer_status.eq.orphaned,and(transfer_status.eq.approved,transfer_approved_at.gt.${twentyFourHoursAgo})`)
+      .is('managed_by', null)
       .is('deleted_at', null);
 
     if (error) throw error;
@@ -1564,7 +1562,6 @@ class DataService {
       .from('candidates')
       .select('*')
       .eq('target_admin_id', adminId)
-      .eq('transfer_status', 'pending')
       .is('deleted_at', null);
 
     if (error) throw error;

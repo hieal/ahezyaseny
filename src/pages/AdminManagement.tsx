@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { usePresence } from '../contexts/PresenceContext';
-import { useSettings } from '../contexts/SettingsContext';
 import { useChat } from '../contexts/ChatContext';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { getGenderedText } from '../utils/gender';
@@ -16,11 +15,12 @@ import { supabase } from '../services/supabase';
 
 export default function AdminManagement() {
   const { user: currentUser, refreshUser, setImpersonation } = useAuth();
-  const { airtableSyncEnabled, setAirtableSyncEnabled } = useSettings();
+  const { isReadOnly } = useAuth();
   const { presenceState } = usePresence();
   const { openChat } = useChat();
   const [users, setUsers] = useState<User[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
+  const [affiliationGroups, setAffiliationGroups] = useState<string[]>(['18-22', '23-27', '28-32', '33-40', '40+', 'כללי']);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
@@ -75,6 +75,7 @@ export default function AdminManagement() {
   const [carouselPage, setCarouselPage] = useState(0);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   
+  const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
     username: '',
@@ -98,15 +99,11 @@ export default function AdminManagement() {
         dataService.getWhatsAppGroups()
       ]);
       
-      let admins = usersData.filter(u => 
-        ['admin', 'super_admin', 'team_leader', 'viewer'].includes(u.role) && 
-        (u.full_name || u.name) && 
-        (u.full_name !== 'מנהל ללא שם' || u.role === 'super_admin' || u.username === 'god')
-      );
+      let admins = usersData;
       
       // Only add manual god user if NO super_admin exists at all
       if (!admins.find(a => a.username === 'god' || a.role === 'super_admin')) {
-        const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b'; // Use the known god ID from dataService if possible
+        const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b'; 
         admins.unshift({ 
           id: godId,
           username: 'god', 
@@ -131,6 +128,11 @@ export default function AdminManagement() {
       
       setUsers(admins);
       setWhatsappGroups(groupsData);
+      
+      // Extract unique categories from WhatsApp groups
+      const uniqueGroups = Array.from(new Set(groupsData.map(g => g.category).filter(Boolean))) as string[];
+      setAffiliationGroups(uniqueGroups);
+      
     } catch (err: any) {
       if (err.code === 'PGRST204' || (err.message && err.message.includes('PGRST204'))) {
         toast.error('שגיאת סנכרון (Schema Cache). אנא בצע "סנכרן סכמה" במסך ההתחברות.', { duration: 6000 });
@@ -142,6 +144,19 @@ export default function AdminManagement() {
     }
   };
 
+  const stringToColor = (string: string) => {
+    let hash = 0;
+    for (let i = 0; i < string.length; i++) {
+      hash = string.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    let color = '#';
+    for (let i = 0; i < 3; i++) {
+      const value = (hash >> (i * 8)) & 0xFF;
+      color += ('00' + value.toString(16)).substr(-2);
+    }
+    return color;
+  };
+
   useEffect(() => {
     fetchUsers();
     const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
@@ -150,7 +165,7 @@ export default function AdminManagement() {
 
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
-  const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => [u.email?.toLowerCase() || u.id, u])).values());
+  const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => [u.id, u])).values());
   const filteredUsers = uniqueUsers.filter(u => {
     if (!['admin', 'super_admin', 'team_leader'].includes(u.role)) return false;
     
@@ -174,15 +189,24 @@ export default function AdminManagement() {
                           (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
                           (u.email || '').toLowerCase().includes(search.toLowerCase());
     const matchesCategory = filterCategory.length === 0 || 
-                            (u.affiliation_group && filterCategory.includes(u.affiliation_group)) ||
-                            (u.secondary_category && filterCategory.includes(u.secondary_category));
+                            filterCategory.some(cat => 
+                              (u.affiliation_group === cat || u.secondary_category === cat) ||
+                              (cat.includes('שח"ם') && (u.affiliation_group === 'פרויקט שח"ם' || u.secondary_category === 'פרויקט שח"ם'))
+                            );
     const matchesConnection = filterConnection === 'all' || 
                               (filterConnection === 'online' && !!presenceState[u.id]) || 
                               (filterConnection === 'offline' && !presenceState[u.id]);
     const matchesRole = (roleTab === 'all' || u.role === roleTab) && 
                         (selectedRoles.length === 0 || selectedRoles.includes(u.role));
+    
+    // Airtable toggle only filters Airtable vs manual, without hiding other groups
+    const matchesAirtable = !isAirtableSyncEnabled || u.affiliation_group === 'Airtable Sync';
 
-    return matchesSearch && matchesCategory && matchesConnection && matchesRole;
+    // Production filter: only show approved admins
+    const isProduction = !window.location.hostname.includes('ais-dev-');
+    const matchesApproval = !isProduction || u.is_approved === 1;
+
+    return matchesSearch && matchesCategory && matchesConnection && matchesRole && matchesAirtable && matchesApproval;
   }).sort((a, b) => {
     if (a.username === 'god') return -1;
     if (b.username === 'god') return 1;
@@ -226,7 +250,7 @@ export default function AdminManagement() {
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
-          created_by: formData.created_by || undefined
+          affiliation_group: formData.affiliation_group
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -248,7 +272,6 @@ export default function AdminManagement() {
           phone: formData.phone,
           avatar_url: formData.avatar_url,
           affiliation_group: formData.affiliation_group,
-          created_by: formData.created_by || undefined,
           deleted_at: null,
           daily_message_template: null,
           is_approved: 1,
@@ -310,9 +333,10 @@ export default function AdminManagement() {
 
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i];
-          const values = line.split(',').map(v => v.trim());
+          const values = line.split(',');
           const admin: any = {
             category: csvCategory,
+            selected_group: csvCategory,
             password_plain: '12345678',
             is_from_file: 1,
             role: csvRole,
@@ -320,12 +344,18 @@ export default function AdminManagement() {
             google_login_allowed: 'true',
             deleted_at: null,
             is_approved: 1,
-            is_shaham_manager: 0
+            is_shaham_manager: 0,
+            missing_fields: []
           };
-          let hasEmail = false;
+          
           headers.forEach((header, j) => {
-            const val = values[j];
+            let val = values[j];
             if (!val) return;
+
+            // If affiliation group, don't trim. Else, trim.
+            if (header !== 'שיוך' && header !== 'affiliation_group' && !header.includes('שיוך')) {
+              val = val.trim();
+            }
 
             if (header === 'שם' || header === 'שם מלא' || header === 'name' || header.includes('שם וטלפון')) {
               admin.full_name = val;
@@ -333,10 +363,13 @@ export default function AdminManagement() {
             if (header === 'שם משתמש' || header === 'username') admin.username = val;
             if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) {
               admin.email = val;
-              hasEmail = true;
             }
             if (header === 'טלפון' || header === 'phone') admin.phone = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
+            if (header === 'שיוך' || header === 'affiliation_group' || header.includes('שיוך')) {
+              admin.affiliation_group = val;
+              admin.selected_group = val;
+            }
             if (header === 'מחלקה / תפקיד' || header === 'category' || header.includes('מחלקה')) {
               admin.category = val;
             }
@@ -349,7 +382,11 @@ export default function AdminManagement() {
                 admin.category = '18-22';
               }
             }
-            if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
+            if (header === 'מין' || header === 'gender' || header.includes('מין')) {
+                if (val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female') admin.gender = 'female';
+                else if (val === 'בן' || val === 'זכר' || val.toLowerCase() === 'male') admin.gender = 'male';
+                else admin.gender = null;
+            }
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
               const match = val.match(/\((https?:\/\/[^\)]+)\)/);
               if (match) {
@@ -370,9 +407,15 @@ export default function AdminManagement() {
             }
           });
 
-          if (!hasEmail || !admin.email) {
-            toast.error(`שורה ${i+1} חסרה אימייל - השורה תדולג`);
-            continue;
+          if (!admin.full_name) admin.missing_fields.push('שם מלא');
+          if (!admin.phone) admin.missing_fields.push('טלפון');
+
+          if (admin.missing_fields.includes('טלפון')) {
+            toast.error(`שורה ${i+1} חסרה טלפון`);
+          }
+
+          if (!admin.email) {
+            admin.email = `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`;
           }
 
           const blacklisted = await dataService.isBlacklisted(admin.email, admin.phone || '', admin.full_name || '');
@@ -411,34 +454,28 @@ export default function AdminManagement() {
     let successCount = 0;
     
     for (const admin of scannedAdmins) {
-      // Check for duplicates in local state
-      const isDuplicate = users.some(u => u.email?.toLowerCase() === admin.email?.toLowerCase());
-      if (isDuplicate) {
-        console.log(`Skipping duplicate email: ${admin.email}`);
-        continue;
-      }
-
       try {
-        // Sanitize data before sending: only allowed fields for Supabase
-        const adminData = {
-          email: admin.email,
+        // Sanitize data: keep only allowed fields
+        const adminData: any = {
           full_name: admin.full_name,
+          email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
           phone: admin.phone || null,
-          avatar_url: admin.avatar_url || null,
+          affiliation_group: admin.selected_group || admin.affiliation_group || null,
           role: admin.role || 'viewer',
-          category: admin.category || null,
-          created_by: admin.created_by || null,
-          creator_name: admin.creator_name || null,
-          status: 'active',
-          password_plain: admin.password_plain || '12345678',
-          username: admin.username || admin.phone || admin.email
         };
         
-        await dataService.createUser(adminData as any);
+        console.log('Admins to save:', adminData);
+        
+        // Force Insert
+        const { error } = await supabase.from('profiles').insert(adminData);
+        
+        if (error) {
+          console.error('Insert error for admin:', adminData.email, error);
+          throw error;
+        }
         successCount++;
       } catch (err: any) {
-        console.log('Detailed Error:', err);
-        console.error('Import error:', err.message || err);
+        console.error('Import error:', err);
       }
     }
 
@@ -447,7 +484,7 @@ export default function AdminManagement() {
     setShowCsvModal(false);
     setCsvFile(null);
     setScannedAdmins([]);
-    await fetchUsers();
+    await fetchUsers(); // Refresh users list
     toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
   };
 
@@ -500,43 +537,6 @@ export default function AdminManagement() {
     } finally {
       setShowDeleteConfirm(false);
       setUserToDelete(null);
-    }
-  };
-
-  const runAirtableSync = async () => {
-    if (!airtableSyncEnabled) {
-      toast.error('סנכרון Airtable כבוי. יש להפעיל אותו בהגדרות.');
-      return;
-    }
-    const token = import.meta.env.VITE_AIRTABLE_TOKEN || 'placeholder_token';
-    const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appLazNcMoUhS5on1';
-    
-    const tid = toast.loading('מסנכרן מ-Airtable...');
-    
-    // Hardcoded for AI Studio testing to avoid Supabase runtime errors
-    const existingAdmins: any[] = [];
-    const profilesPromise = Promise.resolve({ data: existingAdmins, error: null });
-    
-    try {
-      console.log('Starting Airtable sync...');
-      const result = await dataService.syncCandidatesFromAirtable(token, baseId, profilesPromise);
-      
-      if (result.success) {
-        toast.success(result.message, { id: tid });
-        fetchUsers();
-      } else {
-        toast.error(result.message, { id: tid });
-      }
-    } catch (err) {
-      toast.error('שגיאה בסנכרון', { id: tid });
-    }
-  };
-
-  const handleAirtableSync = () => {
-    if (!import.meta.env.VITE_AIRTABLE_TOKEN) {
-      toast.error("מפתח Airtable חסר. אנא בדוק הגדרות ב-Vercel");
-    } else {
-      runAirtableSync();
     }
   };
 
@@ -853,23 +853,22 @@ export default function AdminManagement() {
           </button>
         </div>
         
-        {/* Airtable Sync Toggle */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${airtableSyncEnabled ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-50 text-slate-400'}`}>
-              <Cloud size={24} />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900">סנכרון Airtable</h3>
-              <p className="text-sm text-slate-500 font-bold">הפעל או השבת את הסנכרון עם Airtable במערכת</p>
-            </div>
+
+        <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm p-3 rounded-2xl shadow-sm border border-slate-200">
+          <div className="flex flex-col items-end">
+            <span className="text-sm font-bold text-slate-800">סנכרון Airtable</span>
+            <span className="text-[10px] text-slate-500">{isAirtableSyncEnabled ? 'פעיל' : 'כבוי'}</span>
           </div>
           <button
-            onClick={() => setAirtableSyncEnabled(!airtableSyncEnabled)}
-            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${airtableSyncEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+            onClick={() => setIsAirtableSyncEnabled(!isAirtableSyncEnabled)}
+            className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${
+              isAirtableSyncEnabled ? 'bg-green-500' : 'bg-slate-300'
+            }`}
           >
-            <span
-              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${airtableSyncEnabled ? 'translate-x-7' : 'translate-x-1'}`}
+            <div 
+              className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform duration-300 shadow-sm ${
+                isAirtableSyncEnabled ? 'transform translate-x-6' : ''
+              }`}
             />
           </button>
         </div>
@@ -883,24 +882,13 @@ export default function AdminManagement() {
             <RefreshCw size={20} />
             סנכרון תמונות
           </button>
-          {airtableSyncEnabled && (
-            <>
-              <button 
-                onClick={handleAirtableSync}
-                className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
-              >
-                <RefreshCw size={20} />
-                סנכרון מ-Airtable
-              </button>
-              <button 
-                onClick={() => setShowPreviewModal(true)}
-                className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
-              >
-                <RefreshCw size={20} />
-                תצוגה מקדימה
-              </button>
-            </>
-          )}
+          <button 
+            onClick={() => setShowPreviewModal(true)}
+            className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
+          >
+            <RefreshCw size={20} />
+            תצוגה מקדימה
+          </button>
           <button 
             onClick={() => setShowCsvModal(true)}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
@@ -1119,7 +1107,20 @@ export default function AdminManagement() {
                 <div className="flex justify-center mb-4">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50">
                     {tempAvatarUrl ? (
-                      <img src={tempAvatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <>
+                        <img 
+                          src={tempAvatarUrl} 
+                          className="w-full h-full object-cover" 
+                          referrerPolicy="no-referrer" 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                        <div className="w-full h-full flex items-center justify-center text-slate-300 hidden">
+                          <UserIcon size={40} />
+                        </div>
+                      </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-300">
                         <UserIcon size={40} />
@@ -1173,12 +1174,19 @@ export default function AdminManagement() {
               <div className="text-center space-y-2">
                 <div className="w-20 h-20 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 border-4 border-white shadow-lg relative">
                   {impersonateUser.avatar_url ? (
-                    <img 
-                      src={impersonateUser.avatar_url} 
-                      alt={impersonateUser.full_name} 
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full rounded-full object-cover"
-                    />
+                    <>
+                      <img 
+                        src={impersonateUser.avatar_url} 
+                        alt={impersonateUser.full_name} 
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full rounded-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <UserIcon size={40} className="text-slate-400 hidden" />
+                    </>
                   ) : (
                     <UserIcon size={40} className="text-slate-400" />
                   )}
@@ -1363,8 +1371,21 @@ export default function AdminManagement() {
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      {u.avatar_url && !u.avatar_url.includes('airtableusercontent') ? (
-                        <img src={u.avatar_url} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                      {u.avatar_url ? (
+                        <>
+                          <img 
+                            src={u.avatar_url} 
+                            className="w-10 h-10 rounded-full object-cover" 
+                            referrerPolicy="no-referrer" 
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 hidden">
+                            {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                          </div>
+                        </>
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
                           {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
@@ -1373,7 +1394,7 @@ export default function AdminManagement() {
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name}</p>
+                      <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name || u.email || 'מנהל מערכת'}</p>
                       <p className="text-[10px] text-slate-500">{(u.role === 'super_admin' || u.username === 'god') ? 'מנהל ראשי' : u.category || 'ללא קטגוריה'}</p>
                     </div>
                   </div>
@@ -1464,7 +1485,7 @@ export default function AdminManagement() {
           <div className="relative">
             <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
             <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
-              {CATEGORIES.map(cat => (
+              {affiliationGroups.map(cat => (
                 <button
                   key={cat}
                   onClick={() => {
@@ -1578,7 +1599,20 @@ export default function AdminManagement() {
                               <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative shadow-inner">
                                   {u.avatar_url ? (
-                                    <img src={u.avatar_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <>
+                                      <img 
+                                        src={u.avatar_url} 
+                                        className="w-full h-full object-cover" 
+                                        referrerPolicy="no-referrer" 
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                                        }}
+                                      />
+                                      <div className="w-full h-full flex items-center justify-center text-slate-400 hidden">
+                                        {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                                      </div>
+                                    </>
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-slate-400">
                                       {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
@@ -1603,8 +1637,9 @@ export default function AdminManagement() {
                                     <ExternalLink size={16} />
                                   </button>
                                 )}
-                                <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
-                                {u.username !== 'god' && <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                                <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
+                                <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
+                                {u.username !== 'god' && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
                               </div>
                             </div>
                             
@@ -1634,13 +1669,13 @@ export default function AdminManagement() {
                                   </span>
                                   {u.role !== 'super_admin' && (
                                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-                                      {u.gender === 'female' ? 'בת' : 'בן'}
+                                      {u.gender === 'female' ? 'בת' : (u.gender === 'male' ? 'בן' : 'לא צוין')}
                                     </span>
                                   )}
                                 </div>
-                                {u.role !== 'super_admin' && u.affiliation_group && (
+                                {u.role !== 'super_admin' && (
                                   <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
-                                    שיוך: {u.affiliation_group}
+                                    שיוך: {u.affiliation_group || '-'}
                                   </span>
                                 )}
                               </div>
@@ -1762,10 +1797,55 @@ export default function AdminManagement() {
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">תפקיד</th>
                 {!compactView && <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">סיסמה</th>}
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">סטטוס</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">אישור</th>
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs text-left">פעולות</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 bg-white">
+              {currentUser?.role === 'super_admin' && (
+                <tr className="bg-red-50/50">
+                  <td className="px-4 py-4"></td>
+                  <td className="px-3 py-4">
+                    <div className="w-10 h-10 rounded-full bg-red-200 flex items-center justify-center text-red-700 font-bold">מ</div>
+                  </td>
+                  <td className="px-3 py-4 font-bold text-slate-900 text-sm">מלאכי צוריאל</td>
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4">0556603336</td>
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4">
+                      <span className="bg-red-100 text-red-700 px-2 py-1 rounded-lg text-xs font-bold">super_observer</span>
+                  </td>
+                  {!compactView && (
+                    <td className="px-3 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-bold text-slate-700">
+                          {'12345678 (ברירת מחדל)'}
+                        </span>
+                        <button 
+                          onClick={async () => {
+                            await dataService.updateUser('malachi-id', { password_plain: '12345678', password_updated_at: undefined });
+                            toast.success('הסיסמה שוחזרה לברירת מחדל');
+                            refreshUser();
+                          }}
+                          className="text-[10px] text-red-600 hover:underline"
+                        >
+                          שחזר סיסמת ברירת מחדל
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4">---</td>
+                  <td className="px-3 py-4 text-left">
+                      <button onClick={() => {
+                          setEditingUser({ id: 'malachi-id', full_name: 'מלאכי צוריאל', phone: '0556603336', role: 'super_observer' } as any);
+                          setShowModal(true);
+                      }} className="text-luxury-blue hover:text-blue-700">ערוך</button>
+                  </td>
+                </tr>
+              )}
               {displayUsers.slice(0, scrollThreshold).map((u) => (
                 <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${u.username === 'god' ? 'bg-[#fff9c4] font-bold' : getRowColor(u)} ${selectedUserIds.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
                   <td className="px-4 py-4">
@@ -1779,36 +1859,36 @@ export default function AdminManagement() {
                     )}
                   </td>
                   <td className="px-3 py-4">
-                    <div 
-                      className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-200 cursor-pointer hover:border-luxury-blue transition-colors group"
-                      onClick={() => {
-                        setAvatarModalUser(u);
-                        setTempAvatarUrl(u.avatar_url || '');
-                        setShowAvatarModal(true);
-                      }}
-                    >
-                      {u.avatar_url ? (
-                        <img 
-                          src={u.avatar_url} 
-                          alt={u.full_name || u.name} 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-full h-full flex items-center justify-center text-slate-400 ${u.avatar_url ? 'hidden' : ''}`}>
-                        {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
-                      </div>
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <Edit2 size={16} className="text-white" />
+                  <div 
+                    className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-200 cursor-pointer hover:border-luxury-blue transition-colors group"
+                    onClick={() => {
+                      setAvatarModalUser(u);
+                      setTempAvatarUrl(u.avatar_url || '');
+                      setShowAvatarModal(true);
+                    }}
+                  >
+                    <div className="w-full h-full relative">
+                      <img 
+                        src={u.avatar_url || ''} 
+                        alt={u.full_name || u.name || '?'} 
+                        referrerPolicy="no-referrer"
+                        className={`w-full h-full object-cover ${!u.avatar_url ? 'hidden' : ''}`}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className={`w-full h-full flex items-center justify-center text-white font-bold ${u.avatar_url ? 'hidden' : ''}`} style={{ backgroundColor: stringToColor(u.full_name || u.name || '?') }}>
+                        {(u.full_name || u.name || '?').charAt(0)}
                       </div>
                     </div>
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Edit2 size={16} className="text-white" />
+                    </div>
+                  </div>
                   </td>
                   <td className="px-3 py-4">
-                    <span className="font-bold text-slate-900 text-sm">{u.full_name || u.name}</span>
+                    <span className="font-bold text-slate-900 text-sm">{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
                   </td>
                   <td className="px-3 py-4">
                     {u.role !== 'super_admin' && (
@@ -1816,7 +1896,7 @@ export default function AdminManagement() {
                         onClick={() => setGenderModalUser(u)}
                         className="text-sm text-slate-600 hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
                       >
-                        {u.gender === 'female' ? 'בת' : 'בן'}
+                        {u.gender === 'female' ? 'בת' : (u.gender === 'male' ? 'בן' : 'לא צוין')}
                       </button>
                     )}
                   </td>
@@ -1831,7 +1911,11 @@ export default function AdminManagement() {
                       }}
                       className="flex flex-col text-right hover:bg-slate-100 p-1 rounded transition-colors group"
                     >
-                      <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.email}</span>
+                      {u.email ? (
+                        <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.email}</span>
+                      ) : (
+                        <span style={{ color: 'red' }}>חסר</span>
+                      )}
                       {!compactView && <span className="text-[9px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>}
                     </button>
                   </td>
@@ -1843,18 +1927,22 @@ export default function AdminManagement() {
                       }}
                       className="flex items-center gap-2 hover:bg-slate-100 p-1 rounded transition-colors group"
                     >
-                      <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.phone || '---'}</span>
+                      {u.phone ? (
+                        <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.phone}</span>
+                      ) : (
+                        <span style={{ color: 'red' }}>חסר</span>
+                      )}
                     </button>
                   </td>
                   <td className="px-3 py-4">
                     <div className="relative group/nav">
                       <div className="flex flex-col gap-1 cursor-pointer">
-                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.affiliation_group)}`}>
-                          {u.affiliation_group || '-'}
+                        <div className="text-[10px] font-bold px-2 py-0.5 rounded-full text-center border border-slate-200 bg-slate-50 text-slate-700">
+                          {affiliationGroups.includes(u.affiliation_group || '') ? (u.affiliation_group || '-') : 'לא מזוהה'}
                         </div>
                         {u.secondary_category && (
-                          <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
-                            {u.secondary_category}
+                          <div className="text-[10px] font-bold px-2 py-0.5 rounded-full text-center border border-slate-200 bg-slate-50 text-slate-700">
+                            {affiliationGroups.includes(u.secondary_category || '') ? u.secondary_category : 'לא מזוהה'}
                           </div>
                         )}
                         
@@ -1898,8 +1986,8 @@ export default function AdminManagement() {
                          u.role === 'viewer' ? 'צופה' : 'מנהל')}
                       </span>
                       {u.is_shaham_manager === 1 && (
-                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 text-center shadow-sm">
-                          קבוצת שחם בלבד
+                        <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 px-2 py-1 rounded-full border border-purple-200 text-center shadow-sm">
+                          מנהל רוחבי
                         </span>
                       )}
                     </div>
@@ -1929,12 +2017,20 @@ export default function AdminManagement() {
                       {(u.status || 'active') === 'active' ? 'פעיל' : 'לא פעיל'}
                     </span>
                   </td>
+                  <td className="px-3 py-4">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
+                      u.is_approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {u.is_approved ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {u.is_approved ? 'מאושר' : 'ממתין'}
+                    </span>
+                  </td>
                   <td className="px-3 py-4 text-left min-w-[200px]">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
                       </button>
-                      <button onClick={() => openChat({ id: u.id, name: u.full_name || u.name })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעת צ'אט">
+                      <button onClick={() => openChat({ id: u.id, name: u.full_name || u.name || u.email || 'מנהל מערכת' })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעת צ'אט">
                         <MessageSquare size={16} />
                       </button>
                       <button onClick={() => toast('הצעת משודך - בביצוע')} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
@@ -1980,7 +2076,20 @@ export default function AdminManagement() {
               <div className="text-center space-y-4">
                 <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-100 border-4 border-emerald-100 mx-auto relative">
                   {impersonateUser.avatar_url ? (
-                    <img src={impersonateUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                    <>
+                      <img 
+                        src={impersonateUser.avatar_url} 
+                        alt="" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="w-full h-full flex items-center justify-center text-slate-300 hidden">
+                        <UserIcon size={40} />
+                      </div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300">
                       <UserIcon size={40} />
@@ -2301,27 +2410,27 @@ export default function AdminManagement() {
                       </select>
                     </div>
 
-                    <p className="text-sm font-bold text-text-main border-b border-slate-100 pb-2">שיוך קבצים לקבוצות:</p>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-text-main">בחר קבוצה (Affiliation Group) לכל המנהלים בקבצים:</label>
+                      <select 
+                        value={csvCategory}
+                        onChange={(e) => setCsvCategory(e.target.value)}
+                        className="p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-luxury-blue font-bold text-sm"
+                      >
+                        <option value="">ללא שיוך</option>
+                        {affiliationGroups.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <p className="text-sm font-bold text-text-main border-b border-slate-100 pb-2">קבצים שנבחרו:</p>
                     {csvFiles.map((file, idx) => (
                       <div key={idx} className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
                         <div className="flex-1">
                           <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
                           <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
                         </div>
-                        <select 
-                          className="text-xs font-bold p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-luxury-blue"
-                          onChange={(e) => {
-                            const newFiles = [...csvFiles];
-                            // We need a way to store the category per file. 
-                            // I'll use a temporary state or just handle it in the scan.
-                            (file as any).targetCategory = e.target.value;
-                          }}
-                        >
-                          <option value="">בחר קבוצה...</option>
-                          {CATEGORIES.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                        </select>
                       </div>
                     ))}
                   </div>
@@ -2349,6 +2458,31 @@ export default function AdminManagement() {
                   </p>
                 </div>
 
+                {scannedAdmins?.length > 0 && (
+                  <div className="mt-4 max-h-60 overflow-y-auto border border-slate-200 rounded-xl">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="text-right p-2">שם</th>
+                          <th className="text-right p-2">אימייל</th>
+                          <th className="text-right p-2">טלפון</th>
+                          <th className="text-right p-2">שדות חסרים</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scannedAdmins?.map((admin, idx) => (
+                          <tr key={idx} className={admin?.missing_fields?.length > 0 ? 'bg-red-50' : ''}>
+                            <td className="p-2">{admin?.full_name || <span style={{ color: 'red' }}>חסר</span>}</td>
+                            <td className="p-2">{admin?.email || <span style={{ color: 'red' }}>חסר</span>}</td>
+                            <td className="p-2">{admin?.phone || <span style={{ color: 'red' }}>חסר</span>}</td>
+                            <td className="p-2 text-red-600 font-bold">{admin?.missing_fields?.join(', ') || '---'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-3 pt-4">
                   <button type="button" onClick={() => {
                     setShowCsvModal(false);
@@ -2369,8 +2503,6 @@ export default function AdminManagement() {
                       type="button" 
                       onClick={async () => {
                         if (csvFiles.length === 0) return toast.error('אנא בחר קבצים');
-                        const unassigned = csvFiles.find(f => !(f as any).targetCategory);
-                        if (unassigned) return toast.error(`אנא בחר קבוצה עבור הקובץ: ${unassigned.name}`);
 
                         setIsScanning(true);
                         setScanProgress(0);
@@ -2385,12 +2517,14 @@ export default function AdminManagement() {
                           for (let i = 1; i < lines.length; i++) {
                             const values = lines[i].split(',').map(v => v.trim());
                             const admin: any = {
-                              category: (file as any).targetCategory,
+                              category: csvCategory,
+                              selected_group: csvCategory,
                               password: '12345678',
                               is_from_file: 1,
                               role: csvRole,
                               status: 'active',
-                              google_login_allowed: 'true'
+                              google_login_allowed: 'true',
+                              is_approved: 0
                             };
                             let hasEmail = false;
                             headers.forEach((header, j) => {
@@ -2414,13 +2548,20 @@ export default function AdminManagement() {
                                 admin.email = val;
                                 hasEmail = true;
                               }
+                              if (header === 'תמונה' || header === 'image' || header === 'avatar') {
+                                admin.avatar_url = val;
+                              }
                               if (header === 'טלפון' || header === 'phone') admin.phone = val;
                               if (header === 'תפקיד' || header === 'role') {
                                 if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
                                 else if (val === 'צופה' || val === 'viewer') admin.role = 'viewer';
                                 else if (val === 'מנהל ראשי' || val === 'super_admin') admin.role = 'super_admin';
                               }
-                              if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
+                              if (header === 'מין' || header === 'gender' || header.includes('מין')) {
+                                if (val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female') admin.gender = 'female';
+                                else if (val === 'בן' || val === 'זכר' || val.toLowerCase() === 'male') admin.gender = 'male';
+                                else admin.gender = null;
+                              }
                               if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
                                 const match = val.match(/\((https?:\/\/[^\)]+)\)/);
                                 if (match) admin.avatar_url = match[1];
@@ -2439,8 +2580,8 @@ export default function AdminManagement() {
                             });
 
                             if (!hasEmail || !admin.email) {
-                              toast.error(`שורה ${i+1} בקובץ ${file.name} חסרה אימייל - השורה תדולג`);
-                              continue;
+                              const tempPhone = admin.phone || Math.random().toString(36).substring(7);
+                              admin.email = `temp_email_${tempPhone}@missing.com`;
                             }
 
                             if (!admin.username && admin.phone) admin.username = admin.phone;
@@ -2488,7 +2629,19 @@ export default function AdminManagement() {
                     <div className="relative group">
                       <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden relative">
                         {formData.avatar_url ? (
-                          <img src={formData.avatar_url} alt="Avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                          <>
+                            <img 
+                              src={formData.avatar_url} 
+                              alt="Avatar" 
+                              referrerPolicy="no-referrer" 
+                              className="w-full h-full object-cover" 
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                              }}
+                            />
+                            <UserCheck size={32} className="text-slate-300 hidden" />
+                          </>
                         ) : (
                           <UserCheck size={32} className="text-slate-300" />
                         )}
@@ -2618,15 +2771,6 @@ export default function AdminManagement() {
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="viewer">צופה</option>
                         <option value="super_admin">מנהל ראשי</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לראש/ת צוות</label>
-                      <select className="input-field font-bold" value={formData.created_by} onChange={(e) => setFormData({...formData, created_by: e.target.value})}>
-                        <option value="">ללא שיוך (מערכת)</option>
-                        {users.filter(u => u.role === 'team_leader' || u.role === 'super_admin').map(tl => (
-                          <option key={tl.id} value={tl.id}>{tl.full_name || tl.username}</option>
-                        ))}
                       </select>
                     </div>
                   </div>

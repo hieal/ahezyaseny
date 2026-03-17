@@ -10,8 +10,10 @@ import {
 import { toast } from 'react-hot-toast';
 import MatchesManagement from '../components/MatchesManagement';
 import { GameMonitoring } from '../components/GameMonitoring';
+import { useActionDisabled } from '../hooks/useActionDisabled';
 
 export default function CandidatePortalAdmin() {
+  const isActionDisabled = useActionDisabled();
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
   const [weeklyLeaderboard, setWeeklyLeaderboard] = useState<any>(null);
@@ -104,7 +106,7 @@ export default function CandidatePortalAdmin() {
           </button>
           <button
             onClick={handleSaveSettings}
-            disabled={saving}
+            disabled={isActionDisabled || saving}
             className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
           >
             {saving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
