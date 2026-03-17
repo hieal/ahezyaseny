@@ -6,8 +6,9 @@ export interface User {
   email: string;
   role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate';
   status: 'active' | 'inactive';
-  category: string | null;
+  category?: string | null;
   secondary_category?: string | null;
+  affiliation_group?: string | null;
   gender: 'male' | 'female' | null;
   phone: string | null;
   google_login_allowed?: 'true' | 'false';
@@ -20,6 +21,7 @@ export interface User {
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
+  age_groups?: string | null; // Comma-separated or JSON string
   created_by?: string;
   creator_name?: string;
   created_at?: string;
@@ -32,9 +34,34 @@ export interface GameScore {
   id: string;
   candidate_id: string;
   candidate_name: string;
-  game_type: 'memory' | 'this_or_that' | 'speed_date';
+  game_type: 'memory' | 'this_or_that' | 'speed_date' | 'strategic_rps';
   score: number;
   created_at: string;
+}
+
+export interface GameSession {
+  id: string;
+  game_type: string;
+  player1_id: string;
+  player1_name: string;
+  player2_id: string;
+  player2_name: string;
+  is_active: boolean;
+  current_state: any; // JSON
+  created_at: string;
+}
+
+export interface GameLog {
+  id: string;
+  player1_id: string;
+  player1_name: string;
+  player2_id: string;
+  player2_name: string;
+  game_type: string;
+  winner_id: string | null;
+  duration_seconds: number;
+  created_at: string;
+  final_state?: any; // JSON
 }
 
 export interface PortalSettings {
@@ -112,10 +139,17 @@ export interface Match {
   is_published_confirmed: number;
   is_available?: boolean;
   is_archived?: boolean;
+  notes?: string;
   status?: 'available' | 'active' | 'inactive' | 'archived';
   crop_config: ImagePosition | null; // Object of { x, y, zoom }
   creation_source: 'manual' | 'ai' | 'csv' | null;
+  initial_contact_done?: boolean;
   viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs
+  managed_by?: string;
+  previous_admin_data?: string | null;
+  transfer_status?: 'pending' | 'approved' | 'orphaned' | null;
+  target_admin_id?: string | null;
+  transfer_approved_at?: string | null;
 }
 
 export interface Stats {
@@ -167,5 +201,16 @@ export interface MatchNote {
   user_name: string;
   text: string;
   is_available: boolean;
+  created_at: string;
+}
+
+export interface Blacklist {
+  id: string;
+  email?: string;
+  phone?: string;
+  full_name?: string;
+  reason: string;
+  notes?: string;
+  created_by: string;
   created_at: string;
 }

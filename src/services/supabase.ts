@@ -17,26 +17,39 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.log(`Supabase connecting using: ${localUrl ? 'Local Storage' : 'Environment Variables'}`);
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
-  supabaseAnonKey || 'placeholder_key',
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
+let supabaseInstance: any = null;
+let supabaseAdminInstance: any = null;
+
+export const supabase = (() => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(
+      supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
+      supabaseAnonKey || 'placeholder_key',
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      }
+    );
   }
-);
+  return supabaseInstance;
+})();
 
 // Administrative client that bypasses RLS if service key is provided
-export const supabaseAdmin = createClient(
-  supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
-  supabaseServiceKey || supabaseAnonKey || 'placeholder_key',
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+export const supabaseAdmin = (() => {
+  if (!supabaseAdminInstance) {
+    supabaseAdminInstance = createClient(
+      supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
+      supabaseServiceKey || supabaseAnonKey || 'placeholder_key',
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
   }
-);
+  return supabaseAdminInstance;
+})();

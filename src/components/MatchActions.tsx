@@ -43,31 +43,31 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
   };
 
   const clearInternalMessages = async () => {
-    if (!window.confirm('האם למחוק את כל הודעות הצ\'אט הפנימיות?')) return;
+    // if (!window.confirm('האם למחוק את כל הודעות הצ\'אט הפנימיות?')) return;
     await dataService.clearInternalMessages();
     toast.success('הודעות צ\'אט פנימיות נוקו');
   };
 
   const clearActivityLogs = async () => {
-    if (!window.confirm('האם למחוק את כל מעקב הפעולות?')) return;
+    // if (!window.confirm('האם למחוק את כל מעקב הפעולות?')) return;
     await dataService.clearActivityLogs();
     toast.success('מעקב פעולות נוקה');
   };
 
   const clearPublishLogs = async () => {
-    if (!window.confirm('האם למחוק את כל היסטוריית הפרסומים?')) return;
+    // if (!window.confirm('האם למחוק את כל היסטוריית הפרסומים?')) return;
     await dataService.clearPublishLogs();
     toast.success('היסטוריית פרסומים נוקתה');
   };
 
   const clearWhatsAppGroups = async () => {
-    if (!window.confirm('האם למחוק את כל קבוצות הוואטסאפ?')) return;
+    // if (!window.confirm('האם למחוק את כל קבוצות הוואטסאפ?')) return;
     await dataService.clearWhatsAppGroups();
     toast.success('קבוצות וואטסאפ נוקו');
   };
 
   const sendWhatsAppToGroup = async (match: Match) => {
-    const group = whatsappGroups.find(g => g.category === match.creator_category);
+    const group = whatsappGroups.find(g => g.category === match.category);
     if (!group || !group.whapi_id) {
       toast.error('לא הוגדר WHAPI ID לקבוצה זו');
       return;

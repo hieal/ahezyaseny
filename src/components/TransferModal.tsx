@@ -4,6 +4,7 @@ import { X, Send, UserCheck, UserPlus, Search, Check, AlertCircle, ArrowLeftRigh
 import { dataService } from '../services/dataService';
 import { useAuth } from '../contexts/AuthContext';
 import { Match, User as UserType } from '../types';
+import { getGenderedText } from '../utils/gender';
 import { toast } from 'react-hot-toast';
 
 interface TransferModalProps {
@@ -12,7 +13,8 @@ interface TransferModalProps {
 }
 
 export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose }) => {
-  const { user } = useAuth();
+  const { user, effectiveUser } = useAuth();
+  const activeUser = effectiveUser || user;
   const [activeTab, setActiveTab] = useState<'send' | 'receive'>('send');
   const [myMatches, setMyMatches] = useState<Match[]>([]);
   const [allAdmins, setAllAdmins] = useState<UserType[]>([]);
@@ -27,20 +29,20 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
 
   useEffect(() => {
-    if (isOpen && user) {
+    if (isOpen && activeUser) {
       loadData();
     }
-  }, [isOpen, user, activeTab]);
+  }, [isOpen, activeUser, activeTab]);
 
   const loadData = async () => {
-    if (!user) return;
+    if (!activeUser) return;
     setLoading(true);
     try {
       if (activeTab === 'send') {
         const [matchesRaw, adminsRaw, sentRaw] = await Promise.all([
-          dataService.getMatches(undefined, user),
+          dataService.getMatches(undefined, activeUser),
           dataService.getUsers(),
-          dataService.getSentTransfersByMe(user.id)
+          dataService.getSentTransfersByMe(activeUser.id)
         ]);
         
         const matches = matchesRaw || [];
@@ -48,12 +50,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
         const sent = sentRaw || [];
 
         // Filter matches to only show those created by me (or assigned to me) and have a name
-        setMyMatches(matches.filter(m => m && m.name && m.created_by === user.id));
+        setMyMatches(matches.filter(m => m && m.name && m.created_by === activeUser.id));
         // Filter admins to exclude self and ensure they have a name
-        setAllAdmins(admins.filter(a => a && a.name && a.id !== user.id));
+        setAllAdmins(admins.filter(a => a && a.name && a.id !== activeUser.id));
         setSentTransfers(sent);
       } else {
-        const pending = await dataService.getPendingTransfersForMe(user.id);
+        const pending = await dataService.getPendingTransfersForMe(activeUser.id);
         setPendingTransfers(pending || []);
       }
     } catch (err) {
@@ -65,13 +67,13 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
   };
 
   const handleSendTransfer = async () => {
-    if (!selectedMatchId || !selectedReceiverId || !user) {
+    if (!selectedMatchId || !selectedReceiverId || !activeUser) {
       toast.error('אנא בחר משודך ומנהל יעד');
       return;
     }
 
     try {
-      await dataService.createTransferRequest(selectedMatchId, user.id, selectedReceiverId);
+      await dataService.transferCandidates([selectedMatchId], selectedReceiverId);
       toast.success('בקשת העברה נשלחה בהצלחה');
       setSelectedMatchId('');
       setSelectedReceiverId('');
@@ -81,9 +83,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
     }
   };
 
-  const handleApprove = async (transferId: string) => {
+  const handleApprove = async (candidateId: string) => {
     try {
-      await dataService.approveTransfer(transferId);
+      await dataService.approveTransfer([candidateId]);
       toast.success('העברה אושרה בהצלחה');
       loadData();
     } catch (err) {
@@ -91,9 +93,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
     }
   };
 
-  const handleReject = async (transferId: string) => {
+  const handleReject = async (candidateId: string) => {
     try {
-      await dataService.rejectTransfer(transferId);
+      await dataService.rejectTransfer([candidateId]);
       toast.success('העברה נדחתה');
       loadData();
     } catch (err) {
@@ -276,7 +278,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-slate-900 truncate">{admin.name}</p>
-                          <p className="text-xs text-slate-500">{admin.role === 'super_admin' ? 'מנהל על' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}</p>
+                          <p className="text-xs text-slate-500">{admin.role === 'super_admin' ? 'מנהל על' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}</p>
                         </div>
                         {selectedReceiverId === admin.id && (
                           <div className="w-6 h-6 rounded-full bg-luxury-blue text-white flex items-center justify-center">
@@ -317,12 +319,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
 
               {pendingTransfers.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pendingTransfers.map(transfer => (
-                    <div key={transfer.id} className="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                  {pendingTransfers.map(match => (
+                    <div key={match.id} className="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden">
-                          {transfer.candidate?.image_url ? (
-                            <img src={transfer.candidate.image_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          {match.image_url ? (
+                            <img src={match.image_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-slate-400">
                               <User size={32} />
@@ -331,21 +333,23 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">משודך להעברה</p>
-                          <h4 className="text-lg font-black text-slate-900 truncate">{transfer.candidate?.name}</h4>
-                          <p className="text-sm text-slate-500 font-medium">נשלח על ידי: <span className="text-luxury-blue">{transfer.sender?.name}</span></p>
+                          <h4 className="text-lg font-black text-slate-900 truncate">{match.name}</h4>
+                          <p className="text-sm text-slate-500 font-medium">
+                            {match.age} • {match.city}
+                          </p>
                         </div>
                       </div>
 
                       <div className="flex gap-2 pt-2">
                         <button 
-                          onClick={() => handleApprove(transfer.id)}
+                          onClick={() => handleApprove(match.id)}
                           className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
                         >
                           <Check size={18} />
                           <span>אשר קבלה</span>
                         </button>
                         <button 
-                          onClick={() => handleReject(transfer.id)}
+                          onClick={() => handleReject(match.id)}
                           className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
                         >
                           <X size={18} />

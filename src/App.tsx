@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
+import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import DailySuggestionsPage from './pages/DailySuggestionsPage';
@@ -11,6 +12,10 @@ import MatchForm from './pages/MatchForm';
 import AdminManagement from './pages/AdminManagement';
 import RoleManagement from './pages/RoleManagement';
 import SettingsPage from './pages/SettingsPage';
+import BlacklistManagement from './pages/BlacklistManagement';
+import ImportPortal from './pages/ImportPortal';
+import InitialContactPage from './pages/InitialContactPage';
+import PendingContactPage from './pages/PendingContactPage';
 import TrackingPage from './pages/TrackingPage';
 import MatchesHistoryPage from './pages/MatchesHistoryPage';
 import ConnectedAdmins from './pages/ConnectedAdmins';
@@ -21,7 +26,9 @@ import CandidatePortalAdmin from './pages/CandidatePortalAdmin';
 import PublishedToday from './pages/PublishedToday';
 import AdminLiveTracker from './pages/AdminLiveTracker';
 import Leaderboard from './pages/Leaderboard';
-import { LayoutDashboard, Users, UserPlus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy } from 'lucide-react';
+import OrphanedCandidatesPage from './pages/OrphanedCandidatesPage';
+import PendingTransfersPage from './pages/PendingTransfersPage';
+import { LayoutDashboard, Users, UserPlus, UserMinus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -58,7 +65,9 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 }
 
 function Sidebar() {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, effectiveUser, logout, refreshUser } = useAuth();
+  const activeUser = effectiveUser || user;
+  const { airtableSyncEnabled } = useSettings();
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -66,6 +75,7 @@ function Sidebar() {
   const [showPasswordModal, setShowPasswordModal] = React.useState(false);
   const [showTransferModal, setShowTransferModal] = React.useState(false);
   const [pendingTransfersCount, setPendingTransfersCount] = React.useState(0);
+  const [orphanedCount, setOrphanedCount] = React.useState(0);
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -101,8 +111,24 @@ function Sidebar() {
           console.error('Failed to fetch pending transfers count:', err);
         }
       };
+
+      const fetchOrphanedCount = async () => {
+        if (user.role === 'super_admin') {
+          try {
+            const count = await dataService.getOrphanedCandidatesCount();
+            setOrphanedCount(count);
+          } catch (err) {
+            console.error('Failed to fetch orphaned candidates count:', err);
+          }
+        }
+      };
+
       fetchPendingCount();
-      const interval = setInterval(fetchPendingCount, 30000); // Refresh every 30 seconds
+      fetchOrphanedCount();
+      const interval = setInterval(() => {
+        fetchPendingCount();
+        fetchOrphanedCount();
+      }, 30000); // Refresh every 30 seconds
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -130,11 +156,12 @@ function Sidebar() {
       const fetchAdmins = async () => {
         try {
           const data = await dataService.getUsers();
-          setAllAdmins(data);
+          setAllAdmins(data || []);
         } catch (err) {
           console.error('Failed to fetch admins:', err);
+          console.log('Fallback: loading basic profile data only');
           setAllAdmins([]);
-          toast.error('לא נמצאו מנהלים');
+          toast.error('שגיאה בטעינת מנהלים - מציג נתונים בסיסיים בלבד');
         }
       };
       
@@ -205,7 +232,7 @@ function Sidebar() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const navItems = user?.role === 'candidate' 
+  let navItems = activeUser?.role === 'candidate' 
     ? [
         { path: '/candidate-dashboard', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
         { path: '/portal/published-today', label: 'פורסמו היום', icon: <Sparkles size={20} /> },
@@ -213,7 +240,7 @@ function Sidebar() {
         { path: '/portal/games', label: 'משחקים', icon: <Gamepad2 size={20} /> },
       ]
     : [
-        { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
+        { path: '/connected-admins', label: getGenderedText(activeUser?.gender, 'מנהלים מחוברים', 'מנהלות מחוברות'), icon: <Users size={20} /> },
         { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
         { 
           path: '/suggestions', 
@@ -223,24 +250,54 @@ function Sidebar() {
         },
         { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
         { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
-        { path: '/matches/new', label: 'צור כרטיס חדש', icon: <UserPlus size={20} /> },
+        { path: '/matches/new', label: getGenderedText(activeUser?.gender, 'צור כרטיס חדש', 'צרי כרטיס חדש'), icon: <UserPlus size={20} /> },
+        { path: '/pending-contact', label: 'ממתינים לקשר', icon: <UserCheck size={20} /> },
+        { path: '/initial-contact', label: 'קשר ראשוני', icon: <UserCheck size={20} /> },
         { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
-        { path: '/history', label: 'היסטוריית משודכים', icon: <Clock size={20} /> },
+        ...(activeUser?.role === 'team_leader' ? [{ path: '/tracking', label: 'מעקב פרסומים צוותי', icon: <History size={20} /> }] : []),
       ];
+
+  if (pendingTransfersCount > 0) {
+    navItems.push({
+      path: '/pending-transfers',
+      label: 'בקשות חדשות',
+      icon: <UserPlus size={20} />,
+      badge: pendingTransfersCount.toString()
+    });
+  }
+
+  if (activeUser?.role === 'super_admin' && orphanedCount > 0) {
+    navItems.push({
+      path: '/orphaned-candidates',
+      label: getGenderedText(activeUser?.gender, 'משודכים ללא מנהל', 'משודכות ללא מנהלת'),
+      icon: <UserMinus size={20} />,
+      badge: orphanedCount.toString()
+    });
+  }
+
+  if (!airtableSyncEnabled) {
+    navItems = navItems.filter(item => item.path !== '/blacklist' && item.path !== '/pending-contact');
+  }
 
   const handleOpenTransferModal = () => {
     setShowTransferModal(true);
     setIsOpen(false);
   };
 
-  if (user?.role === 'super_admin' || user?.role === 'team_leader') {
+  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader') {
     navItems.push(
-      { path: '/admins', label: 'ניהול מנהלים', icon: <UserCog size={20} /> },
+      { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
       { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
     );
   }
 
-  if (user?.role === 'super_admin') {
+  if (activeUser?.role === 'super_admin') {
+    if (airtableSyncEnabled) {
+      navItems.push(
+        { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
+        { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
+      );
+    }
     navItems.push(
       { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
     );
@@ -417,8 +474,15 @@ function Sidebar() {
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-text-main truncate">{user?.full_name}</p>
-                  <p className="text-xs text-text-secondary font-medium truncate">{user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? 'ראש צוות' : user?.role === 'candidate' ? 'משודך' : 'מנהל'}</p>
+                  <p className="text-sm font-bold text-text-main truncate">
+                    {effectiveUser ? (effectiveUser.full_name || effectiveUser.name) : user?.full_name}
+                  </p>
+                  <p className="text-xs text-text-secondary font-medium truncate">
+                    {effectiveUser ? 
+                      (effectiveUser.role === 'super_admin' ? 'מנהל ראשי' : effectiveUser.role === 'team_leader' ? getGenderedText(effectiveUser.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל') :
+                      (user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
+                    }
+                  </p>
                 </div>
               </div>
               <button 
@@ -585,7 +649,7 @@ function Header() {
 }
 
 function MainLayout({ children }: { children: React.ReactNode }) {
-  const { user, refreshUser } = useAuth();
+  const { user, effectiveUser, setImpersonation, refreshUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isImpersonating, setIsImpersonating] = React.useState(false);
@@ -600,6 +664,17 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const [showLimitModal, setShowLimitModal] = React.useState(false);
   const [showMoveLimitModal, setShowMoveLimitModal] = React.useState(false);
   const [chatResetKeys, setChatResetKeys] = React.useState<Record<string, number>>({});
+
+  const originalAdmin = React.useMemo(() => {
+    const stored = localStorage.getItem('original_admin_user');
+    return stored ? JSON.parse(stored) : null;
+  }, [user]);
+
+  const handleReturnToAdmin = () => {
+    setImpersonation(null);
+    toast.success('חזרת לניהול הראשי בהצלחה');
+    navigate('/admins');
+  };
 
   const handleResetChat = (chatId: string) => {
     setChatResetKeys(prev => ({
@@ -670,7 +745,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     
     const interval = setInterval(() => {
       dataService.heartbeat();
-    }, 60000); // Every minute
+    }, 30000); // Every 30 seconds
     
     // Initial heartbeat
     dataService.heartbeat();
@@ -797,6 +872,21 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col lg:flex-row min-h-screen bg-bg-gray">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
+          {effectiveUser && (
+            <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center justify-between sticky top-0 z-[40]">
+              <div className="flex items-center gap-3 text-amber-800 font-bold text-sm">
+                <ShieldAlert size={18} className="text-amber-500" />
+                <span>מבצע פעולות בשם: {effectiveUser.full_name || effectiveUser.name} - מצב צפייה בנתוני מנהל - מסונן</span>
+              </div>
+              <button 
+                onClick={handleReturnToAdmin}
+                className="px-4 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-black hover:bg-amber-700 transition-all shadow-sm flex items-center gap-2"
+              >
+                <ArrowLeftRight size={14} />
+                חזור לניהול שלי
+              </button>
+            </div>
+          )}
           <Header />
           <main className="flex-1 overflow-y-auto">
             {children}
@@ -910,12 +1000,13 @@ const PresenceWrapper = ({ children }: { children: React.ReactNode }) => {
 export default function App() {
   return (
     <BackendProvider>
-      <AuthProvider>
-        <PresenceWrapper>
-          <BrowserRouter>
-          <Toaster position="top-center" />
-          <MainLayout>
-            <Routes>
+      <SettingsProvider>
+        <AuthProvider>
+          <PresenceWrapper>
+            <BrowserRouter>
+            <Toaster position="top-center" />
+            <MainLayout>
+              <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
@@ -923,10 +1014,16 @@ export default function App() {
               <Route path="/matches/new" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
               <Route path="/matches/edit/:id" element={<ProtectedRoute><MatchForm /></ProtectedRoute>} />
               <Route path="/tracking" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
+              <Route path="/pending-transfers" element={<ProtectedRoute adminOnly><PendingTransfersPage /></ProtectedRoute>} />
+              <Route path="/orphaned-candidates" element={<ProtectedRoute superAdminOnly><OrphanedCandidatesPage /></ProtectedRoute>} />
               <Route path="/history" element={<ProtectedRoute><MatchesHistoryPage /></ProtectedRoute>} />
               <Route path="/connected-admins" element={<ProtectedRoute><ConnectedAdmins /></ProtectedRoute>} />
               <Route path="/admins" element={<ProtectedRoute adminOnly><AdminManagement /></ProtectedRoute>} />
               <Route path="/roles" element={<ProtectedRoute adminOnly><RoleManagement /></ProtectedRoute>} />
+              <Route path="/blacklist" element={<ProtectedRoute superAdminOnly><BlacklistManagement /></ProtectedRoute>} />
+              <Route path="/import-portal" element={<ProtectedRoute superAdminOnly><ImportPortal /></ProtectedRoute>} />
+              <Route path="/initial-contact" element={<ProtectedRoute adminOnly><InitialContactPage /></ProtectedRoute>} />
+              <Route path="/pending-contact" element={<ProtectedRoute adminOnly><PendingContactPage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute superAdminOnly><SettingsPage /></ProtectedRoute>} />
               <Route path="/portal-admin" element={<ProtectedRoute superAdminOnly><CandidatePortalAdmin /></ProtectedRoute>} />
               
@@ -947,6 +1044,7 @@ export default function App() {
         </BrowserRouter>
       </PresenceWrapper>
     </AuthProvider>
+    </SettingsProvider>
   </BackendProvider>
 );
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { User } from '../types';
+import { getGenderedText } from '../utils/gender';
 import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle, Filter, ChevronDown, UserCheck } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
@@ -400,7 +401,7 @@ export default function ConnectedAdmins() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-slate-600">
-                          {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                          {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}
                         </td>
                         <td className="px-6 py-4">
                           {isOnline ? (

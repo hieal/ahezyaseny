@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { usePresence } from '../contexts/PresenceContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { useChat } from '../contexts/ChatContext';
 import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { getGenderedText } from '../utils/gender';
 
@@ -13,13 +15,17 @@ import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
 
 export default function AdminManagement() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshUser, setImpersonation } = useAuth();
+  const { airtableSyncEnabled, setAirtableSyncEnabled } = useSettings();
   const { presenceState } = usePresence();
+  const { openChat } = useChat();
   const [users, setUsers] = useState<User[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState<any[]>([]);
   const [expandedGroupsUserId, setExpandedGroupsUserId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
   const [genderModalUser, setGenderModalUser] = useState<User | null>(null);
@@ -44,7 +50,10 @@ export default function AdminManagement() {
   const [roleTab, setRoleTab] = useState<'all' | 'admin' | 'team_leader' | 'viewer'>('all');
   const [scrollThreshold, setScrollThreshold] = useState(10);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [compactView, setCompactView] = useState(false);
+  const [compactView, setCompactView] = useState(true);
+  const [editingEmailUser, setEditingEmailUser] = useState<User | null>(null);
+  const [tempEmail, setTempEmail] = useState('');
+  const [horizontalView, setHorizontalView] = useState(true);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -57,6 +66,15 @@ export default function AdminManagement() {
   const [newGroupCategory, setNewGroupCategory] = useState('');
   const [newGroupWhapiId, setNewGroupWhapiId] = useState('');
   
+  const [viewType, setViewType] = useState<'cards' | 'table'>('cards');
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [avatarModalUser, setAvatarModalUser] = useState<User | null>(null);
+  const [tempAvatarUrl, setTempAvatarUrl] = useState('');
+  const [showAvatarUrlInput, setShowAvatarUrlInput] = useState(false);
+  const [stableUsers, setStableUsers] = useState<User[]>([]);
+  const [carouselPage, setCarouselPage] = useState(0);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  
   const [formData, setFormData] = useState({
     full_name: '',
     username: '',
@@ -64,13 +82,13 @@ export default function AdminManagement() {
     password: '',
     role: 'admin',
     status: 'active',
-    category: '',
-    secondary_category: '',
+    affiliation_group: '',
     gender: '' as 'male' | 'female' | '',
     phone: '',
     google_login_allowed: 'true',
     avatar_url: '',
-    is_shaham_manager: 0
+    is_shaham_manager: 0,
+    created_by: ''
   });
 
   const fetchUsers = async () => {
@@ -80,12 +98,20 @@ export default function AdminManagement() {
         dataService.getWhatsAppGroups()
       ]);
       
-      let admins = usersData.filter(u => u.role === 'admin' || u.role === 'super_admin');
-      if (!admins.find(a => a.username === 'god')) {
+      let admins = usersData.filter(u => 
+        ['admin', 'super_admin', 'team_leader', 'viewer'].includes(u.role) && 
+        (u.full_name || u.name) && 
+        (u.full_name !== 'מנהל ללא שם' || u.role === 'super_admin' || u.username === 'god')
+      );
+      
+      // Only add manual god user if NO super_admin exists at all
+      if (!admins.find(a => a.username === 'god' || a.role === 'super_admin')) {
+        const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b'; // Use the known god ID from dataService if possible
         admins.unshift({ 
-          id: 'god-id',
+          id: godId,
           username: 'god', 
           full_name: 'מנהל ראשי', 
+          name: 'מנהל ראשי',
           role: 'super_admin',
           status: 'active',
           email: '',
@@ -122,6 +148,69 @@ export default function AdminManagement() {
     return () => clearInterval(interval);
   }, []);
 
+  const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
+
+  const uniqueUsers = Array.from(new Map(users.map(u => [u.email?.toLowerCase() || u.id, u])).values());
+  const filteredUsers = uniqueUsers.filter(u => {
+    if (!['admin', 'super_admin', 'team_leader'].includes(u.role)) return false;
+    
+    // Manager Unification logic
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    const isTeamLeader = currentUser?.role === 'team_leader';
+    const isSameCategory = currentUser?.affiliation_group && (u.affiliation_group === currentUser.affiliation_group || u.secondary_category === currentUser.affiliation_group);
+    const isCreator = u.created_by === currentUser?.id;
+    const isSelf = u.id === currentUser?.id;
+
+    if (!isSuperAdmin) {
+      if (isTeamLeader) {
+        if (!isSameCategory && !isCreator && !isSelf) return false;
+      } else {
+        if (!isSameCategory && !isSelf) return false;
+      }
+    }
+
+    const matchesSearch = (u.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
+                          (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                          (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (u.email || '').toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = filterCategory.length === 0 || 
+                            (u.affiliation_group && filterCategory.includes(u.affiliation_group)) ||
+                            (u.secondary_category && filterCategory.includes(u.secondary_category));
+    const matchesConnection = filterConnection === 'all' || 
+                              (filterConnection === 'online' && !!presenceState[u.id]) || 
+                              (filterConnection === 'offline' && !presenceState[u.id]);
+    const matchesRole = (roleTab === 'all' || u.role === roleTab) && 
+                        (selectedRoles.length === 0 || selectedRoles.includes(u.role));
+
+    return matchesSearch && matchesCategory && matchesConnection && matchesRole;
+  }).sort((a, b) => {
+    if (a.username === 'god') return -1;
+    if (b.username === 'god') return 1;
+    
+    const rolePriority: Record<string, number> = {
+      'super_admin': 1,
+      'team_leader': 2,
+      'admin': 3,
+      'viewer': 4
+    };
+    
+    const aPriority = rolePriority[a.role] || 5;
+    const bPriority = rolePriority[b.role] || 5;
+    
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    
+    // Within same role, group by affiliation_group
+    const aCat = a.affiliation_group || '';
+    const bCat = b.affiliation_group || '';
+    return aCat.localeCompare(bCat) || (a.full_name || '').localeCompare(b.full_name || '');
+  });
+
+  useEffect(() => {
+    if (!isEditing) {
+      setStableUsers(filteredUsers);
+    }
+  }, [filteredUsers, isEditing]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -133,7 +222,8 @@ export default function AdminManagement() {
           status: formData.status as "active" | "inactive",
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone
+          phone: formData.phone,
+          created_by: formData.created_by || undefined
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -154,6 +244,7 @@ export default function AdminManagement() {
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           avatar_url: formData.avatar_url,
+          created_by: formData.created_by || undefined,
           deleted_at: null,
           daily_message_template: null,
           is_approved: 1,
@@ -179,13 +270,13 @@ export default function AdminManagement() {
         password: '', 
         role: 'admin', 
         status: 'active', 
-        category: '', 
-        secondary_category: '',
+        affiliation_group: '',
         gender: '', 
         phone: '', 
         google_login_allowed: 'true', 
         avatar_url: '',
-        is_shaham_manager: 0
+        is_shaham_manager: 0,
+        created_by: ''
       });
       fetchUsers();
     } catch (err) {
@@ -224,7 +315,6 @@ export default function AdminManagement() {
             status: 'active',
             google_login_allowed: 'true',
             deleted_at: null,
-            daily_message_template: null,
             is_approved: 1,
             is_shaham_manager: 0
           };
@@ -243,10 +333,17 @@ export default function AdminManagement() {
             }
             if (header === 'טלפון' || header === 'phone') admin.phone = val;
             if (header === 'עיר' || header.includes('עיר')) admin.city = val;
+            if (header === 'מחלקה / תפקיד' || header === 'category' || header.includes('מחלקה')) {
+              admin.category = val;
+            }
             if (header === 'תפקיד' || header === 'role') {
               if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
               else if (val === 'צופה' || val === 'viewer') admin.role = 'viewer';
               else if (val === 'מנהל ראשי' || val === 'super_admin') admin.role = 'super_admin';
+              else if (val.includes('18-22')) {
+                admin.role = 'admin';
+                admin.category = '18-22';
+              }
             }
             if (header === 'מין' || header === 'gender' || header.includes('מין')) admin.gender = val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female' ? 'female' : 'male';
             if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
@@ -257,10 +354,26 @@ export default function AdminManagement() {
                 admin.avatar_url = val.trim();
               }
             }
+            if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
+              const tl = users.find(u => 
+                (u.role === 'team_leader' || u.role === 'super_admin') && 
+                (u.full_name === val || u.username === val || u.email === val)
+              );
+              if (tl) {
+                admin.created_by = tl.id;
+                admin.creator_name = tl.full_name || tl.username;
+              }
+            }
           });
 
           if (!hasEmail || !admin.email) {
             toast.error(`שורה ${i+1} חסרה אימייל - השורה תדולג`);
+            continue;
+          }
+
+          const blacklisted = await dataService.isBlacklisted(admin.email, admin.phone || '', admin.full_name || '');
+          if (blacklisted) {
+            toast.error(`חסום! סיבה: ${blacklisted.reason} | הערה: ${blacklisted.notes || 'אין'}`);
             continue;
           }
 
@@ -310,6 +423,8 @@ export default function AdminManagement() {
           avatar_url: admin.avatar_url || null,
           role: admin.role || 'viewer',
           category: admin.category || null,
+          created_by: admin.created_by || null,
+          creator_name: admin.creator_name || null,
           status: 'active',
           password_plain: admin.password_plain || '12345678',
           username: admin.username || admin.phone || admin.email
@@ -344,6 +459,18 @@ export default function AdminManagement() {
     setShowDeleteConfirm(true);
   };
 
+  const handleEmailUpdate = async () => {
+    if (!editingEmailUser) return;
+    try {
+      const updatedUser = await dataService.updateUser(editingEmailUser.id, { email: tempEmail });
+      setUsers(prev => prev.map(u => u.id === editingEmailUser.id ? updatedUser : u));
+      toast.success('האימייל עודכן בהצלחה');
+      setEditingEmailUser(null);
+    } catch (error) {
+      toast.error('שגיאה בעדכון האימייל');
+    }
+  };
+
   const executeDelete = async () => {
     if (!userToDelete) return;
     try {
@@ -372,22 +499,72 @@ export default function AdminManagement() {
     }
   };
 
+  const runAirtableSync = async () => {
+    if (!airtableSyncEnabled) {
+      toast.error('סנכרון Airtable כבוי. יש להפעיל אותו בהגדרות.');
+      return;
+    }
+    const token = import.meta.env.VITE_AIRTABLE_TOKEN || 'placeholder_token';
+    const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appLazNcMoUhS5on1';
+    
+    const tid = toast.loading('מסנכרן מ-Airtable...');
+    
+    // Hardcoded for AI Studio testing to avoid Supabase runtime errors
+    const existingAdmins: any[] = [];
+    const profilesPromise = Promise.resolve({ data: existingAdmins, error: null });
+    
+    try {
+      console.log('Starting Airtable sync...');
+      const result = await dataService.syncCandidatesFromAirtable(token, baseId, profilesPromise);
+      
+      if (result.success) {
+        toast.success(result.message, { id: tid });
+        fetchUsers();
+      } else {
+        toast.error(result.message, { id: tid });
+      }
+    } catch (err) {
+      toast.error('שגיאה בסנכרון', { id: tid });
+    }
+  };
+
+  const handleAirtableSync = () => {
+    if (!import.meta.env.VITE_AIRTABLE_TOKEN) {
+      toast.error("מפתח Airtable חסר. אנא בדוק הגדרות ב-Vercel");
+    } else {
+      runAirtableSync();
+    }
+  };
+
+  const handleUpdateAvatar = async () => {
+    if (!avatarModalUser) return;
+    try {
+      const updatedUser = await dataService.updateUser(avatarModalUser.id, { avatar_url: tempAvatarUrl });
+      setUsers(prev => prev.map(u => u.id === avatarModalUser.id ? updatedUser : u));
+      toast.success('תמונת פרופיל עודכנה');
+      setShowAvatarModal(false);
+      setAvatarModalUser(null);
+    } catch (e) {
+      toast.error('שגיאה בעדכון התמונה');
+    }
+  };
+
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setFormData({
       full_name: user.full_name || '',
       username: user.username || '',
       email: user.email,
-      password: '',
+      password: user.password_plain || '',
       role: user.role,
       status: user.status,
-      category: user.category || '',
-      secondary_category: user.secondary_category || '',
+      affiliation_group: user.affiliation_group || '',
       gender: user.gender || '',
       phone: user.phone || '',
       google_login_allowed: user.google_login_allowed || 'true',
       avatar_url: user.avatar_url || '',
-      is_shaham_manager: user.is_shaham_manager || 0
+      is_shaham_manager: user.is_shaham_manager || 0,
+      created_by: user.created_by || ''
     });
     setShowModal(true);
   };
@@ -584,11 +761,20 @@ export default function AdminManagement() {
 
   const toggleSelectAll = () => {
     const selectableUsers = filteredUsers.filter(u => u.username !== 'god');
-    if (selectedUserIds.length === selectableUsers.length) {
+    if (selectedUserIds.length === selectableUsers.length && selectableUsers.length > 0) {
       setSelectedUserIds([]);
     } else {
       setSelectedUserIds(selectableUsers.map(u => u.id));
     }
+  };
+
+  const handleImpersonate = (user: User) => {
+    if (user.id === currentUser?.id) {
+      toast.error('אתה כבר מחובר כמשתמש זה');
+      return;
+    }
+    setImpersonation(user);
+    toast.success(`אתה מחובר כעת כ-${user.full_name || user.name}`);
   };
 
   const toggleSelectUser = (id: string) => {
@@ -598,45 +784,17 @@ export default function AdminManagement() {
     );
   };
 
-  const filteredUsers = users.filter(u => {
-    // Manager Unification logic
-    const isSuperAdmin = currentUser?.role === 'super_admin';
-    const isTeamLeader = currentUser?.role === 'team_leader';
-    const isSameCategory = currentUser?.category && (u.category === currentUser.category || u.secondary_category === currentUser.category);
-    const isCreator = u.created_by === currentUser?.id;
-    const isSelf = u.id === currentUser?.id;
 
-    if (!isSuperAdmin) {
-      if (isTeamLeader) {
-        // Team leaders see admins in their category or admins they created
-        if (!isSameCategory && !isCreator && !isSelf) return false;
-      } else {
-        // Regular admins only see themselves or others in their category if unification is on
-        // For now, let's allow them to see their category as well for unification
-        if (!isSameCategory && !isSelf) return false;
-      }
-    }
+  const displayUsers = isEditing ? stableUsers : filteredUsers;
 
-    const matchesSearch = (u.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
-                          (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
-                          (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
-                          (u.email || '').toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = filterCategory.length === 0 || 
-                            (u.category && filterCategory.includes(u.category)) ||
-                            (u.secondary_category && filterCategory.includes(u.secondary_category));
-    const matchesConnection = filterConnection === 'all' || 
-                              (filterConnection === 'online' && !!presenceState[u.id]) || 
-                              (filterConnection === 'offline' && !presenceState[u.id]);
-    const matchesRole = roleTab === 'all' || u.role === roleTab;
-
-    return matchesSearch && matchesCategory && matchesConnection && matchesRole;
-  }).sort((a, b) => {
-    if (a.username === 'god') return -1;
-    if (b.username === 'god') return 1;
-    if (a.role === 'super_admin') return -1;
-    if (b.role === 'super_admin') return 1;
-    return 0;
-  });
+  const stats = {
+    total: uniqueUsers.length,
+    super_admin: uniqueUsers.filter(u => u.role === 'super_admin').length,
+    team_leader: uniqueUsers.filter(u => u.role === 'team_leader').length,
+    admin: uniqueUsers.filter(u => u.role === 'admin').length,
+    viewer: uniqueUsers.filter(u => u.role === 'viewer').length,
+    filtered: filteredUsers.length
+  };
 
   const getCategoryLegendColor = (cat: string) => {
     const colors: Record<string, string> = {
@@ -661,34 +819,55 @@ export default function AdminManagement() {
           <h1 className="text-4xl font-extrabold text-text-main tracking-tight">ניהול מנהלים</h1>
           <p className="text-text-secondary mt-1 font-medium">ניהול הרשאות וגישה למערכת {APP_NAME}</p>
         </div>
-      <div className="flex flex-wrap gap-4 items-center justify-between mb-6">
-        <div className="flex gap-2 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
-          <button 
-            onClick={() => setRoleTab('all')}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'all' ? 'bg-luxury-blue text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+        
+        {/* View Toggle Slider */}
+        <div className="flex items-center bg-white/80 backdrop-blur-sm p-1 rounded-2xl shadow-sm border border-slate-200">
+          <button
+            onClick={() => setViewType('cards')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${
+              viewType === 'cards' 
+                ? 'bg-luxury-blue text-white shadow-md' 
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
           >
-            כל המנהלים
+            <Users size={16} />
+            כרטיסים
           </button>
-          <button 
-            onClick={() => setRoleTab('admin')}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'admin' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          <button
+            onClick={() => setViewType('table')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${
+              viewType === 'table' 
+                ? 'bg-luxury-blue text-white shadow-md' 
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
           >
-            מנהלים רגילים
+            <Download size={16} className="rotate-180" />
+            טבלה
           </button>
-          <button 
-            onClick={() => setRoleTab('team_leader')}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'team_leader' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+        </div>
+        
+        {/* Airtable Sync Toggle */}
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${airtableSyncEnabled ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-50 text-slate-400'}`}>
+              <Cloud size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900">סנכרון Airtable</h3>
+              <p className="text-sm text-slate-500 font-bold">הפעל או השבת את הסנכרון עם Airtable במערכת</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setAirtableSyncEnabled(!airtableSyncEnabled)}
+            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${airtableSyncEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
           >
-            ראשי צוות
-          </button>
-          <button 
-            onClick={() => setRoleTab('viewer')}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'viewer' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            צופים
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${airtableSyncEnabled ? 'translate-x-7' : 'translate-x-1'}`}
+            />
           </button>
         </div>
 
+      <div className="flex flex-wrap gap-4 items-center justify-end mb-6">
         <div className="flex gap-3">
           <button 
             onClick={handleOpenSyncModal}
@@ -697,6 +876,24 @@ export default function AdminManagement() {
             <RefreshCw size={20} />
             סנכרון תמונות
           </button>
+          {airtableSyncEnabled && (
+            <>
+              <button 
+                onClick={handleAirtableSync}
+                className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
+              >
+                <RefreshCw size={20} />
+                סנכרון מ-Airtable
+              </button>
+              <button 
+                onClick={() => setShowPreviewModal(true)}
+                className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
+              >
+                <RefreshCw size={20} />
+                תצוגה מקדימה
+              </button>
+            </>
+          )}
           <button 
             onClick={() => setShowCsvModal(true)}
             className="btn-secondary flex items-center gap-2 px-6 py-3 shadow-md"
@@ -714,13 +911,13 @@ export default function AdminManagement() {
                 password: '', 
                 role: 'admin', 
                 status: 'active', 
-                category: '', 
-                secondary_category: '',
+                affiliation_group: '',
                 gender: '', 
                 phone: '', 
                 google_login_allowed: 'true', 
                 avatar_url: '',
-                is_shaham_manager: 0
+                is_shaham_manager: 0,
+                created_by: ''
               });
               setShowModal(true);
             }}
@@ -741,73 +938,6 @@ export default function AdminManagement() {
         </div>
       </div>
       </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
-          <input 
-            type="text" 
-            placeholder="חיפוש לפי שם או שם משתמש..." 
-            className="input-field pr-10"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="relative">
-          <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
-          <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
-            <button
-              onClick={() => setFilterConnection('all')}
-              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'all' ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue' : 'bg-white text-text-secondary border-slate-200 hover:border-luxury-blue'}`}
-            >
-              הכל
-            </button>
-            <button
-              onClick={() => setFilterConnection('online')}
-              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'online' ? 'bg-green-500 text-white shadow-sm border-green-500' : 'bg-white text-text-secondary border-slate-200 hover:border-green-500'}`}
-            >
-              מחוברים
-            </button>
-            <button
-              onClick={() => setFilterConnection('offline')}
-              className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'offline' ? 'bg-red-500 text-white shadow-sm border-red-500' : 'bg-white text-text-secondary border-slate-200 hover:border-red-500'}`}
-            >
-              לא מחוברים
-            </button>
-          </div>
-        </div>
-        <div className="relative">
-          <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
-          <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                onClick={() => {
-                  setFilterCategory(prev => 
-                    prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-                  );
-                }}
-                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${
-                  filterCategory.includes(cat)
-                    ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue'
-                    : `${getCategoryColor(cat)} opacity-70 hover:opacity-100`
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-            {filterCategory.length > 0 && (
-              <button 
-                onClick={() => setFilterCategory([])}
-                className="text-[10px] font-bold text-red-500 hover:underline"
-              >
-                נקה הכל
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Gender Selection Modal */}
       <AnimatePresence>
         {genderModalUser && (
@@ -850,6 +980,55 @@ export default function AdminManagement() {
                   className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
                 >
                   ביטול
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Email Edit Modal */}
+      <AnimatePresence>
+        {editingEmailUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">עדכון אימייל</h3>
+                <p className="text-slate-500 font-medium">הזן את כתובת האימייל החדשה עבור {editingEmailUser.full_name}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase">אימייל חדש</label>
+                  <input 
+                    type="email"
+                    value={tempEmail}
+                    onChange={(e) => setTempEmail(e.target.value)}
+                    className="input-field text-lg font-mono tracking-wider text-center"
+                    placeholder="example@email.com"
+                    autoFocus
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setEditingEmailUser(null)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={handleEmailUpdate}
+                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all"
+                >
+                  עדכן אימייל
                 </button>
               </div>
             </motion.div>
@@ -904,6 +1083,76 @@ export default function AdminManagement() {
           </div>
         )}
       </AnimatePresence>
+      {/* Avatar Edit Modal */}
+      <AnimatePresence>
+        {showAvatarModal && avatarModalUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
+            >
+              <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-luxury-blue/10 flex items-center justify-center text-luxury-blue">
+                    <Cloud size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">עדכון תמונת פרופיל</h3>
+                    <p className="text-slate-500 font-medium">הזן URL של תמונה עבור {avatarModalUser.full_name}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAvatarModal(false)} className="p-2 text-slate-400 hover:bg-white rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div className="flex justify-center mb-4">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50">
+                    {tempAvatarUrl ? (
+                      <img src={tempAvatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300">
+                        <UserIcon size={40} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">URL של התמונה</label>
+                  <input 
+                    type="text" 
+                    className="input-field font-bold" 
+                    value={tempAvatarUrl} 
+                    onChange={(e) => setTempAvatarUrl(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    dir="ltr"
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={handleUpdateAvatar}
+                    className="flex-1 bg-luxury-blue text-white py-3 rounded-2xl font-black shadow-lg shadow-luxury-blue/20 hover:bg-blue-700 transition-all active:scale-95"
+                  >
+                    עדכן תמונה
+                  </button>
+                  <button 
+                    onClick={() => setShowAvatarModal(false)}
+                    className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-2xl font-black hover:bg-slate-200 transition-all active:scale-95"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Impersonation Modal */}
       <AnimatePresence>
         {impersonateUser && (
@@ -963,8 +1212,9 @@ export default function AdminManagement() {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open(`${window.location.origin}?impersonate=${impersonateUser.id}`, '_blank');
+                    setImpersonation(impersonateUser);
                     setImpersonateUser(null);
+                    toast.success(`מבצע פעולות בשם: ${impersonateUser.full_name || impersonateUser.name}`);
                   }}
                   className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all flex items-center justify-center gap-2"
                 >
@@ -976,6 +1226,30 @@ export default function AdminManagement() {
           </div>
         )}
       </AnimatePresence>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">סה"כ מנהלים</span>
+          <span className="text-2xl font-black text-luxury-blue">{stats.total}</span>
+          <span className="text-[10px] font-bold text-slate-500 mt-1">מוצגים: {stats.filtered}</span>
+        </div>
+        <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהל ראשי</span>
+          <span className="text-2xl font-black text-yellow-700">{stats.super_admin}</span>
+        </div>
+        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-1">ראשי צוות</span>
+          <span className="text-2xl font-black text-indigo-700">{stats.team_leader}</span>
+        </div>
+        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">מנהלים</span>
+          <span className="text-2xl font-black text-blue-700">{stats.admin}</span>
+        </div>
+        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">צופים</span>
+          <span className="text-2xl font-black text-slate-700">{stats.viewer}</span>
+        </div>
+      </div>
+
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap gap-4 items-center justify-between">
         <div className="flex flex-wrap gap-4 items-center">
           <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
@@ -989,6 +1263,16 @@ export default function AdminManagement() {
               <span className="text-[10px] font-bold text-slate-600">{cat}</span>
             </div>
           ))}
+        </div>
+
+        <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-100">
+          <span className="text-xs font-bold text-slate-600">תצוגה אופקית (3 מנהלים)</span>
+          <button 
+            onClick={() => setHorizontalView(!horizontalView)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${horizontalView ? 'bg-luxury-blue' : 'bg-slate-300'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${horizontalView ? '-translate-x-6' : '-translate-x-1'}`} />
+          </button>
         </div>
 
         <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-100">
@@ -1082,15 +1366,15 @@ export default function AdminManagement() {
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-800 text-sm">{u.name}</p>
-                      <p className="text-[10px] text-slate-500">{u.role === 'super_admin' ? 'מנהל ראשי' : u.category || 'ללא קטגוריה'}</p>
+                      <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name}</p>
+                      <p className="text-[10px] text-slate-500">{(u.role === 'super_admin' || u.username === 'god') ? 'מנהל ראשי' : u.category || 'ללא קטגוריה'}</p>
                     </div>
                   </div>
                   <div className="flex gap-1">
                     <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
-                      <Phone size={16} />
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
                     </button>
-                    <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
+                    <button onClick={() => openChat({ id: u.id, name: u.full_name || u.name })} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
                       <MessageSquare size={16} />
                     </button>
                   </div>
@@ -1106,15 +1390,354 @@ export default function AdminManagement() {
         )}
       </AnimatePresence>
 
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex gap-2 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
+            <button 
+              onClick={() => setRoleTab('all')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'all' ? 'bg-luxury-blue text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              כל המנהלים
+            </button>
+            <button 
+              onClick={() => setRoleTab('admin')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'admin' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              מנהלים רגילים
+            </button>
+            <button 
+              onClick={() => setRoleTab('team_leader')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'team_leader' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              ראשי צוות
+            </button>
+            <button 
+              onClick={() => setRoleTab('viewer')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'viewer' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              צופים
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+            <input 
+              type="text" 
+              placeholder="חיפוש לפי שם או שם משתמש..." 
+              className="input-field pr-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="relative">
+            <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+            <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
+              <button
+                onClick={() => setFilterConnection('all')}
+                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'all' ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue' : 'bg-white text-text-secondary border-slate-200 hover:border-luxury-blue'}`}
+              >
+                הכל
+              </button>
+              <button
+                onClick={() => setFilterConnection('online')}
+                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'online' ? 'bg-green-500 text-white shadow-sm border-green-500' : 'bg-white text-text-secondary border-slate-200 hover:border-green-500'}`}
+              >
+                מחוברים
+              </button>
+              <button
+                onClick={() => setFilterConnection('offline')}
+                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${filterConnection === 'offline' ? 'bg-red-500 text-white shadow-sm border-red-500' : 'bg-white text-text-secondary border-slate-200 hover:border-red-500'}`}
+              >
+                לא מחוברים
+              </button>
+            </div>
+          </div>
+          <div className="relative">
+            <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+            <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    setFilterCategory(prev => 
+                      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                    );
+                  }}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all ${
+                    filterCategory.includes(cat)
+                      ? 'bg-luxury-blue text-white shadow-sm border-luxury-blue'
+                      : `${getCategoryColor(cat)} opacity-70 hover:opacity-100`
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+              {filterCategory.length > 0 && (
+                <button 
+                  onClick={() => setFilterCategory([])}
+                  className="text-[10px] font-bold text-red-500 hover:underline"
+                >
+                  נקה הכל
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="card overflow-hidden border-none shadow-lg">
-        <div 
-          className="overflow-x-auto overflow-y-auto custom-scrollbar"
-          style={{ maxHeight: `${scrollThreshold * 85 + 60}px` }}
-        >
-          <table className="w-full text-right">
-            <thead className="bg-slate-50 border-b border-slate-100">
+        {horizontalView ? (
+          <div className="flex flex-col md:flex-row gap-4 p-4 bg-slate-50/30">
+            {/* Left Sidebar: Categories (First Half) */}
+            <div className="hidden md:flex flex-col gap-2 w-48 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-50 pb-2">קבוצות (א-ל)</p>
+              <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[500px] pr-1">
+                {CATEGORIES.slice(0, Math.ceil(CATEGORIES.length / 2)).map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setFilterCategory(prev => 
+                        prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                      );
+                    }}
+                    className={`text-right px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-between group ${
+                      filterCategory.includes(cat)
+                        ? 'bg-luxury-blue text-white border-luxury-blue shadow-md'
+                        : 'bg-white text-slate-600 border-slate-100 hover:border-luxury-blue/30 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{cat}</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${filterCategory.includes(cat) ? 'bg-white' : getCategoryLegendColor(cat).split(' ')[0]}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Center: Carousel */}
+            <div className="flex-1 relative group/carousel px-12">
+              <div className="p-4 overflow-hidden">
+              {(() => {
+                const visibleUsers = filteredUsers.slice(0, scrollThreshold);
+                const chunks = [];
+                for (let i = 0; i < visibleUsers.length; i += 3) {
+                  chunks.push(visibleUsers.slice(i, i + 3));
+                }
+                
+                const itemsPerPage = 1; // Show 1 chunk (3 users) at a time for a true carousel feel, or 3 chunks?
+                // The user said "carousel with arrows", usually means one "view" at a time.
+                // Let's show 3 chunks if possible, but the width might be an issue.
+                // Actually, let's show as many as fit but navigate by page.
+                
+                  const totalPages = chunks.length;
+                  const currentPage = Math.min(carouselPage, totalPages - 1);
+                  const displayChunk = chunks[currentPage];
+
+                  if (!displayChunk) return (
+                    <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                      <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Filter className="text-slate-300" size={32} />
+                      </div>
+                      <p className="text-slate-400 font-bold">אין מנהלים התואמים את הסינון</p>
+                      <button onClick={() => { setFilterCategory([]); setSelectedRoles([]); setSearch(''); }} className="mt-4 text-luxury-blue text-sm font-bold hover:underline">נקה את כל המסננים</button>
+                    </div>
+                  );
+
+                  return (
+                    <div className="flex justify-center gap-6 transition-all duration-500 ease-in-out">
+                      <div className="flex-shrink-0 w-full max-w-[500px] bg-white rounded-3xl border border-slate-100 p-6 space-y-4 shadow-xl relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-luxury-blue/20 to-transparent" />
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">דף {currentPage + 1} מתוך {totalPages}</p>
+                          <div className="flex gap-1.5">
+                            {Array.from({ length: totalPages }).map((_, i) => (
+                              <button 
+                                key={i} 
+                                onClick={() => setCarouselPage(i)}
+                                className={`w-2 h-2 rounded-full transition-all ${currentPage === i ? 'bg-luxury-blue w-5' : 'bg-slate-200 hover:bg-slate-300'}`} 
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        {displayChunk.map(u => (
+                          <div key={u.id} className={`bg-white p-4 rounded-2xl border-2 shadow-sm hover:shadow-md transition-all group/card ${
+                            u.username === 'god' ? 'border-yellow-400 bg-yellow-50/30' : 
+                            u.gender === 'male' ? 'border-blue-400 bg-blue-50/10' : 
+                            u.gender === 'female' ? 'border-pink-400 bg-pink-50/10' : 
+                            'border-slate-300 bg-slate-50/10'
+                          }`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative shadow-inner">
+                                  {u.avatar_url ? (
+                                    <img src={u.avatar_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                      {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                                    </div>
+                                  )}
+                                  <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                </div>
+                                <div>
+                                  <p className="font-bold text-slate-900 text-base leading-tight">{u.full_name || u.name}</p>
+                                  {u.role !== 'super_admin' && (
+                                    <p className="text-[10px] text-slate-500 font-medium">{u.username || '-'}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                {currentUser?.role === 'super_admin' && u.id !== currentUser.id && (
+                                  <button 
+                                    onClick={() => setImpersonateUser(u)} 
+                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                                    title="התחבר כמנהל זה"
+                                  >
+                                    <ExternalLink size={16} />
+                                  </button>
+                                )}
+                                <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
+                                {u.username !== 'god' && <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <button 
+                                onClick={() => { setEditingEmailUser(u); setTempEmail(u.email || ''); }}
+                                className="text-[10px] font-bold text-slate-600 bg-slate-50/50 p-2.5 rounded-xl text-right truncate hover:bg-white hover:shadow-sm transition-all border border-slate-100"
+                              >
+                                {u.email}
+                              </button>
+                              <button 
+                                onClick={() => { setPhoneModalUser(u); setTempPhone(u.phone || ''); }}
+                                className="text-[10px] font-bold text-slate-600 bg-slate-50/50 p-2.5 rounded-xl text-right truncate hover:bg-white hover:shadow-sm transition-all border border-slate-100"
+                              >
+                                {u.phone || 'אין טלפון'}
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black w-fit shadow-sm ${
+                                    u.role === 'super_admin' ? 'bg-yellow-400 text-black' : 
+                                    u.role === 'team_leader' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
+                                  }`}>
+                                    {u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                                  </span>
+                                  {u.role !== 'super_admin' && (
+                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                                      {u.gender === 'female' ? 'בת' : 'בן'}
+                                    </span>
+                                  )}
+                                </div>
+                                {u.role !== 'super_admin' && (u.role === 'team_leader' || u.affiliation_group) && (
+                                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
+                                    שיוך: {u.affiliation_group || (u.role === 'team_leader' ? 'כללי' : '')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="w-8 h-8 flex items-center justify-center bg-green-50 text-green-600 rounded-full hover:bg-green-600 hover:text-white transition-all shadow-sm"><Phone size={14} /></button>
+                                <button onClick={() => openChat({ id: u.id, name: u.full_name || u.name })} className="w-8 h-8 flex items-center justify-center bg-blue-50 text-blue-600 rounded-full hover:bg-blue-600 hover:text-white transition-all shadow-sm"><MessageSquare size={14} /></button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+              {/* Carousel Arrows */}
+              <button 
+                onClick={() => setCarouselPage(prev => Math.max(0, prev - 1))}
+                disabled={carouselPage === 0}
+                className="absolute left-0 top-1/2 -translate-y-1/2 p-3 bg-white rounded-full shadow-xl border border-slate-100 text-luxury-blue hover:scale-110 disabled:opacity-30 disabled:scale-100 transition-all z-10"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <button 
+                onClick={() => {
+                  const visibleUsers = filteredUsers.slice(0, scrollThreshold);
+                  const totalPages = Math.ceil(visibleUsers.length / 3);
+                  setCarouselPage(prev => Math.min(totalPages - 1, prev + 1));
+                }}
+                disabled={carouselPage >= Math.ceil(filteredUsers.slice(0, scrollThreshold).length / 3) - 1}
+                className="absolute right-0 top-1/2 -translate-y-1/2 p-3 bg-white rounded-full shadow-xl border border-slate-100 text-luxury-blue hover:scale-110 disabled:opacity-30 disabled:scale-100 transition-all z-10"
+              >
+                <ChevronRight size={24} />
+              </button>
+            </div>
+
+            {/* Right Sidebar: Role Filters & Categories (Second Half) */}
+            <div className="hidden md:flex flex-col gap-6 w-56">
+              {/* Role Filters */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">סוג מנהל</p>
+                <div className="flex flex-col gap-2">
+                  {[
+                    { id: 'super_admin', label: 'מנהל על', color: 'bg-yellow-400 text-black border-yellow-500' },
+                    { id: 'team_leader', label: 'ראש צוות', color: 'bg-indigo-600 text-white border-indigo-700' },
+                    { id: 'admin', label: 'מנהל', color: 'bg-blue-600 text-white border-blue-700' },
+                    { id: 'viewer', label: 'צופה', color: 'bg-slate-600 text-white border-slate-700' }
+                  ].map(role => (
+                    <button
+                      key={role.id}
+                      onClick={() => {
+                        setSelectedRoles(prev => 
+                          prev.includes(role.id) ? prev.filter(r => r !== role.id) : [...prev, role.id]
+                        );
+                      }}
+                      className={`text-right px-3 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
+                        selectedRoles.includes(role.id)
+                          ? `${role.color} shadow-lg scale-[1.02]`
+                          : 'bg-white text-slate-600 border-slate-100 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{role.label}</span>
+                      {selectedRoles.includes(role.id) && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Categories (Second Half) */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-50 pb-2">קבוצות (מ-ת)</p>
+                <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[300px] pr-1">
+                  {CATEGORIES.slice(Math.ceil(CATEGORIES.length / 2)).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        setFilterCategory(prev => 
+                          prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                        );
+                      }}
+                      className={`text-right px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-between group ${
+                        filterCategory.includes(cat)
+                          ? 'bg-luxury-blue text-white border-luxury-blue shadow-md'
+                          : 'bg-white text-slate-600 border-slate-100 hover:border-luxury-blue/30 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{cat}</span>
+                      <div className={`w-1.5 h-1.5 rounded-full ${filterCategory.includes(cat) ? 'bg-white' : getCategoryLegendColor(cat).split(' ')[0]}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div 
+            className="overflow-x-auto overflow-y-auto custom-scrollbar"
+            style={{ maxHeight: `${scrollThreshold * 85 + 60}px` }}
+          >
+            <table className="w-full text-right border-collapse">
+            <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-6 py-5 w-10">
+                <th className="px-4 py-4 w-10">
                   <input 
                     type="checkbox" 
                     className="w-4 h-4 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue cursor-pointer"
@@ -1122,33 +1745,23 @@ export default function AdminManagement() {
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">שם מלא</th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">טלפון</th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">סיסמא</th>
-                {!compactView && (
-                  <>
-                    <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">נוצר ע"י</th>
-                    <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מקור</th>
-                  </>
-                )}
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">מין</th>
-                {!compactView && (
-                  <>
-                    <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">טלפון</th>
-                    <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">שם משתמש</th>
-                    <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">כניסה מייל כניסה גוגל</th>
-                  </>
-                )}
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">קבוצה</th>
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">תפקיד</th>
-                {!compactView && <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs">סטטוס</th>}
-                <th className="px-6 py-5 font-bold text-text-secondary uppercase tracking-wider text-xs text-left">פעולות</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">תמונה</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שם מלא</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">מין</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שם משתמש</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">אימייל</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">טלפון</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שיוך</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">תפקיד</th>
+                {!compactView && <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">סיסמה</th>}
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">סטטוס</th>
+                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs text-left">פעולות</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 bg-white">
-              {filteredUsers.map((u) => (
+              {displayUsers.slice(0, scrollThreshold).map((u) => (
                 <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${u.username === 'god' ? 'bg-[#fff9c4] font-bold' : getRowColor(u)} ${selectedUserIds.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
-                  <td className="px-6 py-5">
+                  <td className="px-4 py-4">
                     {u.username !== 'god' && (
                       <input 
                         type="checkbox" 
@@ -1158,199 +1771,112 @@ export default function AdminManagement() {
                       />
                     )}
                   </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="relative">
-                          {u.avatar_url ? (
-                            <img 
-                              key={u.avatar_url}
-                              src={u.avatar_url} 
-                              alt={u.full_name || u.name} 
-                              referrerPolicy="no-referrer"
-                              className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-sm"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          <div className={`w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-2 border-white shadow-sm ${u.avatar_url ? 'hidden' : ''}`}>
-                            {u.gender === 'female' ? <Heart size={16} className="text-pink-400" /> : <UserIcon size={16} className="text-blue-400" />}
-                          </div>
-                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${!!presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} title={!!presenceState[u.id] ? getGenderedText(u.gender, 'מחובר', 'מחוברת') : getGenderedText(u.gender, 'לא מחובר', 'לא מחוברת')}></div>
-                          {u.role === 'super_admin' && (
-                            <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center text-white border-2 border-white shadow-sm">
-                              <ShieldAlert size={10} />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center gap-0.5">
-                          {u.is_shaham_manager === 1 ? (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full whitespace-nowrap border border-amber-100 flex items-center gap-1">
-                                <Users size={10} />
-                                פרויקט שח"ם
-                              </span>
-                              <span className="text-[8px] font-medium text-amber-400">מנהל בשתי קבוצות</span>
-                            </div>
-                          ) : (
-                            <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">
-                              {u.category || 'ללא קטגוריה'}
-                            </span>
-                          )}
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 ${
-                            u.username === 'god' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 
-                            u.role === 'super_admin' ? 'bg-blue-100 text-blue-800 border border-blue-200' : 
-                            'text-slate-500 bg-slate-100'
-                          }`}>
-                            {u.username === 'god' && <Shield size={10} />}
-                            {u.username === 'god' ? 'מנהל על' : 
-                             u.role === 'super_admin' ? 'מנהל ראשי' : 
-                             u.role === 'team_leader' ? 'ראש צוות' :
-                             u.role === 'viewer' ? 'צופה' : 'מנהל'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className={`font-bold ${u.username === 'god' ? 'text-slate-900' : u.role === 'super_admin' ? 'text-yellow-700' : 'text-text-main'}`}>
-                          <span className="font-bold text-slate-800">{u.username === 'god' ? 'מנהל ראשי' : u.full_name}</span>
-                        </span>
-                        <span className="text-[10px] text-slate-400">{u.email}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 font-medium">{u.username}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500">
-                          {u.last_login ? new Date(u.last_login).toLocaleString('he-IL') : 'לא התחבר'}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className="text-sm font-medium text-text-secondary">{u.phone}</span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono text-slate-600">
-                          {showPassword === u.id ? (u.password_plain || '12345678') : '******'}
-                        </span>
-                        {currentUser?.role === 'super_admin' && (
-                          <button 
-                            onClick={() => setShowPassword(showPassword === u.id ? null : u.id)}
-                            className="p-1 text-slate-400 hover:text-luxury-blue transition-all"
-                          >
-                            {showPassword === u.id ? <X size={14} /> : <Search size={14} />}
-                          </button>
-                        )}
-                      </div>
-                      {!compactView && u.password_updated_at && (
-                        <span className="text-[9px] text-slate-400">הסיסמא שונתה לאחרונה ב-{new Date(u.password_updated_at).toLocaleDateString('he-IL')}</span>
-                      )}
-                    </div>
-                  </td>
-                  {!compactView && (
-                    <>
-                      <td className="px-6 py-5">
-                        <span className="text-sm font-medium text-text-secondary">{u.creator_name || 'מערכת'}</span>
-                      </td>
-                      <td className="px-6 py-5">
-                        {u.is_from_file ? (
-                          <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-1 rounded-md border border-amber-100">קובץ</span>
-                        ) : (
-                          <span className="text-[10px] font-bold bg-slate-50 text-slate-400 px-2 py-1 rounded-md border border-slate-100">ידני</span>
-                        )}
-                      </td>
-                    </>
-                  )}
-                  <td className="px-6 py-5 text-text-secondary font-medium">
-                    <button 
-                      onClick={() => setGenderModalUser(u)}
-                      className="hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
+                  <td className="px-3 py-4">
+                    <div 
+                      className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-200 cursor-pointer hover:border-luxury-blue transition-colors group"
+                      onClick={() => {
+                        setAvatarModalUser(u);
+                        setTempAvatarUrl(u.avatar_url || '');
+                        setShowAvatarModal(true);
+                      }}
                     >
-                      {u.gender === 'male' ? 'בן' : u.gender === 'female' ? 'בת' : '---'}
-                    </button>
+                      {u.avatar_url ? (
+                        <img 
+                          src={u.avatar_url} 
+                          alt={u.full_name || u.name} 
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`w-full h-full flex items-center justify-center text-slate-400 ${u.avatar_url ? 'hidden' : ''}`}>
+                        {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                      </div>
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <Edit2 size={16} className="text-white" />
+                      </div>
+                    </div>
                   </td>
-                  {!compactView && (
-                    <>
-                      <td className="px-6 py-5 text-text-secondary font-medium">
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => {
-                              setPhoneModalUser(u);
-                              setTempPhone(u.phone || '');
-                            }}
-                            className="hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
-                          >
-                            {u.phone || '---'}
-                          </button>
-                          {u.phone && (
-                            <a 
-                              href={`https://wa.me/${u.phone.replace(/\D/g, '')}`} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all"
-                              title="שלח הודעת וואטסאפ"
-                            >
-                              <MessageSquare size={14} />
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 text-text-main font-medium">{u.username === 'god' ? 'מנהל מערכת' : u.username}</td>
-                      <td className="px-6 py-5">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-text-main">{u.email}</span>
-                          <span className="text-[10px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>
-                        </div>
-                      </td>
-                    </>
-                  )}
-                  <td className="px-6 py-5">
-                    <div className="relative group/nav">
+                  <td className="px-3 py-4">
+                    <span className="font-bold text-slate-900 text-sm">{u.full_name || u.name}</span>
+                  </td>
+                  <td className="px-3 py-4">
+                    {u.role !== 'super_admin' && (
                       <button 
                         onClick={() => setGenderModalUser(u)}
-                        className="flex flex-col gap-1 cursor-pointer w-full"
+                        className="text-sm text-slate-600 hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4"
                       >
-                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.category)}`}>
-                          {u.category || 'ללא שיוך'}
+                        {u.gender === 'female' ? 'בת' : 'בן'}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-4 text-slate-600 text-sm font-medium">
+                    {u.role === 'super_admin' ? '-' : (u.username || '-')}
+                  </td>
+                  <td className="px-3 py-4">
+                    <button 
+                      onClick={() => {
+                        setEditingEmailUser(u);
+                        setTempEmail(u.email || '');
+                      }}
+                      className="flex flex-col text-right hover:bg-slate-100 p-1 rounded transition-colors group"
+                    >
+                      <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.email}</span>
+                      {!compactView && <span className="text-[9px] text-slate-400">גוגל: {u.google_login_allowed === 'true' ? 'מאושר' : 'חסום'}</span>}
+                    </button>
+                  </td>
+                  <td className="px-3 py-4">
+                    <button 
+                      onClick={() => {
+                        setPhoneModalUser(u);
+                        setTempPhone(u.phone || '');
+                      }}
+                      className="flex items-center gap-2 hover:bg-slate-100 p-1 rounded transition-colors group"
+                    >
+                      <span className="text-sm text-slate-600 group-hover:text-luxury-blue">{u.phone || '---'}</span>
+                    </button>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="relative group/nav">
+                      <div className="flex flex-col gap-1 cursor-pointer">
+                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.affiliation_group)}`}>
+                          {u.affiliation_group || 'ללא שיוך'}
                         </div>
                         {u.secondary_category && (
                           <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
                             {u.secondary_category}
                           </div>
                         )}
-                      </button>
-                      
-                      {/* Group Navigation Menu */}
-                      <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
-                        <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider">קבוצות מנוהלות</p>
-                        <div className="space-y-1">
-                          {whatsappGroups.filter(g => g.category === u.category || g.category === u.secondary_category).map(g => (
-                            <a 
-                              key={g.id}
-                              href={g.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-all"
-                            >
-                              <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full ${g.type === 'male' ? 'bg-blue-400' : 'bg-pink-400'}`}></div>
-                                {g.name}
-                              </div>
-                              <ExternalLink size={12} className="text-slate-300" />
-                            </a>
-                          ))}
-                          {whatsappGroups.filter(g => g.category === u.category || g.category === u.secondary_category).length === 0 && (
-                            <p className="text-[10px] text-slate-400 p-2 italic">אין קבוצות משויכות</p>
-                          )}
+                        
+                        {/* Group Navigation Menu */}
+                        <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
+                          <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider">קבוצות מנוהלות</p>
+                          <div className="space-y-1">
+                            {whatsappGroups.filter(g => g.category === u.affiliation_group || g.category === u.secondary_category).map(g => (
+                              <a 
+                                key={g.id}
+                                href={g.link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-all"
+                              >
+                                <span className="truncate max-w-[120px]">{g.name}</span>
+                                <ExternalLink size={10} className="text-slate-400" />
+                              </a>
+                            ))}
+                            {whatsappGroups.filter(g => g.category === u.affiliation_group || g.category === u.secondary_category).length === 0 && (
+                              <p className="text-[10px] text-slate-400 p-2 text-center italic">אין קבוצות מוגדרות</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-5">
+
+                  <td className="px-3 py-4">
                     <div className="flex flex-col gap-1">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
                         u.username === 'god' ? 'bg-yellow-400 text-black border border-yellow-600 shadow-md' :
@@ -1372,31 +1898,36 @@ export default function AdminManagement() {
                     </div>
                   </td>
                   {!compactView && (
-                    <td className="px-6 py-5">
-                      <div className="flex flex-col gap-1">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                          (u.status || 'active') === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                        }`}>
-                          {(u.status || 'active') === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                          {(u.status || 'active') === 'active' ? 'פעיל' : 'לא פעיל'}
+                    <td className="px-3 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-slate-500">
+                          {showPassword === u.id ? (u.password_plain || '12345678') : '******'}
                         </span>
-                        {u.is_approved === 0 && (
+                        {currentUser?.role === 'super_admin' && (
                           <button 
-                            onClick={() => handleApprove(u.id)}
-                            className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 hover:bg-amber-100 transition-all"
+                            onClick={() => setShowPassword(showPassword === u.id ? null : u.id)}
+                            className="p-1 text-slate-400 hover:text-luxury-blue transition-all"
                           >
-                            אשר מנהל
+                            {showPassword === u.id ? <X size={14} /> : <Search size={14} />}
                           </button>
                         )}
                       </div>
                     </td>
                   )}
-                  <td className="px-6 py-5 text-left min-w-[200px]">
+                  <td className="px-3 py-4">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
+                      (u.status || 'active') === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    }`}>
+                      {(u.status || 'active') === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {(u.status || 'active') === 'active' ? 'פעיל' : 'לא פעיל'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-4 text-left min-w-[200px]">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
-                        <Phone size={16} />
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
                       </button>
-                      <button onClick={() => toast("צ'אט - בביצוע")} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעת צ'אט">
+                      <button onClick={() => openChat({ id: u.id, name: u.full_name || u.name })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעת צ'אט">
                         <MessageSquare size={16} />
                       </button>
                       <button onClick={() => toast('הצעת משודך - בביצוע')} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
@@ -1426,7 +1957,68 @@ export default function AdminManagement() {
             </tbody>
           </table>
         </div>
-      </div>
+      )}
+    </div>
+
+      {/* Impersonation Confirmation Modal */}
+      <AnimatePresence>
+        {impersonateUser && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
+            >
+              <div className="text-center space-y-4">
+                <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-100 border-4 border-emerald-100 mx-auto relative">
+                  {impersonateUser.avatar_url ? (
+                    <img src={impersonateUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-300">
+                      <UserIcon size={40} />
+                    </div>
+                  )}
+                  <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${presenceState[impersonateUser.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
+                </div>
+                
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">כניסה כמנהל</h3>
+                  <p className="text-slate-500 font-medium mt-1">האם אתה בטוח שברצונך להיכנס למערכת כ-</p>
+                  <p className="text-xl font-bold text-emerald-600 mt-1">{impersonateUser.full_name || impersonateUser.name}?</p>
+                </div>
+
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-right">
+                  <p className="text-xs text-emerald-800 font-bold leading-relaxed">
+                    * תוכל לראות ולבצע פעולות בשם המנהל הזה.
+                    <br />
+                    * כדי לחזור למשתמש שלך, לחץ על "צא מהתחזות" בסרגל העליון.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setImpersonateUser(null)}
+                  className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  ביטול
+                </button>
+                <button 
+                  onClick={() => {
+                    handleImpersonate(impersonateUser);
+                    setImpersonateUser(null);
+                  }}
+                  className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <ExternalLink size={18} />
+                  היכנס כמנהל
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Bulk Delete Confirmation Modal */}
       <AnimatePresence>
@@ -1630,6 +2222,22 @@ export default function AdminManagement() {
         )}
       </AnimatePresence>
 
+      {/* Preview Modal */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-lg">
+            <h2 className="text-xl font-bold mb-4">תצוגה מקדימה של נתוני Airtable</h2>
+            <div className="max-h-60 overflow-y-auto mb-4">
+              {previewData.length > 0 ? (
+                <pre>{JSON.stringify(previewData, null, 2)}</pre>
+              ) : (
+                <p>אין נתונים להצגה</p>
+              )}
+            </div>
+            <button onClick={() => setShowPreviewModal(false)} className="btn-secondary">סגור</button>
+          </div>
+        </div>
+      )}
       {/* CSV Upload Modal */}
       <AnimatePresence>
         {showCsvModal && (
@@ -1682,7 +2290,7 @@ export default function AdminManagement() {
                       >
                         <option value="admin">מנהל רגיל</option>
                         <option value="viewer">צופה</option>
-                        <option value="team_leader">ראש צוות</option>
+                        <option value="team_leader">ראש צוות / ראשת צוות</option>
                       </select>
                     </div>
 
@@ -1811,6 +2419,16 @@ export default function AdminManagement() {
                                 if (match) admin.avatar_url = match[1];
                                 else if (val.trim().startsWith('http')) admin.avatar_url = val.trim();
                               }
+                              if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
+                                const tl = users.find(u => 
+                                  (u.role === 'team_leader' || u.role === 'super_admin') && 
+                                  (u.full_name === val || u.username === val || u.email === val)
+                                );
+                                if (tl) {
+                                  admin.created_by = tl.id;
+                                  admin.creator_name = tl.full_name || tl.username;
+                                }
+                              }
                             });
 
                             if (!hasEmail || !admin.email) {
@@ -1861,18 +2479,56 @@ export default function AdminManagement() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="flex justify-center mb-6">
                     <div className="relative group">
-                      <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
+                      <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden relative">
                         {formData.avatar_url ? (
                           <img src={formData.avatar_url} alt="Avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                           <UserCheck size={32} className="text-slate-300" />
                         )}
+                        <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${presenceState[editingUser?.id || ''] ? 'bg-green-500' : 'bg-slate-300'}`} />
                       </div>
                       <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 cursor-pointer rounded-full transition-opacity">
-                        <Edit2 size={20} />
+                        <div className="flex flex-col items-center gap-1">
+                          <Edit2 size={20} />
+                          <span className="text-[10px] font-bold">העלה תמונה</span>
+                        </div>
                         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                       </label>
                     </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-bold text-text-main">כתובת URL לתמונה</label>
+                      <button 
+                        type="button"
+                        onClick={() => setShowAvatarUrlInput(!showAvatarUrlInput)}
+                        className="text-luxury-blue text-xs font-bold hover:underline"
+                      >
+                        {showAvatarUrlInput ? 'הסתר' : 'הזן URL ידנית'}
+                      </button>
+                    </div>
+                    {showAvatarUrlInput && (
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          className="input-field text-xs" 
+                          placeholder="הדבק כתובת URL כאן..."
+                          value={tempAvatarUrl}
+                          onChange={(e) => setTempAvatarUrl(e.target.value)}
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setFormData({...formData, avatar_url: tempAvatarUrl});
+                            toast.success('URL עודכן');
+                          }}
+                          className="bg-luxury-blue text-white px-3 py-1 rounded-lg text-xs font-bold"
+                        >
+                          עדכן
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם מלא *</label>
@@ -1892,25 +2548,14 @@ export default function AdminManagement() {
                     </label>
                     <input type="password" required={!editingUser} className="input-field" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצה 1</label>
-                      <select className="input-field font-bold" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
-                        <option value="">ללא שיוך</option>
-                        {CATEGORIES.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לקבוצה 2 (שח"ם)</label>
-                      <select className="input-field font-bold" value={formData.secondary_category} onChange={(e) => setFormData({...formData, secondary_category: e.target.value})}>
-                        <option value="">ללא שיוך נוסף</option>
-                        {CATEGORIES.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך (קבוצה)</label>
+                    <select className="input-field font-bold" value={formData.affiliation_group} onChange={(e) => setFormData({...formData, affiliation_group: e.target.value})}>
+                      <option value="">ללא שיוך</option>
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">מין המנהל/ת</label>
@@ -1963,18 +2608,27 @@ export default function AdminManagement() {
                       <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">תפקיד</label>
                       <select className="input-field font-bold" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
                         <option value="admin">מנהל רגיל</option>
-                        <option value="team_leader">ראש צוות</option>
+                        <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="viewer">צופה</option>
                         <option value="super_admin">מנהל ראשי</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">סטטוס</label>
-                      <select className="input-field font-bold" value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})}>
-                        <option value="active">פעיל</option>
-                        <option value="inactive">לא פעיל</option>
+                      <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך לראש/ת צוות</label>
+                      <select className="input-field font-bold" value={formData.created_by} onChange={(e) => setFormData({...formData, created_by: e.target.value})}>
+                        <option value="">ללא שיוך (מערכת)</option>
+                        {users.filter(u => u.role === 'team_leader' || u.role === 'super_admin').map(tl => (
+                          <option key={tl.id} value={tl.id}>{tl.full_name || tl.username}</option>
+                        ))}
                       </select>
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">סטטוס</label>
+                    <select className="input-field font-bold" value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})}>
+                      <option value="active">פעיל</option>
+                      <option value="inactive">לא פעיל</option>
+                    </select>
                   </div>
                   <div className="flex justify-end gap-3 pt-6 pb-4">
                     <button type="button" onClick={() => setShowModal(false)} className="btn-secondary px-6 py-3 font-bold">ביטול</button>

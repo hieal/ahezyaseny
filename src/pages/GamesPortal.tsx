@@ -1,39 +1,88 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
+import { supabase } from '../services/supabase';
 import { GameScore, PortalSettings } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Gamepad2, Trophy, Star, ChevronLeft, 
   RotateCcw, Play, CheckCircle2, AlertCircle,
-  Brain, Zap, Heart, Users, Clock
+  Brain, Zap, Heart, Users, Clock, Send
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Match } from '../types';
 
 import ConnectionMaze from './ConnectionMaze';
+import { StrategicRPS } from '../components/StrategicRPS';
 
-type GameType = 'menu' | 'memory' | 'this_or_that' | 'maze';
+type GameType = 'menu' | 'memory' | 'this_or_that' | 'maze' | 'strategic_rps';
 
 export default function GamesPortal() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [matches, setMatches] = useState<Match[]>([]);
   const [activeGame, setActiveGame] = useState<GameType>('menu');
   const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [candidateImages, setCandidateImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [onlineStats, setOnlineStats] = useState({ males: 0, females: 0 });
+  
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel('online-players');
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        let males = 0;
+        let females = 0;
+        Object.values(state).forEach((presence: any) => {
+          presence.forEach((p: any) => {
+            if (p.gender === 'male') males++;
+            if (p.gender === 'female') females++;
+          });
+        });
+        setOnlineStats({ males, females });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ user_id: user.id, gender: user.gender });
+        }
+      });
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user]);
+
+  const [rpsLobbyStep, setRpsLobbyStep] = useState<'intro' | 'searching'>('intro');
+  const [isSearching, setIsSearching] = useState(false);
+  const [activeRpsMatch, setActiveRpsMatch] = useState<{
+    id: string;
+    opponentId: string;
+    opponentName: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (location.state?.initialGame) {
+      setActiveGame(location.state.initialGame);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [scores, portalSettings, matches] = await Promise.all([
+        const [scores, portalSettings, matches, stats] = await Promise.all([
           dataService.getLeaderboard(),
           dataService.getPortalSettings(),
-          dataService.getMatches()
+          dataService.getMatches(),
+          dataService.getOnlineStats()
         ]);
         setLeaderboard(scores);
         setSettings(portalSettings);
+        setMatches(matches);
+        setOnlineStats(stats);
         
         // Extract candidate images
         const images = matches
@@ -51,7 +100,121 @@ export default function GamesPortal() {
     fetchData();
   }, []);
 
-  const saveScore = async (score: number, type: 'memory' | 'this_or_that') => {
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('matchmaking_updates_portal')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'game_sessions'
+        },
+        (payload) => {
+          const session = payload.new;
+          if (session.player2_id === user.id && session.game_type === 'Strategic RPS') {
+            setActiveRpsMatch({
+              id: session.id,
+              opponentId: session.player1_id,
+              opponentName: session.player1_name
+            });
+            setIsSearching(false);
+            toast.success(`נמצא יריב: ${session.player1_name}!`);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  const handleFindPlayer = async () => {
+    if (!user) return;
+    setIsSearching(true);
+    
+    // Safety Timeout: 10 seconds
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 10000)
+    );
+
+    try {
+      // 1. Look for someone already searching
+      const query = supabase
+        .from('profiles')
+        .select('id, full_name, gender')
+        .eq('status', 'searching_for_opponent')
+        .neq('id', user.id);
+
+      // Admin bypass: Admins can match with anyone.
+      // Non-admins must match with opposite gender.
+      if (user.role !== 'admin') {
+        query.eq('gender', user.gender === 'male' ? 'female' : 'male');
+      }
+
+      const { data: opponents, error: searchError } = await Promise.race([
+        query.limit(1),
+        timeoutPromise
+      ]) as any;
+
+      if (searchError) throw searchError;
+
+      if (opponents && opponents.length > 0) {
+        const opponent = opponents[0];
+        // 2. Create session
+        const { data: session, error: sessionError } = await supabase
+          .from('game_sessions')
+          .insert({
+            game_type: 'Strategic RPS',
+            player1_id: opponent.id,
+            player1_name: opponent.full_name || 'שחקן',
+            player2_id: user.id,
+            player2_name: user.full_name || 'שחקן',
+          })
+          .select()
+          .single();
+
+        if (sessionError) throw sessionError;
+
+        // 3. Update both statuses
+        await Promise.all([
+          supabase.from('profiles').update({ status: 'playing' }).eq('id', user.id),
+          supabase.from('profiles').update({ status: 'playing' }).eq('id', opponent.id)
+        ]);
+
+        setActiveRpsMatch({
+          id: session.id,
+          opponentId: opponent.id,
+          opponentName: opponent.full_name || 'שחקן'
+        });
+        setIsSearching(false);
+        toast.success(`נמצא יריב: ${opponent.full_name}!`);
+      } else {
+        // 4. No opponent found, set status to searching
+        const { error } = await supabase
+          .from('profiles')
+          .update({ status: 'searching_for_opponent' })
+          .eq('id', user.id);
+        
+        if (error) throw error;
+        toast.success("מחפש שחקן... המתן ליריב");
+      }
+    } catch (err: any) {
+      console.error("Error starting matchmaking:", err);
+      if (err.message === 'TIMEOUT') {
+        toast.error("לא נמצא יריב בזמן המוקצב. האם תרצה לשחק נגד בוט?");
+        // Here you would implement the bot match logic
+      } else {
+        toast.error("שגיאה בחיפוש שחקן");
+      }
+      setIsSearching(false);
+    }
+  };
+
+  const saveScore = async (score: number, type: 'memory' | 'this_or_that' | 'strategic_rps', durationSeconds: number = 0) => {
     if (!user) return;
     try {
       await dataService.saveGameScore({
@@ -60,12 +223,57 @@ export default function GamesPortal() {
         game_type: type,
         score
       });
+      
+      await dataService.logGame({
+        player1_id: user.id,
+        player1_name: user.full_name,
+        player2_id: 'system',
+        player2_name: 'System',
+        game_type: type === 'memory' ? 'Memory' : 'This or That',
+        winner_id: user.id,
+        duration_seconds: durationSeconds
+      });
+
+      const globalChannel = supabase.channel('global_game_events');
+      globalChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          globalChannel.send({
+            type: 'broadcast',
+            event: 'game_end',
+            payload: { gameId: `${type}_${user.id}` }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
+
       toast.success(`כל הכבוד! צברת ${score} נקודות`);
       // Refresh leaderboard
       const scores = await dataService.getLeaderboard();
       setLeaderboard(scores);
     } catch (err) {
       console.error('Error saving score:', err);
+    }
+  };
+
+  const handleStartGame = (game: 'memory' | 'this_or_that') => {
+    setActiveGame(game);
+    if (user) {
+      const globalChannel = supabase.channel('global_game_events');
+      globalChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          globalChannel.send({
+            type: 'broadcast',
+            event: 'game_start',
+            payload: {
+              gameId: `${game}_${user.id}`,
+              player1Name: user.full_name,
+              player2Name: 'System',
+              gameType: game === 'memory' ? 'Memory' : 'This or That'
+            }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
     }
   };
 
@@ -91,7 +299,8 @@ export default function GamesPortal() {
             </button>
             <h1 className="font-black text-slate-900 text-xl">
               {activeGame === 'menu' ? 'אזור המשחקים' : 
-               activeGame === 'memory' ? 'משחק הזיכרון' : 'זה או זה'}
+               activeGame === 'memory' ? 'משחק הזיכרון' : 
+               activeGame === 'strategic_rps' ? 'מרוץ ללב' : 'זה או זה'}
             </h1>
           </div>
           <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-xl">
@@ -109,7 +318,27 @@ export default function GamesPortal() {
             {/* Game Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <button 
-                onClick={() => setActiveGame('memory')}
+                onClick={() => setActiveGame('strategic_rps')}
+                className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 text-right space-y-4 hover:shadow-xl hover:shadow-slate-200 transition-all group relative overflow-hidden"
+              >
+                <div className="absolute top-4 left-4 bg-pink-500 text-white text-[10px] font-black px-2 py-1 rounded-full animate-bounce z-10">
+                  חדש!
+                </div>
+                <div className="w-16 h-16 rounded-2xl bg-pink-50 text-pink-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Heart size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">מרוץ ללב (אסטרטגיה)</h3>
+                  <p className="text-slate-500 font-medium">דו-קרב אסטרטגי של אבן נייר ומספריים. מצא את הלב של היריב!</p>
+                </div>
+                <div className="flex items-center gap-2 text-pink-600 font-bold">
+                  <span>שחק עכשיו</span>
+                  <ChevronLeft size={18} />
+                </div>
+              </button>
+
+              <button 
+                onClick={() => handleStartGame('memory')}
                 className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 text-right space-y-4 hover:shadow-xl hover:shadow-slate-200 transition-all group"
               >
                 <div className="w-16 h-16 rounded-2xl bg-purple-50 text-purple-500 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -126,7 +355,7 @@ export default function GamesPortal() {
               </button>
 
               <button 
-                onClick={() => setActiveGame('this_or_that')}
+                onClick={() => handleStartGame('this_or_that')}
                 className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 text-right space-y-4 hover:shadow-xl hover:shadow-slate-200 transition-all group"
               >
                 <div className="w-16 h-16 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -210,11 +439,92 @@ export default function GamesPortal() {
           </div>
         )}
 
+        {activeGame === 'strategic_rps' && !activeRpsMatch && (
+          <div className="max-w-2xl mx-auto py-12">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-12 rounded-[3rem] shadow-xl border border-slate-100 text-center space-y-8"
+            >
+              <div className="w-24 h-24 bg-pink-50 text-pink-500 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+                <Heart size={48} fill="currentColor" />
+              </div>
+              
+              <div className="space-y-4">
+                <h2 className="text-4xl font-black text-slate-900">מרוץ ללב</h2>
+                <p className="text-xl text-slate-500 font-medium leading-relaxed">
+                  ברוכים הבאים למשחק האסטרטגיה הגדול! 
+                  במשחק זה תצטרכו להשתמש בחוכמה ובטקטיקה כדי למצוא את הלב של היריב תוך הגנה על הלב שלכם.
+                </p>
+              </div>
+
+              {rpsLobbyStep === 'intro' ? (
+                <button
+                  onClick={() => setRpsLobbyStep('searching')}
+                  className="w-full py-6 bg-emerald-500 text-white rounded-[2rem] text-2xl font-black hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-3"
+                >
+                  <Play size={28} fill="currentColor" />
+                  התחל משחק
+                </button>
+              ) : (
+                <div className="space-y-6">
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                    <div className="flex items-center justify-center gap-2 text-slate-600 font-bold mb-2">
+                      <Users size={20} />
+                      <span>שחקנים מחוברים מהמין השני:</span>
+                    </div>
+                    <div className="text-4xl font-black text-emerald-600">
+                      {user?.gender === 'male' ? onlineStats.females : onlineStats.males}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleFindPlayer}
+                    disabled={isSearching}
+                    className="w-full py-6 bg-pink-500 text-white rounded-[2rem] text-2xl font-black hover:bg-pink-600 transition-all shadow-lg shadow-pink-100 flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                    {isSearching ? (
+                      <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Users size={28} />
+                    )}
+                    {isSearching ? 'מחפש שחקן...' : 'חפש שחקן'}
+                  </button>
+                  
+                  <button
+                    onClick={() => toast('פונקציה זו תתווסף בקרוב', { icon: 'ℹ️' })}
+                    className="w-full py-4 bg-blue-500 text-white rounded-[2rem] text-xl font-bold hover:bg-blue-600 transition-all shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <Send size={20} />
+                    הזמן שותף ספציפי
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+
+        {activeGame === 'strategic_rps' && activeRpsMatch && user && (
+          <div className="fixed inset-0 z-[100] bg-white">
+            <StrategicRPS
+              gameId={activeRpsMatch.id}
+              myId={user.id}
+              myName={user.full_name}
+              opponentId={activeRpsMatch.opponentId}
+              opponentName={activeRpsMatch.opponentName}
+              onClose={() => {
+                setActiveRpsMatch(null);
+                setActiveGame('menu');
+                setRpsLobbyStep('intro');
+              }}
+            />
+          </div>
+        )}
         {activeGame === 'memory' && (
           <MemoryGame 
             images={candidateImages} 
-            onComplete={(score) => {
-              saveScore(score, 'memory');
+            onComplete={(score, duration) => {
+              saveScore(score, 'memory', duration);
               setActiveGame('menu');
             }}
           />
@@ -222,8 +532,8 @@ export default function GamesPortal() {
 
         {activeGame === 'this_or_that' && (
           <ThisOrThatGame 
-            onComplete={(score) => {
-              saveScore(score, 'this_or_that');
+            onComplete={(score, duration) => {
+              saveScore(score, 'this_or_that', duration);
               setActiveGame('menu');
             }}
           />
@@ -240,7 +550,7 @@ export default function GamesPortal() {
 }
 
 // --- Memory Game Component ---
-function MemoryGame({ images, onComplete }: { images: string[], onComplete: (score: number) => void }) {
+function MemoryGame({ images, onComplete }: { images: string[], onComplete: (score: number, duration: number) => void }) {
   const [cards, setCards] = useState<{ id: number, url: string, flipped: boolean, matched: boolean }[]>([]);
   const [flipped, setFlipped] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
@@ -275,7 +585,7 @@ function MemoryGame({ images, onComplete }: { images: string[], onComplete: (sco
         if (newCards.every(c => c.matched)) {
           const duration = Math.floor((Date.now() - startTime) / 1000);
           const score = Math.max(10, 100 - moves - Math.floor(duration / 2));
-          setTimeout(() => onComplete(score), 1000);
+          setTimeout(() => onComplete(score, duration), 1000);
         }
       } else {
         setTimeout(() => {
@@ -324,7 +634,7 @@ function MemoryGame({ images, onComplete }: { images: string[], onComplete: (sco
 }
 
 // --- This Or That Game Component ---
-function ThisOrThatGame({ onComplete }: { onComplete: (score: number) => void }) {
+function ThisOrThatGame({ onComplete }: { onComplete: (score: number, duration: number) => void }) {
   const questions = [
     { id: 1, left: 'ים', right: 'בריכה' },
     { id: 2, left: 'קיץ', right: 'חורף' },
@@ -335,6 +645,7 @@ function ThisOrThatGame({ onComplete }: { onComplete: (score: number) => void })
 
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [startTime] = useState(Date.now());
 
   const handleAnswer = (choice: string) => {
     const newAnswers = [...answers, choice];
@@ -342,7 +653,8 @@ function ThisOrThatGame({ onComplete }: { onComplete: (score: number) => void })
     if (current < questions.length - 1) {
       setCurrent(c => c + 1);
     } else {
-      onComplete(50); // Fixed score for completion
+      const duration = Math.floor((Date.now() - startTime) / 1000);
+      onComplete(50, duration); // Fixed score for completion
     }
   };
 

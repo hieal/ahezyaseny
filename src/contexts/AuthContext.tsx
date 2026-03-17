@@ -5,16 +5,19 @@ import { supabase } from '../services/supabase';
 
 interface AuthContextType {
   user: User | null;
+  effectiveUser: User | null;
   loading: boolean;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  setImpersonation: (user: User | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [effectiveUser, setEffectiveUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,6 +25,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Ensure loading is true at the start of initialization
       setLoading(true);
       try {
+        // Check for effective user in sessionStorage
+        const effectiveUserJson = sessionStorage.getItem('effective_user');
+        if (effectiveUserJson) {
+          try {
+            setEffectiveUser(JSON.parse(effectiveUserJson));
+          } catch (e) {
+            sessionStorage.removeItem('effective_user');
+          }
+        }
+
         // 1. Check Supabase session first (as requested)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
@@ -32,16 +45,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('current_user', JSON.stringify(adminProfile));
           }
         } else {
-          // 2. Fallback to localStorage if no Supabase session
+          // 2. Fallback to sessionStorage (for impersonation) then localStorage
+          const sessionUserJson = sessionStorage.getItem('current_user');
           const localUserJson = localStorage.getItem('current_user');
-          if (localUserJson) {
+          const userJson = sessionUserJson || localUserJson;
+          
+          if (userJson) {
             try {
-              const localUser = JSON.parse(localUserJson);
+              const localUser = JSON.parse(userJson);
               setUser(localUser);
-              
-              // Verify local user in background to avoid blocking UI
-              // but we stay in loading state until we've at least tried to get a session
             } catch (e) {
+              sessionStorage.removeItem('current_user');
               localStorage.removeItem('current_user');
             }
           }
@@ -115,14 +129,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(userData);
   };
 
+  const setImpersonation = (impersonatedUser: User | null) => {
+    setEffectiveUser(impersonatedUser);
+    if (impersonatedUser) {
+      sessionStorage.setItem('effective_user', JSON.stringify(impersonatedUser));
+    } else {
+      sessionStorage.removeItem('effective_user');
+    }
+  };
+
   const logout = async () => {
     await dataService.logout();
     await supabase.auth.signOut();
     setUser(null);
+    setEffectiveUser(null);
+    sessionStorage.removeItem('effective_user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation }}>
       {children}
     </AuthContext.Provider>
   );

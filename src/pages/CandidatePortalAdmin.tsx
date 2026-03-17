@@ -9,27 +9,33 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MatchesManagement from '../components/MatchesManagement';
+import { GameMonitoring } from '../components/GameMonitoring';
 
 export default function CandidatePortalAdmin() {
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [leaderboard, setLeaderboard] = useState<GameScore[]>([]);
+  const [weeklyLeaderboard, setWeeklyLeaderboard] = useState<any>(null);
   const [stats, setStats] = useState({ registeredMatches: 0, totalGames: 0, speedDatesToday: 0 });
   const [loading, setLoading] = useState(true);
   const [newImageUrl, setNewImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [showMatchesManagement, setShowMatchesManagement] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<'settings' | 'games'>('settings');
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [portalSettings, scores, portalStats] = await Promise.all([
+        const [portalSettings, scores, portalStats, weeklyLeaderboardData] = await Promise.all([
           dataService.getPortalSettings(),
           dataService.getLeaderboard(),
-          dataService.getPortalStats()
+          dataService.getPortalStats(),
+          dataService.getWeeklyLeaderboard()
         ]);
         setSettings(portalSettings);
         setLeaderboard(scores);
         setStats(portalStats);
+        setWeeklyLeaderboard(weeklyLeaderboardData);
       } catch (err) {
         console.error('Error fetching portal settings:', err);
       } finally {
@@ -128,9 +134,33 @@ export default function CandidatePortalAdmin() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Settings */}
-        <div className="lg:col-span-2 space-y-8">
+      <div className="flex gap-4 border-b border-slate-200 pb-4">
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-6 py-3 rounded-2xl font-bold transition-all ${
+            activeTab === 'settings' 
+              ? 'bg-emerald-50 text-emerald-600' 
+              : 'text-slate-500 hover:bg-slate-50'
+          }`}
+        >
+          הגדרות פורטל
+        </button>
+        <button
+          onClick={() => setActiveTab('games')}
+          className={`px-6 py-3 rounded-2xl font-bold transition-all ${
+            activeTab === 'games' 
+              ? 'bg-purple-50 text-purple-600' 
+              : 'text-slate-500 hover:bg-slate-50'
+          }`}
+        >
+          ניטור משחקים
+        </button>
+      </div>
+
+      {activeTab === 'settings' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column: Settings */}
+          <div className="lg:col-span-2 space-y-8">
           {/* Speed Date Toggle */}
           <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
             <div className="flex items-center justify-between">
@@ -266,6 +296,53 @@ export default function CandidatePortalAdmin() {
             </div>
           </section>
 
+          {/* Weekly Winners */}
+          {weeklyLeaderboard && (
+            <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center">
+                  <Trophy size={28} />
+                </div>
+                <h2 className="text-xl font-black text-slate-900">זוכים שבועיים</h2>
+              </div>
+              <div className="space-y-4">
+                {weeklyLeaderboard.mostWins.slice(0, 1).map((winner: any) => (
+                  <div key={winner.id} className="flex items-center justify-between p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white overflow-hidden">
+                        {winner.photo && <img src={winner.photo} alt="" className="w-full h-full object-cover" />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-900">{winner.name}</p>
+                        <p className="text-xs font-bold text-amber-600">אלוף הלבבות</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const candidate = await dataService.getCandidateByUserId(winner.id);
+                          const profile = await dataService.getProfileById(winner.id);
+                          if (candidate && profile && profile.phone) {
+                            await dataService.updateCandidateNotes(candidate.id, 'STAR');
+                            await dataService.sendWhatsAppMessage(profile.phone, `ברכות ${winner.name}! זכית בתואר אלוף הלבבות! הפרס הוענק לך.`);
+                            toast.success(`הפרס הוענק ל${winner.name}!`);
+                          } else {
+                            toast.error(`לא נמצא מועמד או מספר טלפון ל${winner.name}`);
+                          }
+                        } catch (error) {
+                          toast.error(`שגיאה בהענקת הפרס: ${error}`);
+                        }
+                      }}
+                      className="px-4 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-all"
+                    >
+                      Reward
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Leaderboard Preview */}
           <section className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
             <div className="flex items-center gap-3">
@@ -294,6 +371,9 @@ export default function CandidatePortalAdmin() {
           </section>
         </div>
       </div>
+      ) : (
+        <GameMonitoring />
+      )}
     </div>
   );
 }

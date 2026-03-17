@@ -375,7 +375,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
                       {msg.sender_id === user?.id && (
                         <button 
                           onClick={async () => {
-                            if (!window.confirm('למחוק הודעה זו?')) return;
+                            // if (!window.confirm('למחוק הודעה זו?')) return;
                             try {
                               setMessages(prev => prev.filter(m => m.id !== msg.id));
                               toast.success('הודעה נמחקה');

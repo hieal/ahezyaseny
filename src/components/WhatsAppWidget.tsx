@@ -184,9 +184,9 @@ export function WhatsAppWidget({
     }
 
     if (isOpeningSent) {
-      const lastTime = lastInitialSent ? new Date(lastInitialSent).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
-      const confirm = window.confirm(`הודעה זו נשלחה כבר היום בקבוצה בשעה ${lastTime}. האם לשלוח שוב?`);
-      if (!confirm) return;
+      // const lastTime = lastInitialSent ? new Date(lastInitialSent).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+      // const confirm = window.confirm(`הודעה זו נשלחה כבר היום בקבוצה בשעה ${lastTime}. האם לשלוח שוב?`);
+      // if (!confirm) return;
     }
 
     setActiveTab('chat');
@@ -197,7 +197,7 @@ export function WhatsAppWidget({
   };
 
   const handleDeleteMessage = async (messageId: string) => {
-    if (!window.confirm('האם אתה בטוח שברצונך למחוק את ההודעה?')) return;
+    // if (!window.confirm('האם אתה בטוח שברצונך למחוק את ההודעה?')) return;
 
     setMessages(prev => prev.filter(m => m.id !== messageId));
     toast.success('ההודעה נמחקה (מחיקה מקומית בלבד)');
@@ -229,11 +229,11 @@ export function WhatsAppWidget({
     
     // Duplicate confirmation inside widget
     if (currentMatch.last_published_at) {
-      const lastDate = new Date(currentMatch.last_published_at).toLocaleDateString('he-IL');
-      const lastTime = new Date(currentMatch.last_published_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+      // const lastDate = new Date(currentMatch.last_published_at).toLocaleDateString('he-IL');
+      // const lastTime = new Date(currentMatch.last_published_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
       
-      const confirm = window.confirm(`משודך זה פורסם בתאריך ${lastDate} בשעה ${lastTime}. האם לפרסם שוב?`);
-      if (!confirm) return;
+      // const confirm = window.confirm(`משודך זה פורסם בתאריך ${lastDate} בשעה ${lastTime}. האם לפרסם שוב?`);
+      // if (!confirm) return;
     }
 
     const text = includeText ? (matchMessage || `*כרטיס חדש במערכת:*

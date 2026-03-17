@@ -6,6 +6,7 @@ export const formatMatchMessage = (match: Match, template: string = "") => {
   const lines = [
     template,
     "",
+    match.notes && (match.notes.includes('STAR') || match.notes.includes('VIP')) ? `🌟 ${match.notes.includes('VIP') ? 'VIP' : 'STAR'} 🌟` : "",
     `😊 שם: ${match.name}`,
     `🎂 גיל: ${match.age}`,
     `🌱 גובה: ${match.height || '---'}`,

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Stats, Match, WhatsAppGroup } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save, Activity } from 'lucide-react';
+import { Stats, Match, WhatsAppGroup, User as UserType } from '../types';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User as UserIcon, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
@@ -13,6 +13,7 @@ import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { MatchSuggestions } from '../components/MatchSuggestions';
 import MatchesManagement from '../components/MatchesManagement';
 import NewMatchesModal from '../components/NewMatchesModal';
+import { getGenderedText } from '../utils/gender';
 
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
@@ -21,7 +22,8 @@ import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
 
 export default function Dashboard() {
-  const { user, refreshUser } = useAuth();
+  const { user, effectiveUser, refreshUser } = useAuth();
+  const activeUser = effectiveUser || user;
   const { openChat } = useChat();
   const { presenceState } = usePresence();
   const { type } = useParams();
@@ -49,19 +51,19 @@ export default function Dashboard() {
   const [personalTemplateFemale, setPersonalTemplateFemale] = useState('');
 
   useEffect(() => {
-    if (user) {
+    if (activeUser) {
       try {
-        const parsed = JSON.parse(user.daily_message_template || '{}');
-        setPersonalTemplate(parsed.general || user.daily_message_template || '');
+        const parsed = JSON.parse(activeUser.daily_message_template || '{}');
+        setPersonalTemplate(parsed.general || activeUser.daily_message_template || '');
         setPersonalTemplateMale(parsed.male || '');
         setPersonalTemplateFemale(parsed.female || '');
       } catch (e) {
-        setPersonalTemplate(user.daily_message_template || '');
+        setPersonalTemplate(activeUser.daily_message_template || '');
         setPersonalTemplateMale('');
         setPersonalTemplateFemale('');
       }
     }
-  }, [user]);
+  }, [activeUser]);
   const [templateGender, setTemplateGender] = useState<'all' | 'male' | 'female'>('all');
   const [publishText, setPublishText] = useState(true);
   const [publishModalTab, setPublishModalTab] = useState<'status' | 'content' | 'chat'>('status');
@@ -90,6 +92,7 @@ export default function Dashboard() {
   const [sortByDate, setSortByDate] = useState(true); // Default newest first
   const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
   const [managerFilter, setManagerFilter] = useState<'all' | 'me' | 'group'>('all');
+  const [teamManagerFilter, setTeamManagerFilter] = useState<string | null>(null);
 
   const [showGlobalBreakdownModal, setShowGlobalBreakdownModal] = useState(false);
   const [showNewMatchesModal, setShowNewMatchesModal] = useState(false);
@@ -148,29 +151,30 @@ export default function Dashboard() {
   const [loadingNotes, setLoadingNotes] = useState(false);
 
   const adminsInSameGroups = allUsers.filter(u => {
-    if (user?.role === 'super_admin') return true;
-    if (!user?.category && !user?.secondary_category) return u.id === user?.id;
+    if (activeUser?.role === 'super_admin') return true;
+    if (activeUser?.role === 'team_leader') {
+      return u.affiliation_group === activeUser.affiliation_group;
+    }
+    if (!activeUser?.category && !activeUser?.secondary_category) return u.id === activeUser?.id;
     
-    const myCategories = [user.category, user.secondary_category].filter(Boolean);
+    const myCategories = [activeUser.category, activeUser.secondary_category].filter(Boolean);
     const userCategories = [u.category, u.secondary_category].filter(Boolean);
     
     return userCategories.some(cat => myCategories.includes(cat));
   });
 
   const fetchTeamData = async () => {
-    if (!user || user.role !== 'team_leader') return;
+    if (!activeUser || activeUser.role !== 'team_leader') return;
     setLoadingTeamData(true);
     try {
-      // Get admins in the same category
+      // Get admins in the same affiliation group
       const teamAdmins = allUsers.filter(u => {
-        const myCategories = [user.category, user.secondary_category].filter(Boolean);
-        const userCategories = [u.category, u.secondary_category].filter(Boolean);
-        return userCategories.some(cat => myCategories.includes(cat)) && u.id !== user.id;
+        return u.affiliation_group === activeUser.affiliation_group && u.id !== activeUser.id;
       });
       
       setTeamAdminsData(teamAdmins);
       
-      const adminIds = teamAdmins.map(a => a.id);
+      const adminIds = [activeUser.id, ...teamAdmins.map(a => a.id)];
       if (adminIds.length > 0) {
         const [activity, publish] = await Promise.all([
           dataService.getTeamActivity(adminIds),
@@ -215,13 +219,13 @@ export default function Dashboard() {
   };
 
   const handleAddNote = async () => {
-    if (!notesMatch || !newNoteText.trim() || !user) return;
+    if (!notesMatch || !newNoteText.trim() || !activeUser) return;
     
     try {
       const note = await dataService.createMatchNote({
         match_id: notesMatch.id,
-        user_id: user.id,
-        user_name: user.full_name,
+        user_id: activeUser.id,
+        user_name: activeUser.full_name,
         text: newNoteText,
         is_available: isNoteAvailable
       });
@@ -242,7 +246,7 @@ export default function Dashboard() {
   };
 
   const handleDeleteNote = async (noteId: string, noteUserId: string) => {
-    if (user?.id !== noteUserId && user?.role !== 'super_admin') {
+    if (activeUser?.id !== noteUserId && activeUser?.role !== 'super_admin') {
       toast.error('רק המנהל שכתב את ההערה יכול למחוק אותה');
       return;
     }
@@ -595,8 +599,8 @@ export default function Dashboard() {
     const footerY = canvasHeight - 220; 
     
     // Decorative Box for Manager Label
-    const isCreatorFemale = match.creator_gender ? match.creator_gender === 'female' : user?.gender === 'female';
-    const labelText = `נשלח על ידי ${isCreatorFemale ? 'המנהלת' : 'המנהל'}: ${match.creator_name || user?.name || 'מערכת'}`;
+    const isCreatorFemale = match.creator_gender ? match.creator_gender === 'female' : activeUser?.gender === 'female';
+    const labelText = `נשלח על ידי ${isCreatorFemale ? 'המנהלת' : 'המנהל'}: ${match.creator_name || activeUser?.name || 'מערכת'}`;
     ctx.font = 'bold 60px sans-serif';
     const textWidth = ctx.measureText(labelText).width;
     const boxWidth = textWidth + 120;
@@ -624,12 +628,12 @@ export default function Dashboard() {
     ctx.textAlign = 'center';
     ctx.fillText(labelText, 800, footerY);
     
-    if (match.creator_phone || user?.phone) {
+    if (match.creator_phone || activeUser?.phone) {
       ctx.save();
       ctx.font = 'bold 54px sans-serif';
       ctx.fillStyle = '#0f172a';
       ctx.textAlign = 'center';
-      ctx.fillText(`ליצירת קשר: ${match.creator_phone || user?.phone}`, 800, footerY + 100);
+      ctx.fillText(`ליצירת קשר: ${match.creator_phone || activeUser?.phone}`, 800, footerY + 100);
       ctx.restore();
     }
 
@@ -731,7 +735,8 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const matchesData = await dataService.getMatches(undefined, user || undefined);
+      const filterUser = teamManagerFilter ? { id: teamManagerFilter, role: 'admin' } as UserType : (activeUser || undefined);
+      const matchesData = await dataService.getMatches(undefined, filterUser);
       
       // Filter out trash and archived/inactive candidates for the main dashboard view
       const activeMatches = matchesData.filter(m => {
@@ -743,7 +748,7 @@ export default function Dashboard() {
       setMatches(activeMatches);
       
       const [statsData, settingsData, groupsData, usersData] = await Promise.all([
-        dataService.getStats(user || undefined),
+        dataService.getStats(activeUser || undefined, teamManagerFilter || undefined),
         dataService.getSettings(),
         dataService.getWhatsAppGroups(),
         dataService.getUsers()
@@ -763,7 +768,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData();
-  }, [user]);
+  }, [activeUser, teamManagerFilter]);
 
   const handleDelete = async (id: string) => {
     setDeleteConfirmId(id);
@@ -845,7 +850,7 @@ export default function Dashboard() {
     // Match is female -> Published in Male group
     const targetType = match.type === 'male' ? 'female' : 'male';
     const defaultGroup = whatsappGroups.find(g => 
-      g.category?.trim() === user?.category?.trim() && 
+      g.category?.trim() === match.category?.trim() && 
       g.type === targetType
     );
     
@@ -854,7 +859,7 @@ export default function Dashboard() {
     setSelectedGroupId(defaultGroup?.id || null);
 
     if (!defaultGroup) {
-      toast.error(`לא נמצאה קבוצת וואטסאפ משוייכת לקטגוריה ${user?.category || 'שלך'} עבור ${match.type === 'male' ? 'בנות' : 'בנים'}. אנא פנה למנהל הראשי.`);
+      toast.error(`לא נמצאה קבוצת וואטסאפ משוייכת לקטגוריה ${match.category || 'שלך'} עבור ${match.type === 'male' ? 'בנות' : 'בנים'}. אנא פנה למנהל הראשי.`);
     }
 
     setShowPublishModal(true);
@@ -1071,8 +1076,8 @@ export default function Dashboard() {
     // Manager View (Strict Filtering)
     const matchesManagerView = (() => {
       if (user?.role !== 'admin') return true;
-      if (managerFilter === 'me') return m.created_by === user.id;
-      if (managerFilter === 'group') return m.created_by !== user.id;
+      if (managerFilter === 'me') return m.created_by === activeUser?.id;
+      if (managerFilter === 'group') return m.created_by !== activeUser?.id;
       return true;
     })();
 
@@ -1314,7 +1319,7 @@ export default function Dashboard() {
                   <Users size={24} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900">לוח בקרה - ראש צוות</h2>
+                  <h2 className="text-2xl font-black text-slate-900">לוח בקרה - {getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות')}</h2>
                   <p className="text-slate-500 font-medium">ניהול ומעקב אחר צוות המנהלים שלך</p>
                 </div>
               </div>
@@ -1911,10 +1916,10 @@ export default function Dashboard() {
                   const now = new Date();
                   const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
                   
-                  const isOwner = (m: Match) => user?.role === 'super_admin' || 
-                                         user?.role === 'team_leader' ||
-                                         m.created_by === user?.id || 
-                                         (user?.category && m.creator_category === user.category);
+                  const isOwner = (m: Match) => activeUser?.role === 'super_admin' || 
+                                         activeUser?.role === 'team_leader' ||
+                                         m.created_by === activeUser?.id || 
+                                         (activeUser?.category && m.creator_category === activeUser.category);
 
                   const publishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo && isOwner(m)).length;
                   const notPublishedLastMonth = matches.filter(m => m.last_published_at && new Date(m.last_published_at) < oneMonthAgo && isOwner(m)).length;
@@ -2000,19 +2005,47 @@ export default function Dashboard() {
       {!type && (
         <div className="space-y-4">
           {user?.role !== 'super_admin' && (
-            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
-              <button 
-                onClick={() => setStatsViewMode('me')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'me' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
-              >
-                המשודכים שלי
-              </button>
-              <button 
-                onClick={() => setStatsViewMode('group')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'group' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
-              >
-                המשודכים בקבוצה שלי
-              </button>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
+                <button 
+                  onClick={() => {
+                    setStatsViewMode('me');
+                    setTeamManagerFilter(null);
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'me' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+                >
+                  המשודכים שלי
+                </button>
+                <button 
+                  onClick={() => {
+                    setStatsViewMode('group');
+                    setTeamManagerFilter(null);
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statsViewMode === 'group' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+                >
+                  {user?.role === 'team_leader' ? 'המשודכים בצוות שלי' : 'המשודכים בקבוצה שלי'}
+                </button>
+              </div>
+
+              {user?.role === 'team_leader' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500">צפה בנתוני מנהל/ת:</span>
+                  <select 
+                    value={teamManagerFilter || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTeamManagerFilter(val || null);
+                      if (val) setStatsViewMode('me');
+                    }}
+                    className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-luxury-blue/20"
+                  >
+                    <option value="">בחר מנהל/ת...</option>
+                    {teamAdminsData.map(admin => (
+                      <option key={admin.id} value={admin.id}>{admin.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -3152,7 +3185,7 @@ export default function Dashboard() {
                           <div>
                             <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
                             <p className="text-[10px] text-slate-500">
-                              ראש צוות | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
+                              {getGenderedText(u.gender, 'ראש צוות', 'ראשת צוות')} | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
                             </p>
                           </div>
                         </div>
@@ -3422,10 +3455,10 @@ export default function Dashboard() {
                           return true;
                         }
                         if (statsModalType === 'neverPublished') {
-                          const isOwner = user?.role === 'super_admin' || 
-                                         user?.role === 'team_leader' ||
-                                         m.created_by === user?.id || 
-                                         (user?.category && m.creator_category === user.category);
+                          const isOwner = activeUser?.role === 'super_admin' || 
+                                         activeUser?.role === 'team_leader' ||
+                                         m.created_by === activeUser?.id || 
+                                         (activeUser?.category && m.creator_category === activeUser.category);
                           return !m.last_published_at && isOwner;
                         }
                         if (statsModalType === 'publishedLastMonth') return m.last_published_at && new Date(m.last_published_at) >= oneMonthAgo;

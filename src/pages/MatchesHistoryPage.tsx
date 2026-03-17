@@ -8,7 +8,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import MatchCard from '../components/MatchCard';
 
 export default function MatchesHistoryPage() {
-  const { user } = useAuth();
+  const { user, effectiveUser } = useAuth();
+  const activeUser = effectiveUser || user;
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -23,8 +24,8 @@ export default function MatchesHistoryPage() {
   const fetchConfirmedMatches = async () => {
     try {
       setLoading(true);
-      const males = await dataService.getMatches('male');
-      const females = await dataService.getMatches('female');
+      const males = await dataService.getMatches('male', activeUser || undefined);
+      const females = await dataService.getMatches('female', activeUser || undefined);
       const allMatches = [...males, ...females].filter(m => m.is_published_confirmed === 1);
       setMatches(allMatches);
     } catch (err) {
@@ -48,7 +49,7 @@ export default function MatchesHistoryPage() {
 
   useEffect(() => {
     fetchConfirmedMatches();
-  }, []);
+  }, [activeUser]);
 
   const handleMatchClick = (match: Match) => {
     setSelectedMatch(match);

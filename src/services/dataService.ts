@@ -1,5 +1,6 @@
-import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote, GameScore, PortalSettings, SpeedDateSession } from '../types';
+import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote, GameScore, PortalSettings, SpeedDateSession, Blacklist } from '../types';
 import { supabase, supabaseAdmin } from './supabase';
+import { isVercel } from '../utils/env';
 
 export type BackendMode = 'temporary' | 'production';
 
@@ -11,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT,
   username TEXT UNIQUE,
-  email TEXT,
+  email TEXT UNIQUE,
   password TEXT,
   password_plain TEXT,
   role TEXT DEFAULT 'admin',
@@ -30,6 +31,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
   assigned_group_id UUID,
+  affiliation_group TEXT,
+  age_groups TEXT,
   created_by UUID,
   creator_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -75,7 +78,25 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   is_published_confirmed INTEGER DEFAULT 0,
   crop_config TEXT,
   creation_source TEXT,
+  managed_by UUID,
+  previous_admin_data TEXT,
+  transfer_status TEXT,
+  target_admin_id UUID,
+  transfer_approved_at TIMESTAMP WITH TIME ZONE,
+  initial_contact_done BOOLEAN DEFAULT FALSE,
   password TEXT DEFAULT '12345678'
+);
+
+-- Create blacklist table
+CREATE TABLE IF NOT EXISTS public.blacklist (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT,
+  phone TEXT,
+  full_name TEXT,
+  reason TEXT,
+  notes TEXT,
+  created_by UUID,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create activity_logs table
@@ -97,6 +118,19 @@ CREATE TABLE IF NOT EXISTS public.game_scores (
   candidate_name TEXT,
   game_type TEXT,
   score INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create game_sessions table
+CREATE TABLE IF NOT EXISTS public.game_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_type TEXT,
+  player1_id UUID,
+  player1_name TEXT,
+  player2_id UUID,
+  player2_name TEXT,
+  is_active BOOLEAN DEFAULT true,
+  current_state JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -178,6 +212,9 @@ CREATE TABLE IF NOT EXISTS public.candidate_transfers (
 );
 
 -- Ensure columns exist (in case table was created in older version)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'published';
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'published';
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'published';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS google_login_allowed TEXT DEFAULT 'false';
@@ -196,8 +233,13 @@ ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_age INTEGER;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS match_city TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
 ALTER TABLE public.internal_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS previous_admin_data TEXT;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS transfer_status TEXT;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS target_admin_id UUID;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS transfer_approved_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true;
 ALTER TABLE public.publish_logs ADD COLUMN IF NOT EXISTS group_id UUID;
+ALTER TABLE public.game_logs ADD COLUMN IF NOT EXISTS final_state JSONB;
 
 -- Disable RLS for all tables to allow prototype access (The "Switch")
 ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
@@ -208,6 +250,7 @@ ALTER TABLE public.whatsapp_groups DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.internal_messages DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidate_notes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidate_transfers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.blacklist DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.game_scores DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.portal_settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.speed_date_sessions DISABLE ROW LEVEL SECURITY;
@@ -259,20 +302,51 @@ class DataService {
     return 'production';
   }
 
+  private getSyncStatus = () => isVercel() ? 'published' : 'draft';
+
+  private applySyncFilter(query: any) {
+    if (isVercel()) {
+      return query.eq('sync_status', 'published');
+    }
+    return query;
+  }
+
+  private applySyncStatus(data: any) {
+    return { ...data, sync_status: this.getSyncStatus() };
+  }
+
+  async publishChanges(): Promise<void> {
+    const { error: pError } = await supabaseAdmin
+      .from('profiles')
+      .update({ sync_status: 'published' })
+      .eq('sync_status', 'draft');
+    if (pError) throw pError;
+    
+    const { error: cError } = await supabaseAdmin
+      .from('candidates')
+      .update({ sync_status: 'published' })
+      .eq('sync_status', 'draft');
+    if (cError) throw cError;
+
+    const { error: mError } = await supabaseAdmin
+      .from('matches')
+      .update({ sync_status: 'published' })
+      .eq('sync_status', 'draft');
+    if (mError) throw mError;
+  }
+
   private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
     try {
       const { data, error } = await promise;
       if (error) {
         console.error('Supabase error details:', error);
+        // 42P01: Table does not exist
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
         }
+        // 42703: Column does not exist, PGRST204: Schema cache error
         if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
-          console.warn(`Missing column or schema cache error: ${error.message}. Please run the SQL migration and refresh.`);
-          // If it's a schema cache error, we might want to tell the user to sync schema
-          if (error.code === 'PGRST204') {
-            throw new Error('שגיאת סנכרון בשרת (Schema Cache). אנא לחץ על כפתור "סנכרן סכמה" בהגדרות או בדף ההתחברות.');
-          }
+          console.warn(`Missing column or schema cache error: ${error.message}. Returning null/empty.`);
           return null;
         }
         if (error.code === '42501' || error.message?.includes('permission denied')) {
@@ -282,11 +356,30 @@ class DataService {
       }
       return data;
     } catch (err: any) {
+      // If it's a missing column error caught in catch block
+      if (err.message && (err.message.includes('column') || err.message.includes('does not exist'))) {
+        return null;
+      }
       console.error('Supabase error:', err);
       if (err.message && (err.message.includes('סנכרון') || err.message.includes('הרשאות'))) {
         throw err;
       }
       throw new Error(`שגיאה בחיבור לשרת: ${err.message || 'וודא שהמפתחות תקינים'}`);
+    }
+  }
+
+  private async safeQuery<T>(query: any, fallback: T): Promise<T> {
+    try {
+      const { data, error } = await query;
+      if (error) {
+        if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
+          return fallback;
+        }
+        throw error;
+      }
+      return data || fallback;
+    } catch (e) {
+      return fallback;
     }
   }
 
@@ -326,6 +419,28 @@ class DataService {
     });
   }
 
+  async syncCandidatesFromAirtable(token: string, baseId: string, profilesPromise: any): Promise<{ success: boolean; message: string }> {
+    // const { data: profilesData } = await profilesPromise;
+    // const existingAdmins = profilesData || [];
+    // Implement Airtable API logic here, using existingAdmins if needed
+    // Direct Airtable access only
+    console.log('Direct Airtable sync initiated for base:', baseId);
+    return { success: false, message: 'טרם מומש' };
+  }
+
+  async isBlacklisted(email: string, phone: string, full_name: string): Promise<Blacklist | null> {
+    const { data, error } = await supabase
+      .from('blacklist')
+      .select('*')
+      .or(`email.eq.${email},phone.eq.${phone},full_name.eq.${full_name}`)
+      .limit(1);
+    
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+    return data[0] as Blacklist;
+  }
+
   // Auth
   async heartbeat(): Promise<boolean> {
     const sessionUserJson = sessionStorage.getItem('current_user');
@@ -338,9 +453,13 @@ class DataService {
       const user = JSON.parse(userJson);
       // Don't update for the fallback "מנהל ראשי"
       if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
-        await supabase.from('profiles').update({ 
-          last_login: new Date().toISOString(), 
+        const query = supabase.from('profiles').update({ 
+          last_login: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+          is_online: true
         }).eq('id', user.id);
+        
+        await this.safeQuery(query, null);
       }
       return true;
     } catch (err) {
@@ -375,9 +494,10 @@ class DataService {
       }
       
       const u = data as any;
+      const fallbackName = (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
       const updatedUser: User = {
         ...u,
-        name: u.full_name || u.name || u.email?.split('@')[0] || u.username || 'מנהל ללא שם'
+        name: u.full_name || u.name || u.email?.split('@')[0] || u.username || fallbackName
       };
       
       if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
@@ -387,6 +507,22 @@ class DataService {
     } catch (err) {
       return user;
     }
+  }
+
+  getEffectiveUser(): User | null {
+    const effectiveUserJson = sessionStorage.getItem('effective_user');
+    if (effectiveUserJson) {
+      try {
+        return JSON.parse(effectiveUserJson);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  getEffectiveUserId(): string | null {
+    return this.getEffectiveUser()?.id || null;
   }
 
   async login(usernameOrEmailOrPhone: string, password_plain: string, type: 'admin' | 'candidate'): Promise<User | null> {
@@ -557,9 +693,19 @@ class DataService {
       'avatar_url', 
       'gender', 
       'role', 
+      'affiliation_group',
       'category', 
+      'secondary_category',
       'status', 
-      'password_plain'
+      'password_plain',
+      'is_approved',
+      'is_shaham_manager',
+      'google_login_allowed',
+      'created_by',
+      'creator_name',
+      'last_login',
+      'last_seen',
+      'is_online'
     ];
     
     // Map name to full_name if needed
@@ -569,18 +715,18 @@ class DataService {
 
     const sanitized: any = {};
     allowedFields.forEach(field => {
-      // Conditional username: only send for 'god' user if it causes issues for others
-      if (field === 'username') {
-        if (user.username === 'god') {
-          sanitized[field] = user[field];
-        }
-        return;
-      }
-
       if (user[field] !== undefined && user[field] !== null) {
         sanitized[field] = user[field];
       }
     });
+
+    // Parse Airtable image links
+    if (sanitized.avatar_url && typeof sanitized.avatar_url === 'string') {
+      const match = sanitized.avatar_url.match(/\((https?:\/\/[^\)]+)\)/);
+      if (match) {
+        sanitized.avatar_url = match[1];
+      }
+    }
     
     // Ensure default password if missing
     if (!sanitized.password_plain) {
@@ -598,7 +744,7 @@ class DataService {
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
       'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
-      'crop_config', 'creation_source'
+      'crop_config', 'creation_source', 'managed_by', 'target_admin_id', 'admin_id'
     ];
     
     const sanitized: any = {};
@@ -611,6 +757,15 @@ class DataService {
         }
       }
     });
+
+    // Handle column mapping if needed
+    if (match.managed_by && !sanitized.admin_id) {
+      sanitized.admin_id = match.managed_by;
+    }
+    if (match.admin_id && !sanitized.managed_by) {
+      sanitized.managed_by = match.admin_id;
+    }
+
     return sanitized;
   }
 
@@ -634,12 +789,14 @@ class DataService {
   }
 
   async getGlobalStatsBreakdown() {
-    const { data: candidates } = await supabase.from('candidates')
+    const query = supabase.from('candidates')
       .select('type, creator_category, created_by, creator_name')
       .is('deleted_at', null)
       .not('full_name', 'ilike', '%דמו%')
       .not('name', 'ilike', '%דמו%');
-    if (!candidates) return {};
+    
+    const candidates = await this.safeQuery(query, []);
+    if (!candidates || candidates.length === 0) return {};
 
     const breakdown: Record<string, { 
       total: number, 
@@ -792,6 +949,10 @@ class DataService {
 
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
+    const effectiveUser = this.getEffectiveUser();
+    const activeUser = effectiveUser || user;
+    const effectiveUserId = this.getEffectiveUserId();
+
     let query = supabase
       .from('candidates')
       .select('*')
@@ -801,20 +962,42 @@ class DataService {
       query = query.eq('type', type);
     }
 
-    // Backend Guard: If user is a manager (admin), restrict to their group (category)
-    if (user && user.role === 'admin') {
-      if (user.category) {
-        query = query.eq('category', user.category);
+    if (activeUser) {
+      if (activeUser.role === 'admin') {
+        if (activeUser.category) {
+          query = query.eq('category', activeUser.category);
+        }
+        if (effectiveUserId) {
+          // Try managed_by first, if it fails we'll catch it in safeQuery
+          query = query.or(`managed_by.eq.${effectiveUserId},admin_id.eq.${effectiveUserId}`);
+        }
+      } else if (activeUser.role === 'team_leader') {
+        if (activeUser.affiliation_group) {
+          const { data: groupUsers } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('affiliation_group', activeUser.affiliation_group);
+          
+          if (groupUsers && groupUsers.length > 0) {
+            const userIds = groupUsers.map(u => u.id);
+            query = query.or(`managed_by.in.(${userIds.join(',')}),admin_id.in.(${userIds.join(',')})`);
+          }
+        }
+        
+        if (activeUser.age_groups) {
+          const ageGroups = activeUser.age_groups.split(',').map(g => g.trim());
+          query = query.in('age_range', ageGroups);
+        }
+
+        if (effectiveUserId) {
+          query = query.or(`managed_by.eq.${effectiveUserId},admin_id.eq.${effectiveUserId}`);
+        }
+      } else if (effectiveUserId && activeUser.role !== 'super_admin') {
+        query = query.or(`managed_by.eq.${effectiveUserId},admin_id.eq.${effectiveUserId}`);
       }
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Error fetching matches:', error);
-      throw error;
-    }
-    
+    const data = await this.safeQuery(query, []);
     let candidates = data || [];
 
     // 1. Remove "trash" (no name or clearly invalid)
@@ -849,7 +1032,7 @@ class DataService {
         const passwordMap = new Map(profiles.map(p => [p.phone, p.password_plain]));
         uniqueCandidates.forEach(c => {
           if (c.phone && passwordMap.has(c.phone)) {
-            c.password = passwordMap.get(c.phone);
+            c.password = passwordMap.get(c.phone) as string;
           }
         });
       }
@@ -871,6 +1054,9 @@ class DataService {
       throw new Error('משודך עם שם וטלפון זהה כבר קיים במערכת');
     }
 
+    const effectiveUserId = this.getEffectiveUserId();
+    const effectiveUser = this.getEffectiveUser();
+
     const newMatch: any = {
       ...match,
       created_at: new Date().toISOString(),
@@ -878,12 +1064,13 @@ class DataService {
       last_published_at: null,
       deleted_at: null,
       is_published_confirmed: 0,
-      created_by: match.created_by || user?.id,
-      creator_name: match.creator_name || (user?.full_name ? `${user.full_name}${user.phone ? ` (${user.phone})` : ''}` : undefined),
-      creator_category: match.creator_category || user?.category,
-      category: match.category || user?.category,
-      creator_gender: match.creator_gender || user?.gender,
-      creator_phone: match.creator_phone || user?.phone
+      created_by: match.created_by || effectiveUserId || user?.id,
+      managed_by: match.managed_by || effectiveUserId || user?.id,
+      creator_name: match.creator_name || (effectiveUser?.full_name ? `${effectiveUser.full_name}${effectiveUser.phone ? ` (${effectiveUser.phone})` : ''}` : (user?.full_name ? `${user.full_name}${user.phone ? ` (${user.phone})` : ''}` : undefined)),
+      creator_category: match.creator_category || effectiveUser?.category || user?.category,
+      category: match.category || effectiveUser?.category || user?.category,
+      creator_gender: match.creator_gender || effectiveUser?.gender || user?.gender,
+      creator_phone: match.creator_phone || effectiveUser?.phone || user?.phone
     };
 
     const sanitized = this.sanitizeMatch(newMatch);
@@ -897,7 +1084,27 @@ class DataService {
       }
     }
 
-    const data = await this.handleSupabase(supabase.from('candidates').insert(sanitized).select().single());
+    // Try insert with sanitized fields
+    let data;
+    try {
+      const { data: res, error } = await supabase.from('candidates').insert(sanitized).select().single();
+      if (error) {
+        // If missing column error, try without managed_by/target_admin_id
+        if (error.code === '42703') {
+          const { managed_by, target_admin_id, admin_id, ...minimal } = sanitized;
+          const { data: retryRes, error: retryError } = await supabase.from('candidates').insert(minimal).select().single();
+          if (retryError) throw retryError;
+          data = retryRes;
+        } else {
+          throw error;
+        }
+      } else {
+        data = res;
+      }
+    } catch (err) {
+      console.error('Error creating match:', err);
+      throw err;
+    }
     
     // Handle password in profiles table
     if (match.password && match.phone) {
@@ -914,13 +1121,13 @@ class DataService {
           full_name: match.full_name || match.name
         }).eq('id', existingProfile.id);
       } else {
-        await supabase.from('profiles').insert({
+        await supabase.from('profiles').upsert({
           phone: phone,
           password_plain: match.password,
           role: 'candidate',
           full_name: match.full_name || match.name,
           username: phone // Use phone as username for candidates
-        });
+        }, { onConflict: 'username' });
       }
     }
 
@@ -939,7 +1146,26 @@ class DataService {
       }
     }
 
-    const data = await this.handleSupabase(supabase.from('candidates').update(sanitized).eq('id', id).select().maybeSingle());
+    let data;
+    try {
+      const { data: res, error } = await supabase.from('candidates').update(sanitized).eq('id', id).select().maybeSingle();
+      if (error) {
+        // If missing column error, try without managed_by/target_admin_id
+        if (error.code === '42703') {
+          const { managed_by, target_admin_id, admin_id, ...minimal } = sanitized;
+          const { data: retryRes, error: retryError } = await supabase.from('candidates').update(minimal).eq('id', id).select().maybeSingle();
+          if (retryError) throw retryError;
+          data = retryRes;
+        } else {
+          throw error;
+        }
+      } else {
+        data = res;
+      }
+    } catch (err) {
+      console.error('Error updating match:', err);
+      throw err;
+    }
     
     // Handle password in profiles table
     if (updates.password && (updates.phone || (data as Match)?.phone)) {
@@ -957,13 +1183,13 @@ class DataService {
             full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name
           }).eq('id', existingProfile.id);
         } else {
-          await supabase.from('profiles').insert({
+          await supabase.from('profiles').upsert({
             phone: phone,
             password_plain: updates.password,
             role: 'candidate',
             full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name,
             username: phone
-          });
+          }, { onConflict: 'username' });
         }
       }
     }
@@ -975,56 +1201,72 @@ class DataService {
     await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
   }
 
+  async getProfileById(id: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) {
+      console.error('Error fetching profile:', error);
+      return null;
+    }
+    return data;
+  }
+
+  async getCandidateByUserId(userId: string): Promise<Match | null> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('created_by', userId)
+      .single();
+    if (error) {
+      console.error('Error fetching candidate:', error);
+      return null;
+    }
+    return data;
+  }
+
+  async updateCandidateNotes(id: string, notes: string): Promise<void> {
+    await this.handleSupabase(supabase.from('candidates').update({ notes }).eq('id', id));
+  }
+
   // Candidate Transfers
   async createTransferRequest(candidateId: string, senderId: string, receiverId: string): Promise<void> {
+    const effectiveUserId = this.getEffectiveUserId();
     await this.handleSupabase(
       supabase.from('candidate_transfers').insert({
         candidate_id: candidateId,
-        sender_id: senderId,
+        sender_id: senderId || effectiveUserId,
         receiver_id: receiverId,
         status: 'pending'
       })
     );
   }
 
-  async getPendingTransfersForMe(userId: string): Promise<any[]> {
-    try {
-      // 1. Fetch transfers first
-      const { data: transfers, error } = await supabase
-        .from('candidate_transfers')
-        .select(`
-          *,
-          candidate:candidates(*)
-        `)
-        .eq('receiver_id', userId)
-        .eq('status', 'pending');
-      
-      if (error) {
-        if (error.code === 'PGRST204') {
-          console.warn('Schema cache error (PGRST204). Please sync schema.');
-        }
-        return [];
-      }
+  async getPendingTransfersForMe(userId: string): Promise<Match[]> {
+    const effectiveUserId = this.getEffectiveUserId() || userId;
+    const query = supabase
+      .from('candidates')
+      .select('*')
+      .or(`target_admin_id.eq.${effectiveUserId},receiver_id.eq.${effectiveUserId}`)
+      .eq('transfer_status', 'pending')
+      .is('deleted_at', null);
 
-      if (!transfers || transfers.length === 0) return [];
+    return this.safeQuery(query, []);
+  }
 
-      // 2. Fetch sender names separately to avoid join issues
-      const senderIds = [...new Set(transfers.map(t => t.sender_id))];
-      const { data: senders } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', senderIds);
+  async getOrphanedCandidatesCount(): Promise<number> {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    const query = supabase
+      .from('candidates')
+      .select('id')
+      .or(`managed_by.is.null,admin_id.is.null,transfer_status.eq.orphaned,and(transfer_status.eq.approved,transfer_approved_at.gt.${twentyFourHoursAgo})`)
+      .is('deleted_at', null);
 
-      const senderMap = new Map(senders?.map(s => [s.id, s.full_name]) || []);
-
-      return transfers.map(t => ({
-        ...t,
-        sender: { full_name: senderMap.get(t.sender_id) || 'מנהל לא ידוע' }
-      }));
-    } catch (err) {
-      console.error('Error fetching pending transfers:', err);
-      return [];
-    }
+    const data = await this.safeQuery(query, []);
+    return data?.length || 0;
   }
 
   async getSentTransfersByMe(userId: string): Promise<any[]> {
@@ -1066,45 +1308,6 @@ class DataService {
     }
   }
 
-  async approveTransfer(transferId: string): Promise<void> {
-    // 1. Get the transfer details
-    const { data: transfer } = await supabase
-      .from('candidate_transfers')
-      .select('*')
-      .eq('id', transferId)
-      .single();
-
-    if (!transfer) throw new Error('Transfer not found');
-
-    // 2. Update the candidate's owner
-    const { data: receiver } = await supabase
-      .from('profiles')
-      .select('name, category, gender, phone')
-      .eq('id', transfer.receiver_id)
-      .single();
-
-    await this.handleSupabase(
-      supabase.from('candidates').update({
-        created_by: transfer.receiver_id,
-        creator_name: receiver?.name,
-        creator_category: receiver?.category,
-        creator_gender: receiver?.gender,
-        creator_phone: receiver?.phone
-      }).eq('id', transfer.candidate_id)
-    );
-
-    // 3. Update the transfer status
-    await this.handleSupabase(
-      supabase.from('candidate_transfers').update({ status: 'approved' }).eq('id', transferId)
-    );
-  }
-
-  async rejectTransfer(transferId: string): Promise<void> {
-    await this.handleSupabase(
-      supabase.from('candidate_transfers').update({ status: 'rejected' }).eq('id', transferId)
-    );
-  }
-
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     const stored = sessionStorage.getItem('current_user');
@@ -1113,23 +1316,49 @@ class DataService {
 
     try {
       console.log('Fetching all admins from profiles table...');
-      // Select only necessary fields to avoid 400 errors and improve performance
-      const { data, error } = await supabase
+      // Try to select all relevant columns
+      const query = supabase
         .from('profiles')
-        .select('id, email, full_name, role, status, category, phone, avatar_url, username, gender, last_login');
+        .select('id, email, full_name, role, status, phone, avatar_url, gender, username, affiliation_group, password_plain')
+        .order('full_name');
+      
+      const { data, error } = await this.applySyncFilter(query);
       
       if (error) {
-        console.error('CRITICAL ERROR fetching admins:', error.message, error.details, error.hint);
-        throw error;
+        // Fallback to basic columns if some columns are missing
+        console.warn('Some columns missing in profiles, falling back to basic columns:', error.message);
+        const basicQuery = supabase
+          .from('profiles')
+          .select('id, email, full_name, role, status, phone, avatar_url, gender, affiliation_group, username')
+          .order('full_name');
+        const { data: basicData, error: basicError } = await this.applySyncFilter(basicQuery);
+        
+        if (basicError) throw basicError;
+        
+        const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
+        return (basicData || []).map(u => ({
+          ...u,
+          affiliation_group: u.affiliation_group,
+          category: u.category,
+          age_groups: u.age_groups,
+          username: u.username,
+          gender: u.gender,
+          password_plain: '',
+          role: safeMap(u.role, 'viewer'),
+          full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם'),
+          name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם')
+        })) as User[];
       }
 
-      // Ensure full_name is populated for all users
-      const processedData = (data || []).map(u => ({
+      const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
+      return (data || []).map(u => ({
         ...u,
-        name: u.full_name || u.username || u.email?.split('@')[0] || 'מנהל ללא שם'
-      }));
-
-      return processedData as User[];
+        role: safeMap(u.role, 'viewer'),
+        full_name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
+        name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
+        username: u.username,
+        affiliation_group: u.affiliation_group
+      })) as User[];
     } catch (err: any) {
       console.error('FAILED to fetch admins from Supabase:', err);
       throw err;
@@ -1139,45 +1368,61 @@ class DataService {
   async getUserById(id: string): Promise<User | null> {
     const data = await this.handleSupabase(
       supabase.from('profiles')
-        .select('id, email, full_name, role, status, category, phone, avatar_url, username, gender, last_login')
+        .select('id, email, full_name, role, status, phone, avatar_url')
         .eq('id', id)
         .single()
     );
     if (data) {
       const u = data as any;
-      u.name = u.full_name || u.email?.split('@')[0] || u.username || 'מנהל ללא שם';
-      return u as User;
+      const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
+      
+      return {
+        ...u,
+        affiliation_group: u.affiliation_group,
+        category: u.category,
+        age_groups: u.age_groups,
+        username: u.username,
+        gender: u.gender,
+        name: u.full_name || u.email?.split('@')[0] || fallbackName
+      } as User;
     }
     return null;
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    const data = await this.handleSupabase(
-      supabase.from('profiles')
-        .select('id, email, phone, username, full_name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, created_by')
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
         .eq('email', email)
         .limit(1)
-        .maybeSingle()
-    );
+        .maybeSingle();
     if (data) {
       const u = data as any;
-      u.name = u.full_name || u.email?.split('@')[0] || u.username || 'מנהל ללא שם';
-      return u as User;
+      const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
+      return {
+        ...u,
+        affiliation_group: u.affiliation_group || 'כללי',
+        username: u.username || u.email || u.id,
+        gender: u.gender || 'male',
+        name: u.full_name || u.email?.split('@')[0] || fallbackName
+      } as User;
     }
     return null;
   }
 
   async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
     const currentUser = await this.getCurrentUser();
+    const effectiveUserId = this.getEffectiveUserId();
     const newUser: any = {
       ...user,
       password_plain: user.password_plain || '12345678',
-      created_by: currentUser?.id
+      created_by: effectiveUserId || currentUser?.id
     };
 
     const sanitized = this.sanitizeAdmin(newUser);
-    console.log('Sending to Supabase (profiles):', sanitized);
-    const data = await this.handleSupabase(supabase.from('profiles').insert(sanitized).select().single());
+    const withSync = this.applySyncStatus(sanitized);
+    console.log('Sending to Supabase (profiles):', withSync);
+    const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'email' }).select().single());
     return data as User;
   }
 
@@ -1186,31 +1431,122 @@ class DataService {
       updates.password_updated_at = new Date().toISOString();
     }
     const sanitized = this.sanitizeAdmin(updates);
-    console.log('Updating Supabase (profiles):', sanitized);
-    const data = await this.handleSupabase(supabase.from('profiles').update(sanitized).eq('id', id).select().single());
+    const withSync = this.applySyncStatus(sanitized);
+    console.log('Updating Supabase (profiles):', withSync);
+    const data = await this.handleSupabase(supabase.from('profiles').update(withSync).eq('id', id).select().single());
     return data as User;
   }
 
   async deleteUser(idOrIds: string | string[]): Promise<void> {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-    
-    // Safeguard: Never allow deleting the 'god' user
-    // We need to find if any of the IDs belong to 'god'
-    // Actually, it's safer to just filter out the 'god-id' if we know it, 
-    // or better, the UI should prevent it. 
-    // But for extra safety, we can check the usernames if we had them.
-    // Since we only have IDs here, we assume the UI handles the 'god' check.
-    // However, if we want to be absolutely sure, we'd need to fetch them first, 
-    // but that's expensive. Let's assume 'god-id' is a known constant or handled by UI.
-    const filteredIds = ids.filter(id => id !== 'god-id');
+    const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+    const filteredIds = ids.filter(id => id !== godId);
     
     if (filteredIds.length === 0) return;
 
-    if (filteredIds.length === 1) {
-      await this.handleSupabase(supabase.from('profiles').delete().eq('id', filteredIds[0]));
-    } else {
-      await this.handleSupabase(supabase.from('profiles').delete().in('id', filteredIds));
+    // 1. Fetch user info for previous_admin_data
+    const { data: usersToDelete } = await supabase
+      .from('profiles')
+      .select('id, full_name, name, username')
+      .in('id', filteredIds);
+
+    if (usersToDelete) {
+      for (const user of usersToDelete) {
+        const adminData = JSON.stringify({
+          id: user.id,
+          name: user.full_name || user.name || user.username,
+          deleted_at: new Date().toISOString()
+        });
+
+        // 2. Update candidates: set managed_by to null and store previous data
+        await supabase
+          .from('candidates')
+          .update({
+            managed_by: null,
+            previous_admin_data: adminData,
+            transfer_status: 'orphaned'
+          })
+          .eq('managed_by', user.id);
+      }
     }
+
+    // 3. Delete the users
+    await this.handleSupabase(supabase.from('profiles').delete().in('id', filteredIds));
+  }
+
+  async transferCandidates(candidateIds: string[], targetAdminId: string): Promise<void> {
+    await this.handleSupabase(
+      supabase
+        .from('candidates')
+        .update({
+          target_admin_id: targetAdminId,
+          transfer_status: 'pending'
+        })
+        .in('id', candidateIds)
+    );
+  }
+
+  async approveTransfer(candidateIds: string[]): Promise<void> {
+    const ids = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+    
+    const { data: candidates } = await supabase
+      .from('candidates')
+      .select('id, target_admin_id')
+      .in('id', ids);
+    
+    if (candidates) {
+      for (const cand of candidates) {
+        if (cand.target_admin_id) {
+          await supabase
+            .from('candidates')
+            .update({
+              managed_by: cand.target_admin_id,
+              transfer_status: 'approved',
+              transfer_approved_at: new Date().toISOString(),
+              target_admin_id: null
+            })
+            .eq('id', cand.id);
+        }
+      }
+    }
+  }
+
+  async rejectTransfer(candidateIds: string[]): Promise<void> {
+    const ids = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+    await this.handleSupabase(
+      supabase
+        .from('candidates')
+        .update({
+          target_admin_id: null,
+          transfer_status: 'orphaned'
+        })
+        .in('id', ids)
+    );
+  }
+
+  async getOrphanedCandidates(): Promise<Match[]> {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .or(`managed_by.is.null,transfer_status.eq.orphaned,and(transfer_status.eq.approved,transfer_approved_at.gt.${twentyFourHoursAgo})`)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return (data || []) as Match[];
+  }
+
+  async getPendingTransfers(adminId: string): Promise<Match[]> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('target_admin_id', adminId)
+      .eq('transfer_status', 'pending')
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return (data || []) as Match[];
   }
 
   // Images
@@ -1466,10 +1802,11 @@ class DataService {
   }
 
   async createMatchNote(note: Omit<MatchNote, 'id' | 'created_at'>): Promise<MatchNote> {
+    const effectiveUser = this.getEffectiveUser();
     const dbNote = {
       match_id: note.match_id,
-      user_id: note.user_id,
-      user_name: note.user_name,
+      user_id: note.user_id || effectiveUser?.id,
+      user_name: note.user_name || effectiveUser?.full_name || effectiveUser?.name,
       text: note.text + (note.is_available ? '\n[סטטוס: פנוי לפרסום]' : '\n[סטטוס: לא פנוי לפרסום]')
     };
 
@@ -1500,11 +1837,12 @@ class DataService {
   // Activity Logs
   async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
     try {
+      const effectiveUserId = this.getEffectiveUserId();
       const newLog = {
         ...log,
         id: this.generateUUID(),
         created_at: new Date().toISOString(),
-        user_id: log.user_id || '00000000-0000-0000-0000-000000000000'
+        user_id: log.user_id || effectiveUserId || '00000000-0000-0000-0000-000000000000'
       };
       await supabase.from('activity_logs').insert(newLog);
     } catch (err) {
@@ -1576,18 +1914,42 @@ class DataService {
   }
 
   async getActivityLogs(user_id?: string): Promise<ActivityLog[]> {
-    let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
-    if (user_id) query = query.eq('user_id', user_id);
-    const data = await this.handleSupabase(query);
+    let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(200);
+    
+    const effectiveUser = this.getEffectiveUser();
+    const activeUser = effectiveUser || (sessionStorage.getItem('current_user') ? JSON.parse(sessionStorage.getItem('current_user')!) : null);
+    
+    if (user_id) {
+      query = query.eq('user_id', user_id);
+    } else if (activeUser) {
+      if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
+        // Fetch admins in the same affiliation group
+        const { data: groupUsers } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('affiliation_group', activeUser.affiliation_group);
+        
+        if (groupUsers && groupUsers.length > 0) {
+          const userIds = groupUsers.map(u => u.id);
+          query = query.in('user_id', userIds);
+        }
+      } else if (activeUser.role !== 'super_admin') {
+        query = query.eq('user_id', activeUser.id);
+      }
+    }
+    
+    const data = await this.handleSupabase(query) as ActivityLog[] | null;
     return data || [];
   }
 
   // Publish Logs
   async logPublish(log: Omit<PublishLog, 'id' | 'created_at'>): Promise<void> {
     try {
+      const effectiveUserId = this.getEffectiveUserId();
       const newLog = {
         ...log,
         id: this.generateUUID(),
+        user_id: log.user_id || effectiveUserId || '00000000-0000-0000-0000-000000000000',
         created_at: new Date().toISOString()
       };
       await supabase.from('publish_logs').insert(newLog);
@@ -1596,23 +1958,48 @@ class DataService {
     }
   }
 
-  async getPublishLogs(matchId?: string): Promise<PublishLog[]> {
-    let query = supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(100);
+  async getPublishLogs(matchId?: string, user_id?: string): Promise<PublishLog[]> {
+    let query = supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(200);
+    
+    const effectiveUser = this.getEffectiveUser();
+    const activeUser = effectiveUser || (sessionStorage.getItem('current_user') ? JSON.parse(sessionStorage.getItem('current_user')!) : null);
+
+    if (user_id) {
+      query = query.eq('user_id', user_id);
+    } else if (activeUser) {
+      if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
+        // Fetch admins in the same affiliation group
+        const { data: groupUsers } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('affiliation_group', activeUser.affiliation_group);
+        
+        if (groupUsers && groupUsers.length > 0) {
+          const userIds = groupUsers.map(u => u.id);
+          query = query.in('user_id', userIds);
+        }
+      } else if (activeUser.role !== 'super_admin') {
+        query = query.eq('user_id', activeUser.id);
+      }
+    }
+    
     if (matchId) query = query.eq('match_id', matchId);
-    const data = await this.handleSupabase(query);
+    const data = await this.handleSupabase(query) as PublishLog[] | null;
     return data || [];
   }
 
   // WhatsApp Groups
   async getWhatsAppGroups(): Promise<WhatsAppGroup[]> {
-    const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*'));
+    const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*')) as WhatsAppGroup[] | null;
     return data || [];
   }
 
   async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
+    const effectiveUserId = this.getEffectiveUserId();
     const newGroup = {
       ...group,
-      id: this.generateUUID()
+      id: this.generateUUID(),
+      created_by: effectiveUserId
     };
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
     return data as WhatsAppGroup;
@@ -1656,7 +2043,7 @@ class DataService {
     
     // If override ID is provided from settings, try to use it as main group
     if (overrideGroupId) {
-      const override = allGroups.find(g => g.id === overrideGroupId);
+      const override = allGroups.find(g => g.id === overrideGroupId || g.whapi_id === overrideGroupId);
       if (override) mainGroup = override;
     }
     
@@ -1747,9 +2134,15 @@ class DataService {
   }
 
   // Stats
-  async getStats(user?: User): Promise<Stats> {
+  async getStats(user?: User, managerId?: string): Promise<Stats> {
     try {
-      const uniqueCandidates = await this.getMatches(undefined, user);
+      const effectiveUser = this.getEffectiveUser();
+      const activeUser = effectiveUser || user;
+      
+      // If managerId is provided, we want stats for that specific manager
+      const filterUser = managerId ? { id: managerId, role: 'admin' } as User : activeUser;
+      
+      const uniqueCandidates = await this.getMatches(undefined, filterUser);
       const activeCandidates = uniqueCandidates.filter(m => 
         !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status)
       );
@@ -1758,35 +2151,48 @@ class DataService {
       let publishLogsQuery = supabase.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
-      if (user && user.role !== 'super_admin') {
-        // Fetch admins in the same group to calculate group stats
-        const myCategories = [user.category].filter(Boolean);
-        if (myCategories.length > 0) {
+      if (activeUser && activeUser.role !== 'super_admin') {
+        if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
+          // Fetch admins in the same affiliation group
           const { data: sameGroupAdmins } = await supabase.from('profiles')
             .select('id')
-            .in('category', myCategories);
+            .eq('affiliation_group', activeUser.affiliation_group);
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
+        } else {
+          // Fetch admins in the same category (original logic for admins)
+          const myCategories = [activeUser.category].filter(Boolean);
+          if (myCategories.length > 0) {
+            const { data: sameGroupAdmins } = await supabase.from('profiles')
+              .select('id')
+              .in('category', myCategories);
+            groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
+          }
         }
 
-        if (user.role === 'team_leader') {
-          // Cannot filter by created_by anymore
-          const adminIds = [user.id];
-          // matchesQuery = matchesQuery.in('created_by', adminIds);
-          // adminsQuery = adminsQuery.in('created_by', [user.id]);
+        if (managerId) {
+          // Strictly filter by the selected manager
+          adminsQuery = adminsQuery.eq('id', managerId);
+          publishLogsQuery = publishLogsQuery.eq('user_id', managerId);
+        } else if (effectiveUser) {
+          // If impersonating, strictly filter by that user only
+          adminsQuery = adminsQuery.eq('id', effectiveUser.id);
+          publishLogsQuery = publishLogsQuery.eq('user_id', effectiveUser.id);
+        } else if (activeUser.role === 'team_leader') {
+          const adminIds = [activeUser.id];
           publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([...adminIds, ...groupAdminIds])));
         } else {
-          adminsQuery = adminsQuery.eq('id', user.id);
-          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([user.id, ...groupAdminIds])));
+          adminsQuery = adminsQuery.eq('id', activeUser.id);
+          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([activeUser.id, ...groupAdminIds])));
         }
       }
 
       const [adminsData, publishLogsData] = await Promise.all([
-        adminsQuery,
-        publishLogsQuery
+        this.safeQuery(adminsQuery, []),
+        this.safeQuery(publishLogsQuery, [])
       ]);
 
-      const admins = adminsData.data || [];
-      const publishLogs = publishLogsData.data || [];
+      const admins = adminsData || [];
+      const publishLogs = publishLogsData || [];
       const totalMatchesSite = activeCandidates.length;
 
       const now = new Date();
@@ -1803,9 +2209,9 @@ class DataService {
         return logDate >= firstDayOfMonth;
       }).length;
 
-      const publishedThisMonthMeCount = user ? publishLogs.filter(log => {
+      const publishedThisMonthMeCount = activeUser ? publishLogs.filter(log => {
         const logDate = new Date(log.created_at);
-        return logDate >= firstDayOfMonth && log.user_id === user.id;
+        return logDate >= firstDayOfMonth && log.user_id === activeUser.id;
       }).length : 0;
 
       const publishedThisMonthGroupCount = groupAdminIds.length > 0 ? publishLogs.filter(log => {
@@ -1816,8 +2222,8 @@ class DataService {
       return {
         males: activeCandidates.filter(m => m.type === 'male').length,
         females: activeCandidates.filter(m => m.type === 'female').length,
-        malesMe: user ? activeCandidates.filter(m => m.type === 'male' && m.created_by === user.id).length : 0,
-        femalesMe: user ? activeCandidates.filter(m => m.type === 'female' && m.created_by === user.id).length : 0,
+        malesMe: activeUser ? activeCandidates.filter(m => m.type === 'male' && m.created_by === activeUser.id).length : 0,
+        femalesMe: activeUser ? activeCandidates.filter(m => m.type === 'female' && m.created_by === activeUser.id).length : 0,
         malesGroup: activeCandidates.filter(m => m.type === 'male').length, // For managers, this is already the group
         femalesGroup: activeCandidates.filter(m => m.type === 'female').length, // For managers, this is already the group
         totalMatchesSite,
@@ -1906,13 +2312,16 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return [];
     
+    const effectiveUser = this.getEffectiveUser();
+    const activeUserId = effectiveUser?.id || currentUser.id;
+    
     const data = await this.handleSupabase(
       supabase
         .from('internal_messages')
         .select('*')
-        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
+        .or(`and(sender_id.eq.${activeUserId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${activeUserId})`)
         .order('created_at', { ascending: true })
-    );
+    ) as any[] | null;
       
     return data || [];
   }
@@ -1944,12 +2353,15 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return;
     
+    const effectiveUser = this.getEffectiveUser();
+    const activeUserId = effectiveUser?.id || currentUser.id;
+    
     await this.handleSupabase(
       supabase
         .from('internal_messages')
         .update({ is_read: true })
         .eq('sender_id', senderId)
-        .eq('receiver_id', currentUser.id)
+        .eq('receiver_id', activeUserId)
         .eq('is_read', false)
     );
   }
@@ -2012,7 +2424,30 @@ class DataService {
   }
 
   async saveGameScore(score: Omit<GameScore, 'id' | 'created_at'>): Promise<void> {
-    await this.handleSupabase(supabase.from('game_scores').insert(score));
+    const effectiveUserId = this.getEffectiveUserId();
+    const finalScore = {
+      ...score,
+      candidate_id: score.candidate_id || effectiveUserId
+    };
+    await this.handleSupabase(supabase.from('game_scores').insert(finalScore));
+  }
+
+  async saveGameResult(result: any): Promise<void> {
+    const effectiveUserId = this.getEffectiveUserId();
+    const finalResult = {
+      ...result,
+      user_id: result.user_id || effectiveUserId
+    };
+    await this.handleSupabase(supabase.from('game_results').insert(finalResult));
+  }
+
+  async addToBlacklist(entry: Omit<Blacklist, 'id' | 'created_at'>): Promise<void> {
+    const effectiveUserId = this.getEffectiveUserId();
+    const finalEntry = {
+      ...entry,
+      created_by: effectiveUserId || entry.created_by
+    };
+    await this.handleSupabase(supabase.from('blacklist').insert(finalEntry));
   }
 
   async getLeaderboard(): Promise<GameScore[]> {
@@ -2022,6 +2457,107 @@ class DataService {
       .order('score', { ascending: false })
       .limit(10);
     return data || [];
+  }
+
+  async getGameLogs(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('game_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching game logs:', error);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error('Error fetching game logs:', err);
+      return [];
+    }
+  }
+
+  async getWeeklyLeaderboard(): Promise<{
+    mostWins: { id: string, name: string, wins: number, photo: string }[],
+    mostPlayed: { id: string, name: string, played: number, photo: string }[],
+    pairOfTheWeek: { pair: string, games: number }[]
+  }> {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data: logs, error } = await supabase
+      .from('game_logs')
+      .select('*')
+      .gte('created_at', sevenDaysAgo.toISOString());
+
+    if (error || !logs) return { mostWins: [], mostPlayed: [], pairOfTheWeek: [] };
+
+    const wins: Record<string, number> = {};
+    const played: Record<string, number> = {};
+    const pairs: Record<string, number> = {};
+    const userNames: Record<string, string> = {};
+
+    logs.forEach(log => {
+      [log.player1_id, log.player2_id].forEach(id => {
+        if (id) {
+          played[id] = (played[id] || 0) + 1;
+          if (id === log.player1_id) userNames[id] = log.player1_name;
+          else userNames[id] = log.player2_name;
+        }
+      });
+
+      if (log.winner_id) {
+        wins[log.winner_id] = (wins[log.winner_id] || 0) + 1;
+      }
+
+      const pair = [log.player1_id, log.player2_id].sort().join('_');
+      pairs[pair] = (pairs[pair] || 0) + 1;
+    });
+
+    const profiles = await this.handleSupabase(
+      supabase.from('profiles').select('id, avatar_url')
+    ) as any[] | null || [];
+    const profileMap = new Map((profiles as any[]).map((p: any) => [p.id, p.avatar_url]));
+
+    const formatTop = (obj: Record<string, number>) => 
+      Object.entries(obj)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([id, count]) => ({
+          id,
+          name: userNames[id] || 'שחקן',
+          count,
+          photo: (profileMap.get(id) as string) || ''
+        }));
+
+    return {
+      mostWins: formatTop(wins).map(item => ({ id: item.id, name: item.name, wins: item.count, photo: item.photo })),
+      mostPlayed: formatTop(played).map(item => ({ id: item.id, name: item.name, played: item.count, photo: item.photo })),
+      pairOfTheWeek: Object.entries(pairs)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([pair, games]) => ({ pair, games }))
+    };
+  }
+
+  async logGame(log: {
+    player1_id: string;
+    player1_name: string;
+    player2_id: string;
+    player2_name: string;
+    game_type: string;
+    winner_id: string | null;
+    duration_seconds: number;
+  }): Promise<void> {
+    const effectiveUserId = this.getEffectiveUserId();
+    try {
+      const finalLog = {
+        ...log,
+        player1_id: log.player1_id || effectiveUserId
+      };
+      await supabase.from('game_logs').insert([finalLog]);
+    } catch (err) {
+      console.error('Error logging game:', err);
+    }
   }
 
   async getDailySuggestion(category: string, gender: 'male' | 'female'): Promise<Match | null> {
@@ -2130,8 +2666,9 @@ class DataService {
   }
 
   async getOnlineStats() {
-    const { data: males } = await supabase.from('profiles').select('id').eq('gender', 'male').eq('is_online', true);
-    const { data: females } = await supabase.from('profiles').select('id').eq('gender', 'female').eq('is_online', true);
+    // Since is_online might be missing, use status === 'active' as a fallback
+    const { data: males } = await supabase.from('profiles').select('id').eq('gender', 'male').eq('status', 'active');
+    const { data: females } = await supabase.from('profiles').select('id').eq('gender', 'female').eq('status', 'active');
     return { males: males?.length || 0, females: females?.length || 0 };
   }
 }

@@ -301,10 +301,10 @@ export default function SpeedDate() {
             
             <button
               onClick={() => {
-                if (window.confirm('האם אתה בטוח שברצונך לסיים את השיחה?')) {
+                // if (window.confirm('האם אתה בטוח שברצונך לסיים את השיחה?')) {
                   handleSessionEnd();
                   navigate('/portal');
-                }
+                // }
               }}
               className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center hover:bg-red-100 transition-all"
             >

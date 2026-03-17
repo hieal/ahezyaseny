@@ -7,7 +7,8 @@ import { History, Search, Filter, Calendar, RefreshCw, User as UserIcon, Info, S
 import { motion } from 'motion/react';
 
 export default function TrackingPage() {
-  const { user } = useAuth();
+  const { user, effectiveUser } = useAuth();
+  const activeUser = effectiveUser || user;
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [publishLogs, setPublishLogs] = useState<PublishLog[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -65,7 +66,7 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const data = await dataService.getActivityLogs(user?.role === 'super_admin' ? undefined : user?.id);
+      const data = await dataService.getActivityLogs(filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id));
       setLogs(data);
     } catch (err) {
       toast.error('שגיאה בטעינת מעקב פעולות');
@@ -75,10 +76,14 @@ export default function TrackingPage() {
   };
 
   const fetchUsers = async () => {
-    if (user?.role !== 'super_admin') return;
+    if (activeUser?.role !== 'super_admin' && activeUser?.role !== 'team_leader') return;
     try {
       const data = await dataService.getUsers();
-      setUsers(data);
+      if (activeUser?.role === 'team_leader' && activeUser.affiliation_group) {
+        setUsers(data.filter(u => u.affiliation_group === activeUser.affiliation_group));
+      } else {
+        setUsers(data);
+      }
     } catch (err) {
       console.error('Error fetching users:', err);
     }
@@ -86,10 +91,7 @@ export default function TrackingPage() {
 
   const fetchPublishLogs = async () => {
     try {
-      // In a real app we'd need a general getPublishLogs, but for now we can just get all matches and their publish logs
-      // Wait, dataService doesn't have getAllPublishLogs. Let's add it if needed, or just skip for now.
-      // Let's add getAllPublishLogs to dataService
-      const data = await dataService.getPublishLogs() || [];
+      const data = await dataService.getPublishLogs(undefined, filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id)) || [];
       setPublishLogs(data);
     } catch (err) {
       console.error('Error fetching publish logs:', err);
@@ -137,7 +139,7 @@ export default function TrackingPage() {
     if (!log.entity_id) return;
     
     const entityName = log.entity_type === 'match' ? 'המשודך' : 'המנהל';
-    if (!confirm(`האם אתה בטוח שברצונך לשחזר את ${entityName} שנמחק?`)) return;
+    // if (!confirm(`האם אתה בטוח שברצונך לשחזר את ${entityName} שנמחק?`)) return;
 
     try {
       if (log.entity_type === 'match') {
@@ -228,7 +230,7 @@ export default function TrackingPage() {
           {/* Filters */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {user?.role === 'super_admin' && (
+              {(user?.role === 'super_admin' || user?.role === 'team_leader') && (
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2 pr-1">סנן לפי מנהל</label>
                   <div className="relative">

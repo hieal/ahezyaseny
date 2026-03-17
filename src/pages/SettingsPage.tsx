@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
 import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
+import { isAIStudio } from '../utils/env';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -264,17 +265,12 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-3">
                     <h3 className="font-extrabold text-lg text-luxury-blue">{cat}</h3>
                     <button 
-                      onClick={async () => {
-                        const tid = toast.loading(`מסנכרן קבוצות עבור ${cat}...`);
-                        const res = await dataService.syncWhatsAppGroupsFromAnchor(cat);
-                        if (res.success) toast.success(res.message, { id: tid });
-                        else toast.error(res.message, { id: tid });
-                      }}
-                      className="flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-luxury-blue px-2 py-1 rounded-lg hover:bg-blue-200 transition-all"
-                      title="סנכרן קבוצות מהענן"
+                      onClick={() => {}}
+                      className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-400 px-2 py-1 rounded-lg cursor-not-allowed"
+                      title="סנכרון הוסר"
                     >
                       <Anchor size={12} />
-                      קישור עוגן
+                      סנכרון הוסר
                     </button>
                   </div>
                   <button 
@@ -424,16 +420,11 @@ export default function SettingsPage() {
                 הודעת פתיחה יומית לקבוצה
               </p>
               <button 
-                onClick={async () => {
-                  const tid = toast.loading('מסנכרן תבניות מהעוגן...');
-                  const res = await dataService.syncTemplatesFromAnchor();
-                  if (res.success) toast.success(res.message, { id: tid });
-                  else toast.error(res.message, { id: tid });
-                }}
-                className="flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-luxury-blue px-2 py-1 rounded-lg hover:bg-blue-200 transition-all"
+                onClick={() => {}}
+                className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-400 px-2 py-1 rounded-lg cursor-not-allowed"
               >
                 <Anchor size={12} />
-                קישור עוגן
+                סנכרון הוסר
               </button>
             </div>
             <p className="text-sm text-text-secondary font-medium">
@@ -783,6 +774,30 @@ export default function SettingsPage() {
           </div>
         )}
       </AnimatePresence>
+
+        {isAIStudio() && (
+          <div className="card p-8 bg-white border-2 border-luxury-blue shadow-lg space-y-4">
+            <h3 className="text-xl font-extrabold text-luxury-blue">סנכרון לאתר החי</h3>
+            <p className="text-text-secondary font-medium">פרסם את כל השינויים שבוצעו ב-AI Studio לאתר החי.</p>
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await dataService.publishChanges();
+                  toast.success('כל השינויים פורסמו בהצלחה');
+                } catch (err) {
+                  toast.error('שגיאה בפרסום');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="btn-primary flex items-center gap-2 px-6 py-3 text-lg font-bold shadow-lg"
+            >
+              {saving ? 'מפרסם...' : 'פרסם שינויים לאתר החי'}
+            </button>
+          </div>
+        )}
 
       <div className="card p-8 bg-white border-dashed border-2 flex flex-col items-center text-center space-y-4">
         <div className="w-16 h-16 rounded-full bg-pink-50 text-pink-500 flex items-center justify-center">

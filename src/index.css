@@ -70,3 +70,11 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.rotate-x-20 {
+  transform: rotateX(20deg);
+}
