@@ -304,9 +304,14 @@ class DataService {
 
   private getSyncStatus = () => isVercel() ? 'published' : 'draft';
 
-  private applySyncFilter(query: any) {
+  private async applySyncFilter(query: any) {
     if (isVercel()) {
-      return query.eq('sync_status', 'published');
+      try {
+        return await query.eq('sync_status', 'published');
+      } catch (e) {
+        console.warn('sync_status column missing, ignoring filter.');
+        return query;
+      }
     }
     return query;
   }
@@ -315,24 +320,41 @@ class DataService {
     return { ...data, sync_status: this.getSyncStatus() };
   }
 
-  async publishChanges(): Promise<void> {
-    const { error: pError } = await supabaseAdmin
-      .from('profiles')
-      .update({ sync_status: 'published' })
-      .eq('sync_status', 'draft');
-    if (pError) throw pError;
-    
-    const { error: cError } = await supabaseAdmin
-      .from('candidates')
-      .update({ sync_status: 'published' })
-      .eq('sync_status', 'draft');
-    if (cError) throw cError;
+  async publishChanges(): Promise<{ success: boolean; message: string }> {
+    let successCount = 0;
+    const errors: string[] = [];
 
-    const { error: mError } = await supabaseAdmin
-      .from('matches')
-      .update({ sync_status: 'published' })
-      .eq('sync_status', 'draft');
-    if (mError) throw mError;
+    const tables = ['profiles', 'candidates', 'matches'];
+
+    for (const table of tables) {
+      try {
+        const { error } = await supabaseAdmin
+          .from(table)
+          .update({ sync_status: 'published' })
+          .eq('sync_status', 'draft');
+        
+        if (error) {
+          // 42P01: Table does not exist
+          if (error.code === '42P01') {
+            console.log(`Table ${table} does not exist, skipping.`);
+          } else {
+            console.error(`Error publishing table ${table}:`, error);
+            errors.push(`שגיאה בטבלה ${table}: ${error.message}`);
+          }
+        } else {
+          successCount++;
+        }
+      } catch (e: any) {
+        console.error(`Exception publishing table ${table}:`, e);
+        errors.push(`שגיאה בטבלה ${table}: ${e.message}`);
+      }
+    }
+
+    if (successCount > 0) {
+      return { success: true, message: `פורסמו שינויים ב-${successCount} טבלאות.${errors.length > 0 ? ' (היו שגיאות בחלק מהטבלאות, בדוק קונסול)' : ''}` };
+    } else {
+      return { success: false, message: `לא ניתן היה לפרסם שינויים: ${errors.join('; ')}` };
+    }
   }
 
   private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
@@ -1322,7 +1344,7 @@ class DataService {
         .select('id, email, full_name, role, status, phone, avatar_url, gender, username, affiliation_group, password_plain')
         .order('full_name');
       
-      const { data, error } = await this.applySyncFilter(query);
+      const { data, error } = await (await this.applySyncFilter(query));
       
       if (error) {
         // Fallback to basic columns if some columns are missing
@@ -1331,7 +1353,7 @@ class DataService {
           .from('profiles')
           .select('id, email, full_name, role, status, phone, avatar_url, gender, affiliation_group, username')
           .order('full_name');
-        const { data: basicData, error: basicError } = await this.applySyncFilter(basicQuery);
+        const { data: basicData, error: basicError } = await (await this.applySyncFilter(basicQuery));
         
         if (basicError) throw basicError;
         

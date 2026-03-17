@@ -150,7 +150,7 @@ export default function AdminManagement() {
 
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
-  const uniqueUsers = Array.from(new Map(users.map(u => [u.email?.toLowerCase() || u.id, u])).values());
+  const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => [u.email?.toLowerCase() || u.id, u])).values());
   const filteredUsers = uniqueUsers.filter(u => {
     if (!['admin', 'super_admin', 'team_leader'].includes(u.role)) return false;
     
@@ -207,9 +207,12 @@ export default function AdminManagement() {
 
   useEffect(() => {
     if (!isEditing) {
-      setStableUsers(filteredUsers);
+      // Only update if the filtered users are actually different to prevent infinite loop
+      if (JSON.stringify(stableUsers) !== JSON.stringify(filteredUsers)) {
+        setStableUsers(filteredUsers);
+      }
     }
-  }, [filteredUsers, isEditing]);
+  }, [filteredUsers, isEditing, stableUsers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,6 +247,7 @@ export default function AdminManagement() {
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           avatar_url: formData.avatar_url,
+          affiliation_group: formData.affiliation_group,
           created_by: formData.created_by || undefined,
           deleted_at: null,
           daily_message_template: null,
@@ -554,7 +558,7 @@ export default function AdminManagement() {
     setFormData({
       full_name: user.full_name || '',
       username: user.username || '',
-      email: user.email,
+      email: user?.email,
       password: user.password_plain || '',
       role: user.role,
       status: user.status,
@@ -593,6 +597,7 @@ export default function AdminManagement() {
       'פרויקט קומי אורי': 'bg-amber-100 text-amber-700 border-amber-200',
       'פרויקט אור': 'bg-orange-100 text-orange-700 border-orange-200'
     };
+    // If cat is '18-22', return its color. If not in colors, return a default for unknown categories, but don't default to 'כללי' if cat is present.
     return colors[cat] || 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
@@ -689,18 +694,20 @@ export default function AdminManagement() {
   if (loading) return <div className="p-8 text-center font-bold text-luxury-blue">טוען מנהלים...</div>;
 
   const handleUpdateGender = async (user: User, gender: 'male' | 'female') => {
-    // Update local state immediately
+    // Update local state immediately for the specific user
     setUsers(prev => prev.map(u => u.id === user.id ? { ...u, gender } : u));
     
     try {
       const updatedUser = await dataService.updateUser(user.id, { gender });
+      // Update with the actual data returned from the server
       setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
       toast.success('מין עודכן בהצלחה');
       setGenderModalUser(null);
     } catch (e: any) {
       console.log('Update Error:', e);
       toast.error('שגיאה בעדכון המין');
-      fetchUsers(); // Revert/Refresh
+      // Revert/Refresh
+      fetchUsers(); 
     }
   };
 
@@ -1631,9 +1638,9 @@ export default function AdminManagement() {
                                     </span>
                                   )}
                                 </div>
-                                {u.role !== 'super_admin' && (u.role === 'team_leader' || u.affiliation_group) && (
+                                {u.role !== 'super_admin' && u.affiliation_group && (
                                   <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
-                                    שיוך: {u.affiliation_group || (u.role === 'team_leader' ? 'כללי' : '')}
+                                    שיוך: {u.affiliation_group}
                                   </span>
                                 )}
                               </div>
@@ -1814,7 +1821,7 @@ export default function AdminManagement() {
                     )}
                   </td>
                   <td className="px-3 py-4 text-slate-600 text-sm font-medium">
-                    {u.role === 'super_admin' ? '-' : (u.username || '-')}
+                    {u.role === 'super_admin' ? '-' : ((!u.username || u.username === u.phone) ? '-' : u.username)}
                   </td>
                   <td className="px-3 py-4">
                     <button 
@@ -1843,7 +1850,7 @@ export default function AdminManagement() {
                     <div className="relative group/nav">
                       <div className="flex flex-col gap-1 cursor-pointer">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.affiliation_group)}`}>
-                          {u.affiliation_group || 'ללא שיוך'}
+                          {u.affiliation_group || '-'}
                         </div>
                         {u.secondary_category && (
                           <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-center border ${getCategoryColor(u.secondary_category)}`}>
@@ -1855,7 +1862,7 @@ export default function AdminManagement() {
                         <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
                           <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider">קבוצות מנוהלות</p>
                           <div className="space-y-1">
-                            {whatsappGroups.filter(g => g.category === u.affiliation_group || g.category === u.secondary_category).map(g => (
+                            {whatsappGroups.filter(g => g.category?.trim() === u.affiliation_group?.trim() || g.category?.trim() === u.secondary_category?.trim()).map(g => (
                               <a 
                                 key={g.id}
                                 href={g.link}
@@ -1867,7 +1874,7 @@ export default function AdminManagement() {
                                 <ExternalLink size={10} className="text-slate-400" />
                               </a>
                             ))}
-                            {whatsappGroups.filter(g => g.category === u.affiliation_group || g.category === u.secondary_category).length === 0 && (
+                            {whatsappGroups.filter(g => g.category?.trim() === u.affiliation_group?.trim() || g.category?.trim() === u.secondary_category?.trim()).length === 0 && (
                               <p className="text-[10px] text-slate-400 p-2 text-center italic">אין קבוצות מוגדרות</p>
                             )}
                           </div>
@@ -2559,7 +2566,7 @@ export default function AdminManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">מין המנהל/ת</label>
-                    <select className="input-field font-bold" value={formData.gender} onChange={(e) => setFormData({...formData, gender: e.target.value as 'male' | 'female'})}>
+                    <select className="input-field font-bold" value={formData.gender} onChange={(e) => setFormData({...formData, gender: e.target.value as 'male' | 'female' | ''})}>
                       <option value="">בחר מין...</option>
                       <option value="male">בן</option>
                       <option value="female">בת</option>

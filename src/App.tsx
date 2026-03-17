@@ -285,7 +285,7 @@ function Sidebar() {
   };
 
   if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader') {
-    navItems.push(
+    navItems.unshift(
       { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
       { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
     );

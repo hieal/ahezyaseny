@@ -783,8 +783,12 @@ export default function SettingsPage() {
               onClick={async () => {
                 setSaving(true);
                 try {
-                  await dataService.publishChanges();
-                  toast.success('כל השינויים פורסמו בהצלחה');
+                  const result = await dataService.publishChanges();
+                  if (result.success) {
+                    toast.success(result.message);
+                  } else {
+                    toast.error(result.message);
+                  }
                 } catch (err) {
                   toast.error('שגיאה בפרסום');
                 } finally {

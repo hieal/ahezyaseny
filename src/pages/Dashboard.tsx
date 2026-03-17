@@ -31,7 +31,21 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+
+  function usePersistedState<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+    const [state, setState] = useState<T>(() => {
+      const storedValue = localStorage.getItem(key);
+      return storedValue !== null ? JSON.parse(storedValue) : defaultValue;
+    });
+
+    useEffect(() => {
+      localStorage.setItem(key, JSON.stringify(state));
+    }, [key, state]);
+
+    return [state, setState];
+  }
+
+  const [filter, setFilter] = usePersistedState('dashboard_filter', 'all');
   const [search, setSearch] = useState('');
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
@@ -71,7 +85,7 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'list' | 'carousel'>('list');
   const [displaySize, setDisplaySize] = useState<'small' | 'medium' | 'large'>('medium');
   const [showMinimal, setShowMinimal] = useState(false);
-  const [completionFilter, setCompletionFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
+  const [completionFilter, setCompletionFilter] = usePersistedState<'all' | 'complete' | 'incomplete'>('dashboard_completion_filter', 'all');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -82,17 +96,17 @@ export default function Dashboard() {
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [isSavingImage, setIsSavingImage] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
-  const [selectedGroupType, setSelectedGroupType] = useState<string>('all');
+  const [selectedGroupType, setSelectedGroupType] = usePersistedState<string>('dashboard_group_type', 'all');
   const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [showWhatsAppFloating, setShowWhatsAppFloating] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showConnectedAdminsModal, setShowConnectedAdminsModal] = useState(false);
-  const [sortAlphabetically, setSortAlphabetically] = useState(false);
-  const [sortByDate, setSortByDate] = useState(true); // Default newest first
-  const [statsViewMode, setStatsViewMode] = useState<'me' | 'group' | 'all'>('me');
-  const [managerFilter, setManagerFilter] = useState<'all' | 'me' | 'group'>('all');
-  const [teamManagerFilter, setTeamManagerFilter] = useState<string | null>(null);
+  const [sortAlphabetically, setSortAlphabetically] = usePersistedState<boolean>('dashboard_sort_alphabetic', false);
+  const [sortByDate, setSortByDate] = usePersistedState<boolean>('dashboard_sort_date', true); // Default newest first
+  const [statsViewMode, setStatsViewMode] = usePersistedState<'me' | 'group' | 'all'>('dashboard_stats_view', 'me');
+  const [managerFilter, setManagerFilter] = usePersistedState<'all' | 'me' | 'group'>('dashboard_manager_filter', 'all');
+  const [teamManagerFilter, setTeamManagerFilter] = usePersistedState<string | null>('dashboard_team_manager_filter', null);
 
   const [showGlobalBreakdownModal, setShowGlobalBreakdownModal] = useState(false);
   const [showNewMatchesModal, setShowNewMatchesModal] = useState(false);
