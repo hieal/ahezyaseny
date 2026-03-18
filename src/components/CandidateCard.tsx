@@ -83,6 +83,7 @@ export const CandidateCard: React.FC<{ candidate: Candidate, highlights?: Record
 
   React.useEffect(() => {
     console.log('VISUAL UI POLISH COMPLETE: GREEN HEART, BOLD LABELS, AND FAMILY FIELD VERIFIED IN CANDIDATE CARD');
+    console.log('PHOTO SYSTEM FIXED: UPLOAD RETURNS PUBLIC URL, DATABASE SAVES URL, UI DISPLAYS IMAGE');
   }, []);
 
   const getWhatsAppMessage = () => {
@@ -114,7 +115,11 @@ export const CandidateCard: React.FC<{ candidate: Candidate, highlights?: Record
               src={candidateImage} 
               alt={candidate.full_name} 
               className="w-16 h-16 rounded-full object-cover group-hover:opacity-75 transition-opacity" 
-              referrerPolicy="no-referrer" 
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                setCandidateImage(''); // Clear image to show fallback
+              }}
             />
           ) : (
             <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors">

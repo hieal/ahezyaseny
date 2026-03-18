@@ -213,7 +213,16 @@ export default function MatchForm() {
         });
         toast.success('הכרטיס עודכן');
       } else {
-        const newMatch = await dataService.createMatch(matchData, user || undefined);
+        const result = await dataService.createMatch(matchData, user || undefined);
+        if ('error' in result && result.error === 'duplicate') {
+          console.log('BYPASSED DATA-SERVICE ERROR: DUPLICATE MODAL FORCED TO OPEN');
+          setDuplicateData({ existing: result.existingMatch, newMatch: matchData });
+          setShowDuplicateModal(true);
+          setSaving(false);
+          return;
+        }
+        
+        const newMatch = result as Match;
         await dataService.logActivity({
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
           user_name: user?.full_name || 'System',
@@ -224,19 +233,11 @@ export default function MatchForm() {
         });
         toast.success('הכרטיס נוצר בהצלחה');
       }
-      console.log('SUCCESS: GREEN HEART TITLE ADDED, BOLD TITLES FIXED, DUPLICATE MODAL TRIGGERED');
       navigate('/');
     } catch (err: any) {
       console.error('Error saving match:', err);
-      if (err.message && err.message.includes('קיים')) {
-        // Assuming candidateData is available or can be constructed
-        setDuplicateData({ existing: null, newMatch: formData }); 
-        setShowDuplicateModal(true);
-      } else {
-        toast.error('שגיאה בשמירה');
-      }
+      toast.error('שגיאה בשמירה');
     } finally {
-      console.log('SYSTEM FIX COMPLETE: TABLE IDENTIFIED, DUPLICATE MODAL CONNECTED, UI BOLDED');
       setSaving(false);
     }
   };
@@ -287,17 +288,27 @@ export default function MatchForm() {
     if (!duplicateData) return;
     setSaving(true);
     try {
-      const newMatch = await dataService.createMatch(duplicateData.newMatch as any, user || undefined);
-      await dataService.logActivity({
-        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-        user_name: user?.full_name || 'System',
-        action: 'יצירת כרטיס',
-        details: `יצירת כרטיס משודך: ${duplicateData.newMatch.name}`,
-        entity_type: 'match',
-        entity_id: newMatch.id
-      });
-      toast.success('הכרטיס נוצר בהצלחה');
-      navigate('/');
+      const result = await dataService.createMatch(duplicateData.newMatch as any, user || undefined, true);
+      
+      let newMatchId = '';
+      if ('error' in result && result.error === 'duplicate') {
+         // Should not happen with bypass
+      } else {
+         newMatchId = (result as Match).id;
+      }
+      
+      if (newMatchId) {
+        await dataService.logActivity({
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: user?.full_name || 'System',
+          action: 'יצירת כרטיס',
+          details: `יצירת כרטיס משודך: ${duplicateData.newMatch.name}`,
+          entity_type: 'match',
+          entity_id: newMatchId
+        });
+        toast.success('הכרטיס נוצר בהצלחה');
+        navigate('/');
+      }
     } catch (err) {
       console.error('Error saving match:', err);
       toast.error('שגיאה בשמירה');
@@ -860,7 +871,20 @@ export default function MatchForm() {
                   <div className="relative group aspect-square rounded-2xl border-2 border-slate-200 bg-slate-50 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-luxury-blue">
                     {img ? (
                       <>
-                        <img src={img} alt={`Image ${index}`} className="w-full h-full object-cover" />
+                        <img 
+                          src={img} 
+                          alt={`Image ${index}`} 
+                          className="w-full h-full object-cover" 
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            setImages(prev => {
+                              const newImages = [...prev];
+                              newImages[index] = null;
+                              return newImages;
+                            });
+                          }}
+                        />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                           <button type="button" onClick={() => {
                             setTempImageUrl(img);
@@ -884,7 +908,7 @@ export default function MatchForm() {
                       </>
                     ) : (
                       <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                        <Camera size={30} className="text-slate-300 mb-2" />
+                        <User size={30} className="text-slate-300 mb-2" />
                         <span className="text-xs font-bold text-slate-400">העלאה</span>
                         <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, index)} />
                       </label>

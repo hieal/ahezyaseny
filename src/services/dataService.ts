@@ -1132,17 +1132,19 @@ class DataService {
     return data[0] as Match;
   }
 
-  async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User): Promise<Match> {
+  async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User, bypassDuplicateCheck: boolean = false): Promise<Match | { error: 'duplicate', existingMatch: Match }> {
     // Duplicate check
-    const { data: existing } = await supabase
-      .from('candidates')
-      .select('id')
-      .eq('name', match.name)
-      .eq('phone', match.phone)
-      .is('deleted_at', null);
-    
-    if (existing && existing.length > 0) {
-      throw new Error('משודך עם שם וטלפון זהה כבר קיים במערכת');
+    if (!bypassDuplicateCheck) {
+      const { data: existing } = await supabase
+        .from('candidates')
+        .select('*')
+        .eq('name', match.name)
+        .eq('phone', match.phone)
+        .is('deleted_at', null);
+      
+      if (existing && existing.length > 0) {
+        return { error: 'duplicate', existingMatch: existing[0] as Match };
+      }
     }
 
     const effectiveUserId = this.getEffectiveUserId();
@@ -1172,6 +1174,11 @@ class DataService {
       const mirroredUrl = await this.mirrorImage(sanitized.image_url);
       if (mirroredUrl) {
         sanitized.image_url = mirroredUrl;
+      }
+    } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
+      const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
+      if (uploadedUrl) {
+        sanitized.image_url = uploadedUrl;
       }
     }
 
@@ -1234,6 +1241,11 @@ class DataService {
       const mirroredUrl = await this.mirrorImage(sanitized.image_url);
       if (mirroredUrl) {
         sanitized.image_url = mirroredUrl;
+      }
+    } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
+      const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
+      if (uploadedUrl) {
+        sanitized.image_url = uploadedUrl;
       }
     }
 
@@ -1744,6 +1756,41 @@ class DataService {
     
     const { data } = supabase.storage.from('images').getPublicUrl(path);
     return data.publicUrl;
+  }
+
+  async uploadBase64Image(base64Str: string, bucket: string = 'images'): Promise<string | null> {
+    try {
+      if (!base64Str || !base64Str.startsWith('data:image')) return base64Str; // Not a base64 string, return as is
+
+      const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (!matches || matches.length !== 3) {
+        throw new Error('Invalid base64 string');
+      }
+
+      const mimeType = matches[1];
+      const base64Data = matches[2];
+      const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      const fileExt = mimeType.split('/')[1] || 'jpeg';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, buffer, {
+          contentType: mimeType,
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(fileName);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error uploading base64 image:', error);
+      return null;
+    }
   }
 
   async uploadImage(file: File, bucket: string = 'images'): Promise<string | null> {
