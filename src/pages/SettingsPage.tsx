@@ -782,20 +782,20 @@ export default function SettingsPage() {
 
         {isAIStudio() && (
           <div className="card p-8 bg-white border-2 border-luxury-blue shadow-lg space-y-4">
-            <h3 className="text-xl font-extrabold text-luxury-blue">סנכרון לאתר החי</h3>
-            <p className="text-text-secondary font-medium">פרסם את כל השינויים שבוצעו ב-AI Studio לאתר החי.</p>
+            <h3 className="text-xl font-extrabold text-luxury-blue">אישור שינויים (Approve Changes)</h3>
+            <p className="text-text-secondary font-medium">אשר את כל השינויים שבוצעו ב-AI Studio כדי שיופיעו באתר ב-Vercel.</p>
             <button
               onClick={async () => {
                 setSaving(true);
                 try {
-                  const result = await dataService.publishChanges();
+                  const result = await dataService.approveChanges();
                   if (result.success) {
                     toast.success(result.message);
                   } else {
                     toast.error(result.message);
                   }
                 } catch (err) {
-                  toast.error('שגיאה בפרסום');
+                  toast.error('שגיאה באישור השינויים');
                 } finally {
                   setSaving(false);
                 }
@@ -803,7 +803,8 @@ export default function SettingsPage() {
               disabled={saving}
               className="btn-primary flex items-center gap-2 px-6 py-3 text-lg font-bold shadow-lg"
             >
-              {saving ? 'מפרסם...' : 'פרסם שינויים לאתר החי'}
+              <CheckCircle size={20} className={saving ? 'animate-spin' : ''} />
+              {saving ? 'מאשר...' : 'אשר שינויים (Approve Changes)'}
             </button>
           </div>
         )}

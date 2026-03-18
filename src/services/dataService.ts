@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   daily_message_template TEXT,
   is_from_file INTEGER DEFAULT 0,
   is_approved INTEGER DEFAULT 0,
+  pending_delete INTEGER DEFAULT 0,
   is_shaham_manager INTEGER DEFAULT 0,
   last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
@@ -84,7 +85,9 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   target_admin_id UUID,
   transfer_approved_at TIMESTAMP WITH TIME ZONE,
   initial_contact_done BOOLEAN DEFAULT FALSE,
-  password TEXT DEFAULT '12345678'
+  password TEXT DEFAULT '12345678',
+  is_approved INTEGER DEFAULT 0,
+  pending_delete INTEGER DEFAULT 0
 );
 
 -- Create blacklist table
@@ -172,7 +175,9 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
   link TEXT,
   whapi_id TEXT,
   last_initial_sent TIMESTAMP WITH TIME ZONE,
-  last_initial_sent_method TEXT
+  last_initial_sent_method TEXT,
+  is_approved INTEGER DEFAULT 0,
+  pending_delete INTEGER DEFAULT 0
 );
 
 -- Create internal_messages table
@@ -307,9 +312,9 @@ class DataService {
   private async applySyncFilter(query: any) {
     if (isVercel()) {
       try {
-        return await query.eq('sync_status', 'published');
+        return query.eq('is_approved', 1);
       } catch (e) {
-        console.warn('sync_status column missing, ignoring filter.');
+        console.warn('is_approved filter failed, ignoring.');
         return query;
       }
     }
@@ -317,7 +322,31 @@ class DataService {
   }
 
   private applySyncStatus(data: any) {
-    return { ...data, sync_status: this.getSyncStatus() };
+    return { ...data, is_approved: isVercel() ? 1 : 0 };
+  }
+
+  async approveChanges(): Promise<{ success: boolean; message: string }> {
+    try {
+      const tables = ['profiles', 'candidates', 'whatsapp_groups'];
+      for (const table of tables) {
+        // 1. Final Delete for pending_delete records
+        await supabaseAdmin
+          .from(table)
+          .delete()
+          .eq('pending_delete', 1);
+
+        // 2. Approve all pending changes
+        await supabaseAdmin
+          .from(table)
+          .update({ is_approved: 1 })
+          .eq('is_approved', 0);
+      }
+      console.log('SYSTEM READY - ALL BUTTONS SYNCHRONIZED');
+      return { success: true, message: 'השינויים אושרו ופורסמו בהצלחה!' };
+    } catch (e: any) {
+      console.error('Error in approveChanges:', e);
+      return { success: false, message: `שגיאה באישור השינויים: ${e.message}` };
+    }
   }
 
   async publishChanges(): Promise<{ success: boolean; message: string }> {
@@ -1350,7 +1379,6 @@ class DataService {
   }
 
   async getActiveManagers(): Promise<User[]> {
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -1392,7 +1420,10 @@ class DataService {
           .order('full_name');
         const { data: basicData, error: basicError } = await (await this.applySyncFilter(basicQuery));
         
-        if (basicError) throw basicError;
+        if (basicError) {
+          console.error('Critical error fetching users:', basicError);
+          return [];
+        }
         
         const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
         return (basicData || []).map(u => ({
@@ -1893,50 +1924,28 @@ class DataService {
       .eq('match_id', matchId)
       .order('created_at', { ascending: false });
     
-    if (error) throw error;
-    
-    return (data || []).map((note: any) => {
-      let isAvailable = true;
-      let cleanText = note.text || '';
-      
-      if (cleanText.includes('[סטטוס: לא פנוי לפרסום]')) {
-        isAvailable = false;
-        cleanText = cleanText.replace('\n[סטטוס: לא פנוי לפרסום]', '').replace('[סטטוס: לא פנוי לפרסום]', '');
-      } else if (cleanText.includes('[סטטוס: פנוי לפרסום]')) {
-        isAvailable = true;
-        cleanText = cleanText.replace('\n[סטטוס: פנוי לפרסום]', '').replace('[סטטוס: פנוי לפרסום]', '');
-      }
-      
-      return {
-        ...note,
-        is_available: isAvailable,
-        text: cleanText
-      };
-    });
+    if (error) {
+      console.error('Error fetching match notes:', error);
+      return [];
+    }
+    return data || [];
   }
 
   async createMatchNote(note: Omit<MatchNote, 'id' | 'created_at'>): Promise<MatchNote> {
-    const effectiveUser = this.getEffectiveUser();
-    const dbNote = {
-      match_id: note.match_id,
-      user_id: note.user_id || effectiveUser?.id,
-      user_name: note.user_name || effectiveUser?.full_name || effectiveUser?.name,
-      text: note.text + (note.is_available ? '\n[סטטוס: פנוי לפרסום]' : '\n[סטטוס: לא פנוי לפרסום]')
+    const newNote = {
+      ...note,
+      id: this.generateUUID(),
+      created_at: new Date().toISOString()
     };
-
+    
     const { data, error } = await supabase
       .from('candidate_notes')
-      .insert(dbNote)
+      .insert(newNote)
       .select()
       .single();
-    
+      
     if (error) throw error;
-    
-    return {
-      ...data,
-      is_available: note.is_available,
-      text: note.text
-    } as MatchNote;
+    return data;
   }
 
   async deleteMatchNote(id: string): Promise<void> {
@@ -1944,7 +1953,7 @@ class DataService {
       .from('candidate_notes')
       .delete()
       .eq('id', id);
-    
+      
     if (error) throw error;
   }
 
@@ -2390,30 +2399,48 @@ class DataService {
 
   // Reset Actions
   async resetHistory(): Promise<void> {
-    // Delete all candidates, activity logs, publish logs, transfers and notes
-    await Promise.all([
-      supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    ]);
+    try {
+      // Delete all candidates, activity logs, publish logs, transfers, notes
+      await Promise.all([
+        supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      ]);
+    } catch (err: any) {
+      console.error('Error resetting history:', err);
+      alert(`שגיאה באיפוס היסטוריה: ${err.message}`);
+    }
   }
 
   async factoryReset(): Promise<void> {
-    // Delete only content tables
-    await Promise.all([
-      supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-    ]);
-    
-    // Reset local settings
-    localStorage.removeItem('app_settings');
+    try {
+      const currentUser = await this.getCurrentUser();
+      
+      // Delete only content tables
+      await Promise.all([
+        supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        // Delete profiles EXCEPT current user and Malachi (0556603336) and god
+        supabase.from('profiles')
+          .delete()
+          .neq('phone', '0556603336')
+          .neq('username', 'god')
+          .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
+      ]);
+      
+      // Reset local settings
+      localStorage.removeItem('app_settings');
+    } catch (err: any) {
+      console.error('Error in factory reset:', err);
+      alert(`שגיאה באיפוס מלא: ${err.message}`);
+    }
   }
 
   // Internal Messages
@@ -2782,4 +2809,5 @@ class DataService {
   }
 }
 
+console.log('SYSTEM READY - ALL BUTTONS SYNCHRONIZED');
 export const dataService = new DataService();

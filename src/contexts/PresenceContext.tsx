@@ -24,7 +24,7 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User 
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .in('role', ['admin', 'super_observer', 'team_leader']);
+        .in('role', ["admin", "super_observer", "team_leader"]);
       
       if (!error && data) {
         setActiveAdminsCount(data.length);
