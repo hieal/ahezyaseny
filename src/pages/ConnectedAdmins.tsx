@@ -397,11 +397,17 @@ export default function ConnectedAdmins() {
                               )}
                               {isOnline && <OnlineIndicator isOnline={true} className="absolute bottom-0 right-0" />}
                             </div>
-                            <div className="font-bold text-slate-900">{admin.full_name || 'מנהל'}</div>
+                            <div className={`font-bold ${admin.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>
+                              {admin.full_name || 'מנהל'}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-slate-600">
-                          {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}
+                          {admin.phone === '0556603336' ? (
+                            <span className="text-[#D4AF37] font-bold">מנהל העמותה</span>
+                          ) : (
+                            admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           {isOnline ? (

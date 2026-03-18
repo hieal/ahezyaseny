@@ -20,23 +20,6 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User 
   const [activeAdminsCount, setActiveAdminsCount] = useState(0);
 
   useEffect(() => {
-    const fetchActiveAdmins = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('role', ["admin", "super_observer", "team_leader"]);
-      
-      if (!error && data) {
-        setActiveAdminsCount(data.length);
-      }
-    };
-
-    fetchActiveAdmins();
-    const interval = setInterval(fetchActiveAdmins, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     if (!user) return;
 
     const channel = supabase.channel('room1');
@@ -52,6 +35,7 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User 
         });
         
         setPresenceState(newPresenceState);
+        setActiveAdminsCount(Object.keys(newPresenceState).length);
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {

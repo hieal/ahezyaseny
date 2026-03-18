@@ -65,7 +65,7 @@ export default function IdentitySelector() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-2xl bg-white rounded-3xl shadow-xl p-8 border border-slate-100"
       >
-        <h1 className="text-3xl font-black text-slate-900 mb-8 text-center">ברוך הבא מלאכי, במי תרצה לבקר היום?</h1>
+        <h1 className="text-3xl font-black text-[#D4AF37] mb-8 text-center">ברוך הבא, מלאכי צוריאל - מנהל העמותה</h1>
         
         {!role ? (
           <div className="grid grid-cols-1 gap-4">
@@ -73,9 +73,9 @@ export default function IdentitySelector() {
               <ShieldCheck size={32} className="text-purple-600" />
               <h3 className="font-bold text-xl text-purple-900">מנהל ראשי</h3>
             </button>
-            <button onClick={() => window.location.href = '/admin-dashboard'} className="p-6 flex items-center gap-4 border-2 border-amber-300 rounded-2xl hover:border-amber-500 transition-all bg-gradient-to-r from-amber-50 to-yellow-50">
-              <ShieldCheck size={32} className="text-amber-600" />
-              <h3 className="font-bold text-xl text-amber-900">מרכז שליטה - מנהל העמותה</h3>
+            <button onClick={() => window.location.href = '/admin-dashboard'} className="p-6 flex items-center gap-4 border-2 border-[#D4AF37] rounded-2xl hover:border-[#D4AF37] transition-all bg-gradient-to-r from-amber-50 to-yellow-50 shadow-[0_0_15px_rgba(212,175,55,0.2)]">
+              <ShieldCheck size={32} className="text-[#D4AF37]" />
+              <h3 className="font-bold text-xl text-[#D4AF37]">מרכז שליטה - מנהל העמותה</h3>
             </button>
             <button onClick={() => handleSelect('team_leader')} className="p-6 flex items-center gap-4 border-2 border-purple-200 rounded-2xl hover:border-purple-500 transition-all bg-gradient-to-r from-purple-50 to-amber-50">
               <Users size={32} className="text-purple-600" />

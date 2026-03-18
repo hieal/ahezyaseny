@@ -164,7 +164,11 @@ export default function LoginPage() {
 
       if (user) {
         login(user);
-        toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
+        if (user.phone === '0556603336') {
+          toast.success('ברוך הבא, מלאכי צוריאל - מנהל העמותה');
+        } else {
+          toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
+        }
         if (user.role === 'super_observer') {
           navigate('/identity-selector');
         } else if (user.role === 'candidate') {

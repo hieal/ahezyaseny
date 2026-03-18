@@ -17,6 +17,7 @@ export interface User {
   daily_message_template?: string | null;
   is_from_file?: number;
   is_approved?: number;
+  pending_delete?: number;
   is_shaham_manager?: number;
   password_updated_at?: string;
   password_plain?: string;
@@ -92,6 +93,8 @@ export interface WhatsAppGroup {
   whapi_id: string | null;
   last_initial_sent: string | null;
   last_initial_sent_method?: 'auto' | 'manual' | null;
+  is_approved?: number;
+  pending_delete?: number;
 }
 
 export interface ImagePosition {

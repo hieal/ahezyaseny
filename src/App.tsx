@@ -109,6 +109,10 @@ function Sidebar() {
   });
 
   React.useEffect(() => {
+    console.log('UI CUSTOMIZED: DASHBOARD & ADMIN TABS COLORED. SHOW MORE ACTIVE');
+  }, []);
+
+  React.useEffect(() => {
     localStorage.setItem('chat_auto_popup', autoPopup.toString());
     window.dispatchEvent(new Event('storage'));
   }, [autoPopup]);
@@ -255,7 +259,9 @@ function Sidebar() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  let navItems = activeUser?.role === 'candidate' 
+  const isMalachi = activeUser?.phone === '0556603336';
+
+  let navItems: any[] = activeUser?.role === 'candidate' 
     ? [
         { path: '/candidate-dashboard', label: 'דף הבית', icon: <LayoutDashboard size={20} /> },
         { path: '/portal/published-today', label: 'פורסמו היום', icon: <Sparkles size={20} /> },
@@ -279,6 +285,15 @@ function Sidebar() {
         { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
         ...(activeUser?.role === 'team_leader' ? [{ path: '/tracking', label: 'מעקב פרסומים צוותי', icon: <History size={20} /> }] : []),
       ];
+
+  if (isMalachi) {
+    navItems.unshift({ 
+      path: '/control-center', 
+      label: 'מרכז השליטה', 
+      icon: <ShieldAlert size={20} className="text-[#D4AF37]" />,
+      isGold: true
+    });
+  }
 
   if (pendingTransfersCount > 0) {
     navItems.push({
@@ -384,7 +399,7 @@ function Sidebar() {
               {user?.role !== 'candidate' && (
                 <button
                   onClick={() => setShowConnectedAdmins(true)}
-                  className="w-full sidebar-item mb-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-all"
+                  className="w-full sidebar-item mb-2 bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-all"
                 >
                   <Users size={20} />
                   <span className="font-bold flex-1 text-right">מחוברים כעת ({activeAdminsCount})</span>
@@ -422,13 +437,17 @@ function Sidebar() {
                     className={`sidebar-item flex-1 ${
                       location.pathname === item.path ? 'sidebar-item-active' : ''
                     } ${
+                      item.path === '/' ? '!bg-blue-700 !text-white font-bold hover:!bg-blue-800' : ''
+                    } ${
                       item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
                     } ${
                       item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
-                    } ${effectiveUser?.role === 'super_observer' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${
+                      (item as any).isGold ? '!bg-[#D4AF37]/10 !text-[#D4AF37] border border-[#D4AF37]/20 font-bold hover:!bg-[#D4AF37]/20' : ''
+                    } ${effectiveUser?.role === 'super_observer' && !(item as any).isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {item.icon}
-                    <span className="font-medium flex-1">{item.label}</span>
+                    <span className={`font-medium flex-1 ${(item as any).isGold ? 'text-[#D4AF37]' : ''}`}>{item.label}</span>
                     {item.badge && (
                       <span className="text-[9px] font-black bg-luxury-blue/10 text-luxury-blue px-2 py-0.5 rounded-full border border-luxury-blue/20">
                         {item.badge}
@@ -518,14 +537,15 @@ function Sidebar() {
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-text-main truncate">
-                    {effectiveUser ? (effectiveUser.full_name || effectiveUser.name) : user?.full_name}
+                  <p className={`text-sm font-bold truncate ${isMalachi ? 'text-[#D4AF37]' : 'text-text-main'}`}>
+                    {isMalachi ? 'מלאכי צוריאל - מנהל העמותה' : (effectiveUser ? (effectiveUser.full_name || effectiveUser.name) : user?.full_name)}
                   </p>
-                  <p className="text-xs text-text-secondary font-medium truncate">
-                    {effectiveUser ? 
-                      (effectiveUser.role === 'super_admin' ? 'מנהל ראשי' : effectiveUser.role === 'team_leader' ? getGenderedText(effectiveUser.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל') :
-                      (user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
-                    }
+                  <p className={`text-xs font-medium truncate ${isMalachi ? 'text-[#D4AF37]/80' : 'text-text-secondary'}`}>
+                    {isMalachi ? 'מנהל העמותה' : (
+                      effectiveUser ? 
+                        (effectiveUser.role === 'super_admin' ? 'מנהל ראשי' : effectiveUser.role === 'team_leader' ? getGenderedText(effectiveUser.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל') :
+                        (user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
+                    )}
                   </p>
                 </div>
               </div>
@@ -645,6 +665,7 @@ function Header() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMalachi = user?.phone === '0556603336';
 
   const isHome = location.pathname === '/';
 
@@ -671,9 +692,9 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>{user?.role === 'super_observer' ? 'ברוך הבא, מנהל העמותה' : (user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,'))}</span>
+          <span>{isMalachi ? 'ברוך הבא, מלאכי צוריאל - מנהל העמותה' : (user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,'))}</span>
           <span className="text-text-main font-bold">
-            {user?.role === 'super_observer' ? '' : (user?.username === 'god' ? (
+            {isMalachi ? '' : (user?.username === 'god' ? (
               <span className="text-luxury-blue font-bold">מנהל ראשי</span>
             ) : user?.full_name)}
           </span>

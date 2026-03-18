@@ -1,21 +1,24 @@
 import React from 'react';
-import { X, MessageSquare, User } from 'lucide-react';
+import { X, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAuth } from '../contexts/AuthContext';
+import { usePresence } from '../contexts/PresenceContext';
 import { dataService } from '../services/dataService';
 
 export const OnlineMonitor = ({ isOpen, onClose, onOpenChat }: { isOpen: boolean, onClose: () => void, onOpenChat: (user: any) => void }) => {
-  const [onlineUsers, setOnlineUsers] = React.useState<any[]>([]);
+  const { presenceState } = usePresence();
+  const [allUsers, setAllUsers] = React.useState<any[]>([]);
 
   React.useEffect(() => {
-    const fetchOnlineUsers = async () => {
+    const fetchUsers = async () => {
       const users = await dataService.getUsers();
-      setOnlineUsers(users.filter(u => u.is_online));
+      setAllUsers(users);
     };
-    fetchOnlineUsers();
-    const interval = setInterval(fetchOnlineUsers, 10000);
+    fetchUsers();
+    const interval = setInterval(fetchUsers, 30000);
     return () => clearInterval(interval);
   }, [isOpen]);
+
+  const onlineUsers = allUsers.filter(u => !!presenceState[u.id]);
 
   return (
     <AnimatePresence>

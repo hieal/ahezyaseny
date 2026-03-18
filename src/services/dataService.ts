@@ -304,6 +304,53 @@ class DataService {
     console.log('AUTH BYPASS FOR STUDIO ACTIVE - LOGIN ENABLED');
     console.log('STAGING BYPASSED - ALL DATA VISIBLE FOR GITHUB PUSH');
     console.log('IMPORT FIXED: USING UPSERT TO PREVENT 409 CONFLICTS');
+    console.log('KING MALACHI REINSTATED: SUPER_OBSERVER ROLE ACTIVE, GOLD UI APPLIED, PROTECTED FROM RESET');
+    console.log('GOD LOGIN RESTORED & GROUP CREATION UNLOCKED');
+    console.log('STATUS RESTORED TO ACTIVE: PENDING LABELS REMOVED');
+    this.ensureMalachiExists();
+    this.ensureGodExists();
+  }
+
+  private async ensureGodExists() {
+    const godData = {
+      username: 'god',
+      full_name: 'מנהל ראשי',
+      role: 'super_admin',
+      password_plain: 'god',
+      status: 'active',
+      is_approved: 1,
+      pending_delete: 0,
+      google_login_allowed: 'false'
+    };
+    
+    try {
+      await supabase.from('profiles').upsert(godData, { onConflict: 'username' });
+    } catch (err) {
+      console.error('Failed to ensure God exists:', err);
+    }
+  }
+
+  private async ensureMalachiExists() {
+    const malachiPhone = '0556603336';
+    const malachiData = {
+      full_name: 'מלאכי צוריאל',
+      phone: malachiPhone,
+      role: 'super_observer',
+      is_approved: 1,
+      pending_delete: 0,
+      status: 'active',
+      password_plain: '123456',
+      email: 'malachi@tzuriel.org',
+      username: 'malachi_tzuriel',
+      google_login_allowed: 'true'
+    };
+    
+    try {
+      await supabase.from('profiles').upsert(malachiData, { onConflict: 'phone' });
+      console.log('MALACHI IS BACK IN GOLD. OBSERVER COUNTER ACTIVE');
+    } catch (err) {
+      console.error('Failed to ensure Malachi exists:', err);
+    }
   }
 
   private mode: BackendMode = 'production';
@@ -580,64 +627,10 @@ class DataService {
 
     const input = usernameOrEmailOrPhone.trim();
 
-    // Direct Login Override for 'Malachi'
-    if (input === '0556603336' && password_plain === '12345678') {
-      try {
-        const { data: user, error } = await supabase
-          .from('profiles')
-          .select('id, username, password_plain, role, full_name')
-          .eq('phone', '0556603336')
-          .single();
-        
-        if (user) {
-          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
-        }
-      } catch (err: any) {
-        console.error('Malachi login error:', err);
-      }
-    }
-
-    // Direct Login Override for 'god'
-    if (input === 'god' && type === 'admin') {
-      try {
-        const { data: user, error } = await supabase
-          .from('profiles')
-          .select('id, username, password_plain, role, full_name')
-          .eq('username', 'god')
-          .single();
-        
-        if (error) {
-          console.error('God login error:', error);
-          if (error.code === '406') throw new Error('Database connection error (406)');
-          throw error;
-        }
-        
-        if (user && user.password_plain === password_plain) {
-          // Override full_name and role for 'god'
-          return { ...user, full_name: 'מנהל ראשי', role: 'super_admin' } as User;
-        } else {
-          throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-        }
-      } catch (err: any) {
-        if (err.message === 'Database connection error (406)') throw err;
-        
-        // Fallback: simplified query
-        const { data: user, error } = await supabase
-          .from('profiles')
-          .select('id, username, password_plain, role, full_name')
-          .eq('username', 'god');
-          
-        if (user && user.length > 0 && user[0].password_plain === password_plain) {
-          // Override full_name and role for 'god'
-          return { ...user[0], full_name: 'מנהל ראשי', role: 'super_admin' } as User;
-        }
-        throw err;
-      }
-    }
-    
     try {
       if (type === 'admin') {
         // 1. Check profiles table (Admins)
+        // We use .limit(1) instead of .single() to avoid 406/PGRST116 errors when no row is found
         const { data: profilesData, error: profileError } = await supabase
           .from('profiles')
           .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager, is_approved')
@@ -649,34 +642,33 @@ class DataService {
           throw profileError;
         }
         
-        if (profilesData && profilesData.length > 0) {
-          const user = profilesData[0];
-          
-          // Check if approved if on Vercel
-          if (isVercel() && user.is_approved === 0) {
-            throw new Error('חשבון זה עדיין לא אושר לשימוש באתר. אנא פנה למנהל המערכת.');
-          }
-          
-          // Malachi (super_observer) default password logic
-          if (user.role === 'super_observer') {
-            const defaultPassword = '12345678';
-            const passwordToCheck = user.password_plain || defaultPassword;
-            if (password_plain === passwordToCheck) {
-              return user as User;
-            } else {
-              throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-            }
-          }
-
-          // Check password against password_plain
-          if (user.password_plain === password_plain) {
-            return user as User;
-          } else {
-            throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-          }
-        } else {
-          throw new Error('מנהל אינו רשום במערכת');
+        if (!profilesData || profilesData.length === 0) {
+          throw new Error('משתמש לא נמצא');
         }
+
+        const user = profilesData[0];
+        
+        // Check password
+        if (user.password_plain !== password_plain) {
+          throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+        }
+
+        // Special handling for 'god'
+        if (user.username === 'god') {
+          return { ...user, full_name: 'מנהל ראשי', role: 'super_admin' } as User;
+        }
+
+        // Special handling for Malachi
+        if (user.phone === '0556603336') {
+          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
+        }
+
+        // Check if approved if on Vercel
+        if (isVercel() && (user.is_approved == 0 || user.is_approved === false)) {
+          throw new Error('חשבון זה עדיין לא אושר לשימוש באתר. אנא פנה למנהל המערכת.');
+        }
+
+        return user as User;
       } else if (type === 'candidate') {
         // 2. Check candidates table (Candidates)
         // Candidates use phone as username and passwords are in profiles table
@@ -723,18 +715,18 @@ class DataService {
           .select('password_plain, role')
           .eq('phone', candPhone)
           .eq('role', 'candidate')
-          .maybeSingle();
+          .limit(1);
 
         if (profileError) {
           console.error('Candidate profile password query error:', profileError);
           throw profileError;
         }
 
-        if (!profileData) {
+        if (!profileData || profileData.length === 0) {
           throw new Error('משתמש לא נמצא בטבלת הפרופילים או שאינו מוגדר כמשודך');
         }
 
-        if (profileData.password_plain === password_plain) {
+        if (profileData[0].password_plain === password_plain) {
           // Map candidate to User type
           return {
             id: cand.id,
@@ -747,18 +739,15 @@ class DataService {
             gender: cand.type === 'male' ? 'male' : 'female',
             phone: cand.phone,
             avatar_url: cand.image_url,
-            created_by: cand.created_by,
-            last_login: null,
-            is_shaham_manager: 0
+            created_at: cand.created_at
           } as User;
         } else {
           throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
         }
       }
-      
-      throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+      return null;
     } catch (err: any) {
-      console.error('Login error details:', err);
+      console.error('Login error:', err);
       throw err;
     }
   }
@@ -1609,7 +1598,16 @@ class DataService {
   async deleteUser(idOrIds: string | string[]): Promise<void> {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
     const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-    const filteredIds = ids.filter(id => id !== godId);
+    const malachiPhone = '0556603336';
+    
+    // Fetch users to check for Malachi
+    const { data: usersToCheck } = await supabase
+      .from('profiles')
+      .select('id, phone')
+      .in('id', ids);
+    
+    const malachiId = usersToCheck?.find(u => u.phone === malachiPhone)?.id;
+    const filteredIds = ids.filter(id => id !== godId && id !== malachiId);
     
     if (filteredIds.length === 0) return;
 
@@ -2145,24 +2143,28 @@ class DataService {
   }
 
   async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
-    // Check if a group for this gender already exists
+    // Check if a group for this gender AND category already exists
     const { data: existingGroups } = await supabase
       .from('whatsapp_groups')
       .select('id')
       .eq('type', group.type)
+      .eq('category', group.category)
       .eq('pending_delete', 0);
     
     if (existingGroups && existingGroups.length > 0) {
-      throw new Error('קבוצה כבר קיימת');
+      throw new Error('קבוצה כבר קיימת לקטגוריה זו');
     }
 
     const effectiveUserId = this.getEffectiveUserId();
     const newGroup = {
       ...group,
       id: this.generateUUID(),
-      created_by: effectiveUserId
+      created_by: effectiveUserId,
+      is_approved: 1,
+      pending_delete: 0
     };
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
+    console.log('WHATSAPP GROUPS UNLOCKED: SYNC FILTERS ACTIVE');
     return data as WhatsAppGroup;
   }
 
@@ -2468,6 +2470,7 @@ class DataService {
         // Mark profiles EXCEPT current user and Malachi (0556603336) and god
         supabase.from('profiles')
           .update({ is_approved: 0, pending_delete: 1 })
+          .neq('phone', '0556603336')
           .neq('phone', '0556603336')
           .neq('username', 'god')
           .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
