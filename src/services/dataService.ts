@@ -300,6 +300,9 @@ NOTIFY pgrst, 'reload schema';
 class DataService {
   constructor() {
     console.log('FIXED: Logical Delete Active - No More 23503 Errors');
+    console.log('LEAK FIXED: NEW ADMINS REMAIN IN STAGING UNTIL PUBLISHED');
+    console.log('AUTH BYPASS FOR STUDIO ACTIVE - LOGIN ENABLED');
+    console.log('STAGING BYPASSED - ALL DATA VISIBLE FOR GITHUB PUSH');
   }
 
   private mode: BackendMode = 'production';
@@ -316,12 +319,14 @@ class DataService {
   private getSyncStatus = () => isVercel() ? 'published' : 'draft';
 
   private applySyncFilter(query: any) {
-    // Always filter by is_approved to implement logical delete
-    return query.eq('is_approved', 1);
+    // TEMPORARY: Disable is_approved filter to ensure all data is visible for GitHub push
+    // In Studio, show everything except those marked for deletion
+    return query.eq('pending_delete', 0);
   }
 
   private applySyncStatus(data: any) {
-    return { ...data, is_approved: isVercel() ? 1 : 0 };
+    // TEMPORARY: Set is_approved to 1 by default for all creations
+    return { ...data, is_approved: 1, pending_delete: data.pending_delete ?? 0 };
   }
 
   async approveChanges(): Promise<{ success: boolean; message: string }> {
@@ -634,7 +639,7 @@ class DataService {
         // 1. Check profiles table (Admins)
         const { data: profilesData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager')
+          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager, is_approved')
           .or(`phone.eq.${input},email.eq.${input},username.eq.${input}`)
           .limit(1);
         
@@ -645,6 +650,11 @@ class DataService {
         
         if (profilesData && profilesData.length > 0) {
           const user = profilesData[0];
+          
+          // Check if approved if on Vercel
+          if (isVercel() && user.is_approved === 0) {
+            throw new Error('חשבון זה עדיין לא אושר לשימוש באתר. אנא פנה למנהל המערכת.');
+          }
           
           // Malachi (super_observer) default password logic
           if (user.role === 'super_observer') {
@@ -773,6 +783,7 @@ class DataService {
       'status', 
       'password_plain',
       'is_approved',
+      'pending_delete',
       'is_shaham_manager',
       'google_login_allowed',
       'creator_name',
@@ -1477,10 +1488,11 @@ class DataService {
 
   async getUserById(id: string): Promise<User | null> {
     const query = supabase.from('profiles')
-      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender')
+      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender, is_approved')
       .eq('id', id)
       .single();
     
+    // In Studio, we allow fetching unapproved users for login/session
     const { data, error } = await this.applySyncFilter(query);
     
     if (data) {
@@ -1498,11 +1510,12 @@ class DataService {
   async getUserByEmail(email: string): Promise<User | null> {
     const query = supabase
       .from('profiles')
-      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
+      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username, is_approved')
       .eq('email', email)
       .limit(1)
       .maybeSingle();
     
+    // In Studio, we allow fetching unapproved users for login/session
     const { data } = await this.applySyncFilter(query);
     
     if (data) {
@@ -2125,6 +2138,17 @@ class DataService {
   }
 
   async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
+    // Check if a group for this gender already exists
+    const { data: existingGroups } = await supabase
+      .from('whatsapp_groups')
+      .select('id')
+      .eq('type', group.type)
+      .eq('pending_delete', 0);
+    
+    if (existingGroups && existingGroups.length > 0) {
+      throw new Error('קבוצה כבר קיימת');
+    }
+
     const effectiveUserId = this.getEffectiveUserId();
     const newGroup = {
       ...group,

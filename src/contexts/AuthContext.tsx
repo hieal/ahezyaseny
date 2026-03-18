@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
+import { isVercel } from '../utils/env';
 
 interface AuthContextType {
   user: User | null;
@@ -43,6 +44,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             const adminProfile = await dataService.getUserById(session.user.id);
             if (adminProfile) {
+              // Block unapproved users on Vercel
+              if (isVercel() && adminProfile.is_approved === 0) {
+                console.error('Account not approved for Vercel:', session.user.email);
+                await supabase.auth.signOut();
+                setUser(null);
+                localStorage.removeItem('current_user');
+                sessionStorage.removeItem('current_user');
+                return;
+              }
               setUser(adminProfile);
               localStorage.setItem('current_user', JSON.stringify(adminProfile));
             }
@@ -59,6 +69,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (userJson) {
             try {
               const localUser = JSON.parse(userJson);
+              // Block unapproved users on Vercel
+              if (isVercel() && localUser.is_approved === 0) {
+                setUser(null);
+                localStorage.removeItem('current_user');
+                sessionStorage.removeItem('current_user');
+                return;
+              }
               setUser(localUser);
             } catch (e) {
               sessionStorage.removeItem('current_user');
@@ -93,6 +110,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (adminProfile) {
+          // Block unapproved users on Vercel
+          if (isVercel() && adminProfile.is_approved === 0) {
+            console.error('Account not approved for Vercel:', email);
+            await supabase.auth.signOut();
+            setUser(null);
+            localStorage.removeItem('current_user');
+            sessionStorage.removeItem('current_user');
+            return;
+          }
           setUser(adminProfile);
           localStorage.setItem('current_user', JSON.stringify(adminProfile));
         } else {
