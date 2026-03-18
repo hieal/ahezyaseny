@@ -303,6 +303,7 @@ class DataService {
     console.log('LEAK FIXED: NEW ADMINS REMAIN IN STAGING UNTIL PUBLISHED');
     console.log('AUTH BYPASS FOR STUDIO ACTIVE - LOGIN ENABLED');
     console.log('STAGING BYPASSED - ALL DATA VISIBLE FOR GITHUB PUSH');
+    console.log('IMPORT FIXED: USING UPSERT TO PREVENT 409 CONFLICTS');
   }
 
   private mode: BackendMode = 'production';
@@ -1532,24 +1533,30 @@ class DataService {
     return null;
   }
 
-  async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
+  async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
     const currentUser = await this.getCurrentUser();
     const effectiveUserId = this.getEffectiveUserId();
-    const newUser: any = {
-      ...user,
-      password_plain: user.password_plain || '12345678',
-      created_by: effectiveUserId || currentUser?.id
+    const adminData: any = {
+      ...admin,
+      password_plain: admin.password_plain || '12345678',
+      created_by: effectiveUserId || currentUser?.id,
+      is_approved: 1,
+      deleted_at: null
     };
 
-    const sanitized = this.sanitizeAdmin(newUser);
+    const sanitized = this.sanitizeAdmin(adminData);
     const withSync = this.applySyncStatus(sanitized);
-    console.log('Sending to Supabase (profiles):', withSync);
     const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'email' }).select().single());
     
-    // Auto-reassign orphaned candidates
-    await this.autoReassignCandidates(data as User);
+    if (data) {
+      await this.autoReassignCandidates(data as User);
+    }
     
     return data as User;
+  }
+
+  async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
+    return this.upsertAdmin(user);
   }
 
   async autoReassignCandidates(admin: User): Promise<void> {

@@ -487,13 +487,8 @@ export default function AdminManagement() {
         
         console.log('Admins to save:', adminData);
         
-        // Force Insert
-        const { error } = await supabase.from('profiles').insert(adminData);
-        
-        if (error) {
-          console.error('Insert error for admin:', adminData.email, error);
-          throw error;
-        }
+        // Use upsertAdmin to prevent 409 Conflict with logically deleted users
+        await dataService.upsertAdmin(adminData);
         successCount++;
       } catch (err: any) {
         console.error('Import error:', err);
