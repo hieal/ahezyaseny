@@ -160,7 +160,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
       receiver_id: otherUser.id,
       content: newMessage || 'שלחתי לך הצעה למשודך',
       sender_id: user?.id || 'unknown',
-      sender_name: user?.name || 'מנהל'
+      sender_name: user?.role === 'super_observer' ? 'מנהל העמותה' : (user?.name || 'מנהל')
     };
     
     try {

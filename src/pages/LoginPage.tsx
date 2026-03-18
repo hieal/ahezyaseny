@@ -155,17 +155,10 @@ export default function LoginPage() {
     try {
       let user = null;
       
-      // Try admin login first if it's not explicitly candidate login
-      if (loginType !== 'candidate') {
-        try {
-          user = await dataService.login(username, password, 'admin');
-        } catch (err) {
-          // Ignore error, try candidate
-        }
-      }
-
-      // If not found or it's candidate login, try candidate login
-      if (!user) {
+      // Try admin login if it's admin or super login
+      if (loginType === 'admin' || loginType === 'super') {
+        user = await dataService.login(username, password, 'admin');
+      } else if (loginType === 'candidate') {
         user = await dataService.login(username, password, 'candidate');
       }
 

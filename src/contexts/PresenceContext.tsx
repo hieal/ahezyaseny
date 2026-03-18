@@ -10,12 +10,31 @@ interface PresenceData {
 
 interface PresenceContextType {
   presenceState: Record<string, PresenceData>;
+  activeAdminsCount: number;
 }
 
 const PresenceContext = createContext<PresenceContextType | undefined>(undefined);
 
 export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User | null }> = ({ children, user }) => {
   const [presenceState, setPresenceState] = useState<Record<string, PresenceData>>({});
+  const [activeAdminsCount, setActiveAdminsCount] = useState(0);
+
+  useEffect(() => {
+    const fetchActiveAdmins = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ['admin', 'super_observer', 'team_leader']);
+      
+      if (!error && data) {
+        setActiveAdminsCount(data.length);
+      }
+    };
+
+    fetchActiveAdmins();
+    const interval = setInterval(fetchActiveAdmins, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -50,7 +69,7 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode, user: User 
   }, [user]);
 
   return (
-    <PresenceContext.Provider value={{ presenceState }}>
+    <PresenceContext.Provider value={{ presenceState, activeAdminsCount }}>
       {children}
     </PresenceContext.Provider>
   );

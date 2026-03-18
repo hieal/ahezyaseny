@@ -15,7 +15,8 @@ import { supabase } from '../services/supabase';
 
 export default function AdminManagement() {
   const { user: currentUser, refreshUser, setImpersonation } = useAuth();
-  const { isReadOnly } = useAuth();
+  const { isReadOnly: authReadOnly } = useAuth();
+  const isReadOnly = authReadOnly || currentUser?.role === 'super_observer';
   const { presenceState } = usePresence();
   const { openChat } = useChat();
   const [users, setUsers] = useState<User[]>([]);
@@ -47,7 +48,7 @@ export default function AdminManagement() {
   const [scannedAdmins, setScannedAdmins] = useState<any[]>([]);
   const [showConnectionStatus, setShowConnectionStatus] = useState(true);
   const [connectionView, setConnectionView] = useState<'online' | 'offline'>('online');
-  const [roleTab, setRoleTab] = useState<'all' | 'admin' | 'team_leader' | 'viewer'>('all');
+  const [roleTab, setRoleTab] = useState<'all' | 'admin' | 'team_leader' | 'viewer' | 'super_admin' | 'super_observer'>('all');
   const [scrollThreshold, setScrollThreshold] = useState(10);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [compactView, setCompactView] = useState(true);
@@ -107,8 +108,8 @@ export default function AdminManagement() {
         admins.unshift({ 
           id: godId,
           username: 'god', 
-          full_name: 'מנהל ראשי', 
-          name: 'מנהל ראשי',
+          full_name: 'מנהל על', 
+          name: 'מנהל על',
           role: 'super_admin',
           status: 'active',
           email: '',
@@ -167,16 +168,17 @@ export default function AdminManagement() {
 
   const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => [u.id, u])).values());
   const filteredUsers = uniqueUsers.filter(u => {
-    if (!['admin', 'super_admin', 'team_leader'].includes(u.role)) return false;
+    if (!['admin', 'super_admin', 'team_leader', 'super_observer', 'viewer'].includes(u.role)) return false;
     
     // Manager Unification logic
     const isSuperAdmin = currentUser?.role === 'super_admin';
+    const isSuperObserver = currentUser?.role === 'super_observer';
     const isTeamLeader = currentUser?.role === 'team_leader';
     const isSameCategory = currentUser?.affiliation_group && (u.affiliation_group === currentUser.affiliation_group || u.secondary_category === currentUser.affiliation_group);
     const isCreator = u.created_by === currentUser?.id;
     const isSelf = u.id === currentUser?.id;
 
-    if (!isSuperAdmin) {
+    if (!isSuperAdmin && !isSuperObserver) {
       if (isTeamLeader) {
         if (!isSameCategory && !isCreator && !isSelf) return false;
       } else {
@@ -188,7 +190,7 @@ export default function AdminManagement() {
                           (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
                           (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
                           (u.email || '').toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = filterCategory.length === 0 || 
+    const matchesCategory = (u.role === 'super_admin' || u.role === 'super_observer') || filterCategory.length === 0 || 
                             filterCategory.some(cat => 
                               (u.affiliation_group === cat || u.secondary_category === cat) ||
                               (cat.includes('שח"ם') && (u.affiliation_group === 'פרויקט שח"ם' || u.secondary_category === 'פרויקט שח"ם'))
@@ -196,8 +198,14 @@ export default function AdminManagement() {
     const matchesConnection = filterConnection === 'all' || 
                               (filterConnection === 'online' && !!presenceState[u.id]) || 
                               (filterConnection === 'offline' && !presenceState[u.id]);
-    const matchesRole = (roleTab === 'all' || u.role === roleTab) && 
-                        (selectedRoles.length === 0 || selectedRoles.includes(u.role));
+    const matchesRole = (
+      roleTab === 'all' || 
+      (roleTab === 'viewer' && (u.role === 'viewer' || u.role === 'super_observer')) ||
+      (roleTab === 'admin' && u.role === 'admin') ||
+      (roleTab === 'super_admin' && u.role === 'super_admin') ||
+      u.role === roleTab ||
+      u.role === 'super_observer'
+    ) && (selectedRoles.length === 0 || selectedRoles.includes(u.role));
     
     // Airtable toggle only filters Airtable vs manual, without hiding other groups
     const matchesAirtable = !isAirtableSyncEnabled || u.affiliation_group === 'Airtable Sync';
@@ -213,6 +221,7 @@ export default function AdminManagement() {
     
     const rolePriority: Record<string, number> = {
       'super_admin': 1,
+      'super_observer': 1,
       'team_leader': 2,
       'admin': 3,
       'viewer': 4
@@ -376,7 +385,7 @@ export default function AdminManagement() {
             if (header === 'תפקיד' || header === 'role') {
               if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
               else if (val === 'צופה' || val === 'viewer') admin.role = 'viewer';
-              else if (val === 'מנהל ראשי' || val === 'super_admin') admin.role = 'super_admin';
+              else if (val === 'מנהל על' || val === 'super_admin') admin.role = 'super_admin';
               else if (val.includes('18-22')) {
                 admin.role = 'admin';
                 admin.category = '18-22';
@@ -492,6 +501,10 @@ export default function AdminManagement() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
   const confirmDelete = (user: User) => {
+    if (user.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b' || user.role === 'super_observer') {
+      toast.error('לא ניתן למחוק מנהל זה');
+      return;
+    }
     if (user.id === currentUser?.id) {
       toast.error('לא ניתן למחוק את המשתמש המחובר כרגע');
       return;
@@ -514,6 +527,10 @@ export default function AdminManagement() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
+    if (userToDelete.role === 'super_admin' || userToDelete.role === 'super_observer') {
+      toast.error('לא ניתן למחוק מנהל זה');
+      return;
+    }
     try {
       await dataService.deleteUser(userToDelete.id);
       
@@ -735,11 +752,15 @@ export default function AdminManagement() {
   const handleBulkDelete = async () => {
     if (selectedUserIds.length === 0) return;
     
-    // Safety check: ensure 'god' is not in the list
-    const idsToDelete = selectedUserIds.filter(id => id !== 'god-id');
+    // Filter out God and Malachi
+    const idsToDelete = selectedUserIds.filter(id => {
+      const user = users.find(u => u.id === id);
+      return user && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b' && user.role !== 'super_observer';
+    });
     
     if (idsToDelete.length === 0) {
       setSelectedUserIds([]);
+      toast.error('לא ניתן למחוק מנהלים מוגנים');
       return;
     }
 
@@ -799,7 +820,7 @@ export default function AdminManagement() {
     super_admin: uniqueUsers.filter(u => u.role === 'super_admin').length,
     team_leader: uniqueUsers.filter(u => u.role === 'team_leader').length,
     admin: uniqueUsers.filter(u => u.role === 'admin').length,
-    viewer: uniqueUsers.filter(u => u.role === 'viewer').length,
+    viewer: uniqueUsers.filter(u => u.role === 'viewer' || u.role === 'super_observer').length,
     filtered: filteredUsers.length
   };
 
@@ -896,32 +917,34 @@ export default function AdminManagement() {
             <FileUp size={20} />
             ייבוא מ-CSV
           </button>
-          <button 
-            onClick={() => {
-              setEditingUser(null);
-              setFormData({ 
-                full_name: '', 
-                username: '', 
-                email: '', 
-                password: '', 
-                role: 'admin', 
-                status: 'active', 
-                affiliation_group: '',
-                gender: '', 
-                phone: '', 
-                google_login_allowed: 'true', 
-                avatar_url: '',
-                is_shaham_manager: 0,
-                created_by: ''
-              });
-              setShowModal(true);
-            }}
-            className="btn-primary flex items-center gap-2 px-6 py-3 shadow-lg"
-          >
-            <UserPlus size={20} />
-            מנהל חדש
-          </button>
-          {selectedUserIds.length > 0 && (
+          {!isReadOnly && (
+            <button 
+              onClick={() => {
+                setEditingUser(null);
+                setFormData({ 
+                  full_name: '', 
+                  username: '', 
+                  email: '', 
+                  password: '', 
+                  role: 'admin', 
+                  status: 'active', 
+                  affiliation_group: '',
+                  gender: '', 
+                  phone: '', 
+                  google_login_allowed: 'true', 
+                  avatar_url: '',
+                  is_shaham_manager: 0,
+                  created_by: ''
+                });
+                setShowModal(true);
+              }}
+              className="btn-primary flex items-center gap-2 px-6 py-3 shadow-lg"
+            >
+              <UserPlus size={20} />
+              מנהל חדש
+            </button>
+          )}
+          {!isReadOnly && selectedUserIds.length > 0 && (
             <button 
               onClick={() => setShowBulkDeleteConfirm(true)}
               className="bg-red-500 text-white flex items-center gap-2 px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-red-600 transition-all animate-in fade-in slide-in-from-top-2"
@@ -1248,7 +1271,7 @@ export default function AdminManagement() {
           <span className="text-[10px] font-bold text-slate-500 mt-1">מוצגים: {stats.filtered}</span>
         </div>
         <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהל ראשי</span>
+          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהלי על</span>
           <span className="text-2xl font-black text-yellow-700">{stats.super_admin}</span>
         </div>
         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 shadow-sm flex flex-col items-center justify-center">
@@ -1270,7 +1293,7 @@ export default function AdminManagement() {
           <span className="text-xs font-bold text-slate-500">מקרא צבעים:</span>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] animate-pulse"></div>
-            <span className="text-[10px] font-bold text-slate-600">מנהל ראשי</span>
+            <span className="text-[10px] font-bold text-slate-600">מנהל על</span>
           </div>
           {CATEGORIES.map(cat => (
             <div key={cat} className="flex items-center gap-2">
@@ -1283,7 +1306,16 @@ export default function AdminManagement() {
         <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-100">
           <span className="text-xs font-bold text-slate-600">תצוגה אופקית (3 מנהלים)</span>
           <button 
-            onClick={() => setHorizontalView(!horizontalView)}
+            onClick={() => {
+              setHorizontalView(!horizontalView);
+              if (horizontalView) {
+                // Turning off horizontal view, reset filters
+                setFilterCategory([]);
+                setFilterConnection('all');
+                setRoleTab('all');
+                setSearch('');
+              }
+            }}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${horizontalView ? 'bg-luxury-blue' : 'bg-slate-300'}`}
           >
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${horizontalView ? '-translate-x-6' : '-translate-x-1'}`} />
@@ -1395,7 +1427,11 @@ export default function AdminManagement() {
                     </div>
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name || u.email || 'מנהל מערכת'}</p>
-                      <p className="text-[10px] text-slate-500">{(u.role === 'super_admin' || u.username === 'god') ? 'מנהל ראשי' : u.category || 'ללא קטגוריה'}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {u.username === 'god' ? (
+                          <span className="font-bold text-[#D4AF37]">מנהל העמותה</span>
+                        ) : (u.role === 'super_admin' ? 'מנהל על' : u.category || 'ללא קטגוריה')}
+                      </p>
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -1423,25 +1459,25 @@ export default function AdminManagement() {
           <div className="flex gap-2 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
             <button 
               onClick={() => setRoleTab('all')}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'all' ? 'bg-luxury-blue text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'all' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              כל המנהלים
+              הכל
+            </button>
+            <button 
+              onClick={() => setRoleTab('super_admin')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'super_admin' ? 'bg-blue-700 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              מנהלי על
             </button>
             <button 
               onClick={() => setRoleTab('admin')}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'admin' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              מנהלים רגילים
-            </button>
-            <button 
-              onClick={() => setRoleTab('team_leader')}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'team_leader' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              ראשי צוות
+              מנהלים
             </button>
             <button 
               onClick={() => setRoleTab('viewer')}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'viewer' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'viewer' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
               צופים
             </button>
@@ -1663,9 +1699,10 @@ export default function AdminManagement() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className={`px-3 py-1 rounded-full text-[10px] font-black w-fit shadow-sm ${
                                     u.role === 'super_admin' ? 'bg-yellow-400 text-black' : 
+                                    u.role === 'super_observer' ? 'bg-[#D4AF37] text-white' :
                                     u.role === 'team_leader' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
                                   }`}>
-                                    {u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                                    {u.role === 'super_admin' ? 'מנהל על' : u.role === 'super_observer' ? 'מנהל העמותה' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
                                   </span>
                                   {u.role !== 'super_admin' && (
                                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
@@ -1973,15 +2010,15 @@ export default function AdminManagement() {
 
                   <td className="px-3 py-4">
                     <div className="flex flex-col gap-1">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
-                        u.username === 'god' ? 'bg-yellow-400 text-black border border-yellow-600 shadow-md' :
-                        u.role === 'super_admin' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm' : 
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                        u.role === 'super_admin' ? 'bg-yellow-400 text-black border border-yellow-600 shadow-md font-black' :
+                        u.role === 'super_observer' ? 'bg-[#D4AF37] text-white border-yellow-800 shadow-md' :
                         u.role === 'team_leader' ? 'bg-indigo-100 text-indigo-700' :
                         u.role === 'viewer' ? 'bg-slate-100 text-slate-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
-                        {u.username === 'god' ? <ShieldAlert size={14} /> : (u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />)}
-                        {u.username === 'god' ? 'מנהל על' : (u.role === 'super_admin' ? 'מנהל על' : 
+                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : (u.role === 'super_observer' ? <Shield size={14} /> : <Shield size={14} />)}
+                        {u.role === 'super_admin' ? 'מנהל על' : (u.role === 'super_observer' ? 'מנהל העמותה' : 
                          u.role === 'team_leader' ? 'ראש צוות' :
                          u.role === 'viewer' ? 'צופה' : 'מנהל')}
                       </span>
@@ -2036,7 +2073,7 @@ export default function AdminManagement() {
                       <button onClick={() => toast('הצעת משודך - בביצוע')} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
                         <Heart size={16} />
                       </button>
-                      {currentUser?.role === 'super_admin' && u.id !== currentUser.id && (
+                      {currentUser?.role === 'super_observer' && u.id !== currentUser.id && (
                         <button 
                           onClick={() => setImpersonateUser(u)} 
                           className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
@@ -2555,7 +2592,7 @@ export default function AdminManagement() {
                               if (header === 'תפקיד' || header === 'role') {
                                 if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
                                 else if (val === 'צופה' || val === 'viewer') admin.role = 'viewer';
-                                else if (val === 'מנהל ראשי' || val === 'super_admin') admin.role = 'super_admin';
+                                else if (val === 'מנהל על' || val === 'super_admin') admin.role = 'super_admin';
                               }
                               if (header === 'מין' || header === 'gender' || header.includes('מין')) {
                                 if (val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female') admin.gender = 'female';
@@ -2770,7 +2807,7 @@ export default function AdminManagement() {
                         <option value="admin">מנהל רגיל</option>
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="viewer">צופה</option>
-                        <option value="super_admin">מנהל ראשי</option>
+                        <option value="super_admin">מנהל על</option>
                       </select>
                     </div>
                   </div>

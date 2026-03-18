@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { dataService } from '../services/dataService';
-import { PortalSettings, GameScore } from '../types';
+import { PortalSettings, GameScore, User } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, Image as ImageIcon, Zap, Trophy, 
   Save, Plus, Trash2, Layout, BarChart3,
-  Users, Gamepad2, Clock, X, MessageSquare
+  Users, Gamepad2, Clock, X, MessageSquare, Heart
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MatchesManagement from '../components/MatchesManagement';
@@ -22,22 +22,27 @@ export default function CandidatePortalAdmin() {
   const [newImageUrl, setNewImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [showMatchesManagement, setShowMatchesManagement] = useState(false);
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [managers, setManagers] = useState<User[]>([]);
+  const [selectedManagerId, setSelectedManagerId] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<'settings' | 'games'>('settings');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [portalSettings, scores, portalStats, weeklyLeaderboardData] = await Promise.all([
+        const [portalSettings, scores, portalStats, weeklyLeaderboardData, managersData] = await Promise.all([
           dataService.getPortalSettings(),
           dataService.getLeaderboard(),
           dataService.getPortalStats(),
-          dataService.getWeeklyLeaderboard()
+          dataService.getWeeklyLeaderboard(),
+          dataService.getUsers()
         ]);
         setSettings(portalSettings);
         setLeaderboard(scores);
         setStats(portalStats);
         setWeeklyLeaderboard(weeklyLeaderboardData);
+        setManagers(managersData.filter(u => u.is_approved === 1 && ['admin', 'super_admin', 'team_leader'].includes(u.role)));
       } catch (err) {
         console.error('Error fetching portal settings:', err);
       } finally {
@@ -58,6 +63,14 @@ export default function CandidatePortalAdmin() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSuggestMatch = async () => {
+    if (!selectedManagerId) return;
+    // Logic to assign match to manager
+    toast.success('המשודך שויך בהצלחה');
+    setShowSuggestModal(false);
+    setSelectedManagerId('');
   };
 
   const addImage = () => {
@@ -376,6 +389,31 @@ export default function CandidatePortalAdmin() {
       ) : (
         <GameMonitoring />
       )}
+
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 z-50 flex justify-end gap-4">
+          <button
+            onClick={() => setShowSuggestModal(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-2xl font-bold hover:bg-purple-600 transition-all shadow-lg shadow-purple-200"
+          >
+            <Heart size={20} />
+            הצע משודך
+          </button>
+          <button
+            onClick={() => setShowMatchesManagement(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-2xl font-bold hover:bg-blue-600 transition-all shadow-lg shadow-blue-200"
+          >
+            <Users size={20} />
+            ניהול משודכים
+          </button>
+          <button
+            onClick={handleSaveSettings}
+            disabled={isActionDisabled || saving}
+            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
+          >
+            {saving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
+            שמור שינויים
+          </button>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
 import { isAIStudio } from '../utils/env';
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, isReadOnly } = useAuth();
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
@@ -515,7 +515,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {user?.role === 'super_admin' && (
+          {user?.role === 'super_admin' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Option 1: Full System Reset */}
               <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
@@ -523,6 +523,7 @@ export default function SettingsPage() {
                   <Trash2 size={20} /> איפוס מערכת מלא
                 </h3>
                 <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות (מחיקה של הכל חוץ ממנהל ראשי).</p>
+                <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: המנהל הראשי ומנהל העמותה (מלאכי) הם חלק משלד המערכת ואינם נמחקים באף סוג של איפוס.</p>
                 <button 
                   onClick={() => setResetModalConfig({
                     isOpen: true,
@@ -612,6 +613,10 @@ export default function SettingsPage() {
                   איפוס היסטוריה בלבד
                 </button>
               </div>
+            </div>
+          ) : (
+            <div className="p-6 bg-slate-100 rounded-2xl text-center text-slate-500 font-bold">
+              אין לך הרשאות לבצע איפוס נתונים.
             </div>
           )}
         </div>

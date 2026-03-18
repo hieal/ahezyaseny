@@ -127,6 +127,18 @@ const OrphanedCandidatesPage: React.FC = () => {
                   <p className="text-xs text-slate-500">
                     {getGenderedText(match.type as any, 'בחור', 'בחורה')} • {match.age}
                   </p>
+                  {match.previous_admin_data && (
+                    <p className="text-[10px] text-slate-400 font-medium mt-1 bg-slate-50 p-1 rounded">
+                      {(() => {
+                        try {
+                          const data = JSON.parse(match.previous_admin_data);
+                          return `מנהל קודם: ${data.name}`;
+                        } catch {
+                          return 'מנהל קודם לא ידוע';
+                        }
+                      })()}
+                    </p>
+                  )}
                   {match.transfer_status === 'approved' && (
                     <p className="text-[10px] text-emerald-600 font-bold mt-1">הועבר בהצלחה</p>
                   )}

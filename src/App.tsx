@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import ControlCenter from './pages/ControlCenter';
 import IdentitySelector from './pages/IdentitySelector';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
@@ -40,10 +41,16 @@ import { supabase } from './services/supabase';
 import { InternalChat } from './components/InternalChat';
 import { OnlineMonitor } from './components/OnlineMonitor';
 import { ChatProvider } from './contexts/ChatContext';
+import { ActiveManagersWidget } from './components/ActiveManagersWidget';
 import { TransferModal } from './components/TransferModal';
 
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
-  const { user, loading } = useAuth();
+  const { user, effectiveUser, loading } = useAuth();
+  
+  // Check localStorage for super_observer to prevent redirect during loading
+  const localUserStr = localStorage.getItem('current_user');
+  const localUser = localUserStr ? JSON.parse(localUserStr) : null;
+  const isSuperObserver = user?.role === 'super_observer' || localUser?.role === 'super_observer';
   
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-bg-gray">
@@ -51,17 +58,32 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
     </div>
   );
 
-  if (!user) return <Navigate to="/login" />;
+  // If user is not logged in and not super_observer, redirect to login
+  if (!user && !isSuperObserver) return <Navigate to="/login" />;
   
-  if (user.role === 'candidate') {
+  // If loading and isSuperObserver, show loading
+  if (loading && isSuperObserver) return (
+    <div className="min-h-screen flex items-center justify-center bg-bg-gray">
+      <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  );
+  
+  // If user is super_observer but not effectiveUser, redirect to identity-selector
+  if (user?.role === 'super_observer' && !effectiveUser && window.location.pathname !== '/identity-selector') {
+    return <Navigate to="/identity-selector" />;
+  }
+  
+  // If user is candidate, restrict access
+  if (user?.role === 'candidate') {
     const location = window.location.pathname;
     if (!location.startsWith('/candidate-dashboard') && !location.startsWith('/portal')) {
       return <Navigate to="/candidate-dashboard" />;
     }
   }
   
-  if (superAdminOnly && user.role !== 'super_admin') return <Navigate to="/" />;
-  if (adminOnly && user.role !== 'super_admin' && user.role !== 'team_leader' && user.role !== 'admin') return <Navigate to="/" />;
+  // Role-based access control
+  if (superAdminOnly && user?.role !== 'super_admin') return <Navigate to="/" />;
+  if (adminOnly && user?.role !== 'super_admin' && user?.role !== 'team_leader' && user?.role !== 'admin' && user?.role !== 'super_observer') return <Navigate to="/" />;
   
   return <>{children}</>;
 }
@@ -134,7 +156,7 @@ function Sidebar() {
     }
   }, [user]);
 
-  const { presenceState } = usePresence();
+  const { presenceState, activeAdminsCount } = usePresence();
   const isSuperAdminOnline = Object.values(presenceState).some(p => p.role === 'super_admin');
 
   React.useEffect(() => {
@@ -281,14 +303,14 @@ function Sidebar() {
     setIsOpen(false);
   };
 
-  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader') {
+  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' || activeUser?.role === 'super_observer') {
     navItems.unshift(
       { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
       { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
     );
   }
 
-  if (activeUser?.role === 'super_admin') {
+  if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer') {
     navItems.push(
       { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
       { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
@@ -341,6 +363,11 @@ function Sidebar() {
             className={`fixed lg:sticky top-0 right-0 h-screen w-72 bg-white border-l border-slate-100 z-50 flex flex-col shadow-xl lg:shadow-none ${!isOpen && 'hidden lg:flex'}`}
           >
             <div className="p-8 border-b border-slate-50 hidden lg:block">
+              {effectiveUser?.role === 'super_observer' && (
+                <div className="mb-4 px-3 py-1.5 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-lg text-[10px] font-bold text-center">
+                  מצב צופה פעיל - הרשאות קריאה בלבד
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <Logo size={40} />
                 <div className="flex flex-col items-end">
@@ -360,7 +387,7 @@ function Sidebar() {
                   className="w-full sidebar-item mb-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-all"
                 >
                   <Users size={20} />
-                  <span className="font-bold flex-1 text-right">מחוברים כעת</span>
+                  <span className="font-bold flex-1 text-right">מחוברים כעת ({activeAdminsCount})</span>
                 </button>
               )}
               {user?.role !== 'candidate' && (
@@ -377,19 +404,28 @@ function Sidebar() {
                   )}
                 </button>
               )}
+              
+              <ActiveManagersWidget />
 
               {navItems.map((item) => (
                 <div key={item.path} className="relative group">
                   <Link
                     to={item.path}
-                    onClick={() => setIsOpen(false)}
+                    onClick={(e) => {
+                      if (effectiveUser?.role === 'super_observer') {
+                        e.preventDefault();
+                      } else {
+                        setIsOpen(false);
+                      }
+                    }}
+                    title={effectiveUser?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
                     className={`sidebar-item flex-1 ${
                       location.pathname === item.path ? 'sidebar-item-active' : ''
                     } ${
                       item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
                     } ${
                       item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
-                    }`}
+                    } ${effectiveUser?.role === 'super_observer' ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {item.icon}
                     <span className="font-medium flex-1">{item.label}</span>
@@ -635,8 +671,12 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>{user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
-          <span className="text-text-main font-bold">{user?.username === 'god' ? 'מנהל ראשי' : user?.full_name}</span>
+          <span>{user?.role === 'super_observer' ? 'ברוך הבא, מנהל העמותה' : (user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,'))}</span>
+          <span className="text-text-main font-bold">
+            {user?.role === 'super_observer' ? '' : (user?.username === 'god' ? (
+              <span className="text-luxury-blue font-bold">מנהל ראשי</span>
+            ) : user?.full_name)}
+          </span>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -1036,6 +1076,7 @@ export default function App() {
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/identity-selector" element={<ProtectedRoute><IdentitySelector /></ProtectedRoute>} />
+              <Route path="/admin-dashboard" element={<ProtectedRoute superAdminOnly><ControlCenter /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
               <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

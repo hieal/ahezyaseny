@@ -40,10 +40,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (session?.user) {
-          const adminProfile = await dataService.getUserById(session.user.id);
-          if (adminProfile) {
-            setUser(adminProfile);
-            localStorage.setItem('current_user', JSON.stringify(adminProfile));
+          try {
+            const adminProfile = await dataService.getUserById(session.user.id);
+            if (adminProfile) {
+              setUser(adminProfile);
+              localStorage.setItem('current_user', JSON.stringify(adminProfile));
+            }
+          } catch (err) {
+            console.error('Error fetching admin profile:', err);
+            // Don't throw, just log and continue to allow local storage fallback
           }
         } else {
           // 2. Fallback to sessionStorage (for impersonation) then localStorage
@@ -101,6 +106,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else if (event === 'SIGNED_OUT') {
+        // Don't clear local storage if it's a super_observer or god (they don't use Supabase Auth)
+        const localUserStr = localStorage.getItem('current_user');
+        if (localUserStr) {
+          try {
+            const localUser = JSON.parse(localUserStr);
+            if (localUser.role === 'super_observer' || localUser.username === 'god') {
+              return; // Ignore SIGNED_OUT for these special users
+            }
+          } catch (e) {}
+        }
+        
         setUser(null);
         localStorage.removeItem('current_user');
       }
@@ -147,7 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionStorage.removeItem('effective_user');
   };
 
-  const isReadOnly = effectiveUser?.role === 'super_observer';
+  const isReadOnly = user?.role === 'super_observer' || effectiveUser?.role === 'super_observer';
 
   return (
     <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation, isReadOnly }}>

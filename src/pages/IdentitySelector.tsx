@@ -4,48 +4,59 @@ import { useAuth } from '../contexts/AuthContext';
 import { ShieldCheck, Users, Heart, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { dataService } from '../services/dataService';
-import { WhatsAppGroup, User, Match } from '../types';
+import { User, Match } from '../types';
 
 export default function IdentitySelector() {
   const { setImpersonation } = useAuth();
-  const navigate = useNavigate();
-  const [role, setRole] = useState<'admin' | 'team_leader' | 'candidate' | null>(null);
-  const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
+  const [role, setRole] = useState<'admin' | 'team_leader' | 'candidate' | 'super_admin' | null>(null);
+  const [affiliationGroups, setAffiliationGroups] = useState<string[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      const [groupsData, usersData, matchesData] = await Promise.all([
-        dataService.getWhatsAppGroups(),
+      const [usersData, matchesData] = await Promise.all([
         dataService.getUsers(),
         dataService.getMatches()
       ]);
-      setGroups(groupsData);
       setUsers(usersData);
       setMatches(matchesData);
+      
+      const groups = Array.from(new Set(usersData.map(u => u.affiliation_group).filter(Boolean) as string[]));
+      setAffiliationGroups(groups);
       setLoading(false);
     };
     fetchData();
   }, []);
 
-  const handleSelect = (selectedRole: 'admin' | 'team_leader' | 'candidate') => {
+  const handleSelect = (selectedRole: 'admin' | 'team_leader' | 'candidate' | 'super_admin') => {
+    if (selectedRole === 'super_admin') {
+      // Direct login as super_admin
+      const superAdmin = users.find(u => u.role === 'super_admin');
+      if (superAdmin) {
+        setImpersonation(superAdmin);
+        window.location.href = '/';
+      }
+      return;
+    }
     setRole(selectedRole);
-    setSelectedGroupId(null);
+    setSelectedGroup(null);
   };
 
   const handleUserSelect = (user: User | Match) => {
-    // @ts-ignore
-    setImpersonation(user);
-    navigate('/');
+    setImpersonation(user as any);
+    window.location.href = '/';
   };
 
   const filteredUsers = role === 'team_leader' 
-    ? users.filter(u => u.assigned_group_id === selectedGroupId)
-    : matches.filter(m => JSON.parse(m.viewer_group_ids || '[]').includes(selectedGroupId));
+    ? users.filter(u => u.affiliation_group === selectedGroup)
+    : matches.filter(m => {
+        const candidate = users.find(u => u.id === (m as any).candidate_id);
+        return candidate?.affiliation_group === selectedGroup;
+      });
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
@@ -54,13 +65,17 @@ export default function IdentitySelector() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-2xl bg-white rounded-3xl shadow-xl p-8 border border-slate-100"
       >
-        <h1 className="text-3xl font-black text-slate-900 mb-8 text-center">בחירת זהות צפייה</h1>
+        <h1 className="text-3xl font-black text-slate-900 mb-8 text-center">ברוך הבא מלאכי, במי תרצה לבקר היום?</h1>
         
         {!role ? (
           <div className="grid grid-cols-1 gap-4">
-            <button onClick={() => handleSelect('admin')} className="p-6 flex items-center gap-4 border-2 border-purple-200 rounded-2xl hover:border-purple-500 transition-all bg-gradient-to-r from-purple-50 to-amber-50">
+            <button onClick={() => handleSelect('super_admin')} className="p-6 flex items-center gap-4 border-2 border-purple-200 rounded-2xl hover:border-purple-500 transition-all bg-gradient-to-r from-purple-50 to-amber-50">
               <ShieldCheck size={32} className="text-purple-600" />
               <h3 className="font-bold text-xl text-purple-900">מנהל ראשי</h3>
+            </button>
+            <button onClick={() => window.location.href = '/admin-dashboard'} className="p-6 flex items-center gap-4 border-2 border-amber-300 rounded-2xl hover:border-amber-500 transition-all bg-gradient-to-r from-amber-50 to-yellow-50">
+              <ShieldCheck size={32} className="text-amber-600" />
+              <h3 className="font-bold text-xl text-amber-900">מרכז שליטה - מנהל העמותה</h3>
             </button>
             <button onClick={() => handleSelect('team_leader')} className="p-6 flex items-center gap-4 border-2 border-purple-200 rounded-2xl hover:border-purple-500 transition-all bg-gradient-to-r from-purple-50 to-amber-50">
               <Users size={32} className="text-purple-600" />
@@ -79,14 +94,14 @@ export default function IdentitySelector() {
             
             <select 
               className="w-full p-4 rounded-2xl border border-slate-200 font-bold"
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              value={selectedGroupId || ''}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              value={selectedGroup || ''}
             >
-              <option value="">בחר קבוצה</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <option value="">בחר קבוצת שיוך</option>
+              {affiliationGroups.map(g => <option key={g} value={g}>{g}</option>)}
             </select>
 
-            {selectedGroupId && (
+            {selectedGroup && (
               <div className="grid grid-cols-1 gap-2">
                 {filteredUsers.map(u => (
                   <button 

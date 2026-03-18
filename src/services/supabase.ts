@@ -7,49 +7,39 @@ const envUrl = import.meta.env.VITE_SUPABASE_URL;
 const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseUrl = localUrl || envUrl;
-const supabaseAnonKey = localKey || envKey;
-const supabaseServiceKey = serviceKey; // Usually not stored in localStorage for security
+const supabaseUrl = localUrl || envUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co';
+const supabaseAnonKey = localKey || envKey || 'placeholder_key';
+const supabaseServiceKey = serviceKey || supabaseAnonKey;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing Supabase environment variables. Please check your .env file or Vercel settings.');
-} else {
-  console.log(`Supabase connecting using: ${localUrl ? 'Local Storage' : 'Environment Variables'}`);
+// Use a global object to store the singleton instances to prevent multiple initializations
+const globalAny = window as any;
+
+if (!globalAny.__supabase) {
+  globalAny.__supabase = createClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    }
+  );
 }
 
-let supabaseInstance: any = null;
-let supabaseAdminInstance: any = null;
+if (!globalAny.__supabaseAdmin) {
+  globalAny.__supabaseAdmin = createClient(
+    supabaseUrl,
+    supabaseServiceKey,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}
 
-export const supabase = (() => {
-  if (!supabaseInstance) {
-    supabaseInstance = createClient(
-      supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
-      supabaseAnonKey || 'placeholder_key',
-      {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-        },
-      }
-    );
-  }
-  return supabaseInstance;
-})();
-
-// Administrative client that bypasses RLS if service key is provided
-export const supabaseAdmin = (() => {
-  if (!supabaseAdminInstance) {
-    supabaseAdminInstance = createClient(
-      supabaseUrl || 'https://bdxddmsdkebxpfuirkmh.supabase.co',
-      supabaseServiceKey || supabaseAnonKey || 'placeholder_key',
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      }
-    );
-  }
-  return supabaseAdminInstance;
-})();
+export const supabase = globalAny.__supabase;
+export const supabaseAdmin = globalAny.__supabaseAdmin;

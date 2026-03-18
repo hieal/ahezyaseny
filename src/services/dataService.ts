@@ -545,6 +545,23 @@ class DataService {
 
     const input = usernameOrEmailOrPhone.trim();
 
+    // Direct Login Override for 'Malachi'
+    if (input === '0556603336' && password_plain === '12345678') {
+      try {
+        const { data: user, error } = await supabase
+          .from('profiles')
+          .select('id, username, password_plain, role, full_name')
+          .eq('phone', '0556603336')
+          .single();
+        
+        if (user) {
+          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
+        }
+      } catch (err: any) {
+        console.error('Malachi login error:', err);
+      }
+    }
+
     // Direct Login Override for 'god'
     if (input === 'god' && type === 'admin') {
       try {
@@ -617,6 +634,8 @@ class DataService {
           } else {
             throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
           }
+        } else {
+          throw new Error('מנהל אינו רשום במערכת');
         }
       } else if (type === 'candidate') {
         // 2. Check candidates table (Candidates)
@@ -1330,6 +1349,24 @@ class DataService {
     }
   }
 
+  async getActiveManagers(): Promise<User[]> {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ["admin", "super_observer", "team_leader"]);
+      
+      console.log('Clean Query - No Last Seen Filter');
+      
+      if (error) throw error;
+      return data as User[];
+    } catch (error) {
+      console.error('Error fetching active managers:', error);
+      return [];
+    }
+  }
+
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     const stored = sessionStorage.getItem('current_user');
@@ -1373,7 +1410,7 @@ class DataService {
       }
 
       const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
-      return (data || []).map(u => ({
+      const processedUsers = (data || []).map(u => ({
         ...u,
         role: safeMap(u.role, 'viewer'),
         full_name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
@@ -1381,6 +1418,28 @@ class DataService {
         username: u.username,
         affiliation_group: u.affiliation_group
       })) as User[];
+
+      const rolePriority: Record<string, number> = {
+        'super_observer': 1,
+        'super_admin': 2,
+        'team_leader': 3,
+        'admin': 4,
+        'viewer': 5
+      };
+
+      // Sort by role priority first so higher roles are processed first
+      const sortedUsers = [...processedUsers].sort((a, b) => 
+        (rolePriority[a.role] || 99) - (rolePriority[b.role] || 99)
+      );
+
+      const uniqueUsers = new Map<string, User>();
+      for (const u of sortedUsers) {
+        const key = u.phone || u.id; // Use phone as key if available, else ID
+        if (!uniqueUsers.has(key)) {
+          uniqueUsers.set(key, u);
+        }
+      }
+      return Array.from(uniqueUsers.values());
     } catch (err: any) {
       console.error('FAILED to fetch admins from Supabase:', err);
       throw err;
@@ -1396,7 +1455,7 @@ class DataService {
     );
     if (data) {
       const u = data as any;
-      const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
+      const fallbackName = 'מנהל מערכת';
       
       return {
         ...u,
@@ -1445,7 +1504,42 @@ class DataService {
     const withSync = this.applySyncStatus(sanitized);
     console.log('Sending to Supabase (profiles):', withSync);
     const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'email' }).select().single());
+    
+    // Auto-reassign orphaned candidates
+    await this.autoReassignCandidates(data as User);
+    
     return data as User;
+  }
+
+  async autoReassignCandidates(admin: User): Promise<void> {
+    // Find orphaned candidates whose previous_admin_data matches this admin
+    const { data: orphaned } = await supabase
+      .from('candidates')
+      .select('id, previous_admin_data')
+      .eq('transfer_status', 'orphaned')
+      .not('previous_admin_data', 'is', null);
+
+    if (!orphaned) return;
+
+    for (const cand of orphaned) {
+      try {
+        const prevData = JSON.parse(cand.previous_admin_data);
+        // Match by name
+        if (prevData.name === admin.full_name || prevData.name === admin.username) {
+          await supabase
+            .from('candidates')
+            .update({
+              managed_by: admin.id,
+              target_admin_id: admin.id,
+              transfer_status: 'active',
+              previous_admin_data: null
+            })
+            .eq('id', cand.id);
+        }
+      } catch (e) {
+        console.error('Failed to parse previous_admin_data for candidate', cand.id);
+      }
+    }
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
@@ -1480,15 +1574,16 @@ class DataService {
           deleted_at: new Date().toISOString()
         });
 
-        // 2. Update candidates: set managed_by to null and store previous data
-        await supabase
-          .from('candidates')
-          .update({
-            managed_by: null,
-            previous_admin_data: adminData,
-            transfer_status: 'orphaned'
-          })
-          .eq('managed_by', user.id);
+    // 2. Update candidates: set managed_by to null and store previous data
+    await supabase
+      .from('candidates')
+      .update({
+        managed_by: null,
+        target_admin_id: null, // Ensure target_admin_id is also cleared
+        previous_admin_data: adminData,
+        transfer_status: 'orphaned'
+      })
+      .or(`managed_by.in.(${filteredIds.join(',')}),target_admin_id.in.(${filteredIds.join(',')})`);
       }
     }
 
@@ -2306,10 +2401,7 @@ class DataService {
   }
 
   async factoryReset(): Promise<void> {
-    const currentUser = await this.getCurrentUser();
-    const adminEmail = currentUser?.email || 'hiealbokris@gmail.com';
-    
-    // Delete everything except the current super admin
+    // Delete only content tables
     await Promise.all([
       supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
@@ -2318,8 +2410,6 @@ class DataService {
       supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      // Delete all profiles except the super admin by email
-      supabase.from('profiles').delete().neq('email', adminEmail)
     ]);
     
     // Reset local settings

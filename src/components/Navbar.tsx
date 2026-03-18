@@ -13,9 +13,15 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center gap-3">
           <Avatar name={user?.full_name || user?.username} url={user?.avatar_url} size="md" />
           <div>
-            <h1 className="font-bold text-slate-900">שלום, {user?.role === 'candidate' ? 'משודך' : 'מנהל'}</h1>
+            <h1 className="font-bold text-slate-900">
+              {user?.role === 'super_observer' ? (
+                <span className="text-[#D4AF37]">מנהל העמותה</span>
+              ) : (
+                user?.role === 'candidate' ? 'משודך' : 'מנהל'
+              )}
+            </h1>
             <p className="text-xs text-slate-500 font-medium">
-              {user?.full_name}
+              {user?.role === 'super_observer' ? 'מנהל העמותה' : user?.full_name}
             </p>
           </div>
         </div>
