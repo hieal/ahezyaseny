@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { User, UserMinus, ArrowLeftRight, Search, Check, UserCog } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { useAuth } from '../contexts/AuthContext';
-import { Match, User as UserType } from '../types';
+import { Match, User as UserType, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
 
 import { getGenderedText } from '../utils/gender';
@@ -13,6 +13,7 @@ const OrphanedCandidatesPage: React.FC = () => {
   const activeUser = effectiveUser || user;
   const [candidates, setCandidates] = useState<Match[]>([]);
   const [admins, setAdmins] = useState<UserType[]>([]);
+  const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [selectedAdminId, setSelectedAdminId] = useState<string>('');
@@ -21,18 +22,21 @@ const OrphanedCandidatesPage: React.FC = () => {
   useEffect(() => {
     if (activeUser?.role === 'super_admin') {
       loadData();
+      console.log('UNASSIGNED VIEW UPDATED WITH HISTORY FIELDS');
     }
   }, [activeUser]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [candData, adminData] = await Promise.all([
+      const [candData, adminData, groupsData] = await Promise.all([
         dataService.getOrphanedCandidates(),
-        dataService.getUsers()
+        dataService.getUsers(),
+        dataService.getWhatsAppGroups()
       ]);
       setCandidates(candData);
       setAdmins(adminData.filter(a => a.role !== 'candidate'));
+      setWhatsappGroups(groupsData);
     } catch (err) {
       console.error('Failed to load data:', err);
       toast.error('שגיאה בטעינת נתונים');
@@ -127,18 +131,20 @@ const OrphanedCandidatesPage: React.FC = () => {
                   <p className="text-xs text-slate-500">
                     {getGenderedText(match.type as any, 'בחור', 'בחורה')} • {match.age}
                   </p>
-                  {match.previous_admin_data && (
-                    <p className="text-[10px] text-slate-400 font-medium mt-1 bg-slate-50 p-1 rounded">
-                      {(() => {
-                        try {
-                          const data = JSON.parse(match.previous_admin_data);
-                          return `מנהל קודם: ${data.name}`;
-                        } catch {
-                          return 'מנהל קודם לא ידוע';
-                        }
-                      })()}
-                    </p>
-                  )}
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1 text-[10px] text-slate-400 italic">
+                      <span className="font-bold">מנהל קודם:</span>
+                      <span>{match.previous_admin_name || 'לא ידוע'}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-slate-400 italic">
+                      <span className="font-bold">קבוצה אחרונה:</span>
+                      <span>
+                        {match.last_known_group 
+                          ? (whatsappGroups.find(g => g.id === match.last_known_group)?.name || 'קבוצה לא ידועה') 
+                          : 'לא ידוע'}
+                      </span>
+                    </div>
+                  </div>
                   {match.transfer_status === 'approved' && (
                     <p className="text-[10px] text-emerald-600 font-bold mt-1">הועבר בהצלחה</p>
                   )}

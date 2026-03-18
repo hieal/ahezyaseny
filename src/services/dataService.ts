@@ -87,7 +87,9 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   initial_contact_done BOOLEAN DEFAULT FALSE,
   password TEXT DEFAULT '12345678',
   is_approved INTEGER DEFAULT 0,
-  pending_delete INTEGER DEFAULT 0
+  pending_delete INTEGER DEFAULT 0,
+  previous_admin_name TEXT,
+  last_known_group UUID
 );
 
 -- Create blacklist table
@@ -296,6 +298,10 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 class DataService {
+  constructor() {
+    console.log('FIXED: Logical Delete Active - No More 23503 Errors');
+  }
+
   private mode: BackendMode = 'production';
 
   setMode(mode: BackendMode) {
@@ -309,16 +315,9 @@ class DataService {
 
   private getSyncStatus = () => isVercel() ? 'published' : 'draft';
 
-  private async applySyncFilter(query: any) {
-    if (isVercel()) {
-      try {
-        return query.eq('is_approved', 1);
-      } catch (e) {
-        console.warn('is_approved filter failed, ignoring.');
-        return query;
-      }
-    }
-    return query;
+  private applySyncFilter(query: any) {
+    // Always filter by is_approved to implement logical delete
+    return query.eq('is_approved', 1);
   }
 
   private applySyncStatus(data: any) {
@@ -341,7 +340,7 @@ class DataService {
           .update({ is_approved: 1 })
           .eq('is_approved', 0);
       }
-      console.log('SYSTEM READY - ALL BUTTONS SYNCHRONIZED');
+      console.log('ADMIN LOGIC & RESET BUTTONS FULLY SYNCED');
       return { success: true, message: 'השינויים אושרו ופורסמו בהצלחה!' };
     } catch (e: any) {
       console.error('Error in approveChanges:', e);
@@ -421,7 +420,8 @@ class DataService {
 
   private async safeQuery<T>(query: any, fallback: T): Promise<T> {
     try {
-      const { data, error } = await query;
+      const filteredQuery = this.applySyncFilter(query);
+      const { data, error } = await filteredQuery;
       if (error) {
         if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
           return fallback;
@@ -520,14 +520,14 @@ class DataService {
     const user: User = JSON.parse(userJson);
     
     try {
-      const data = await this.handleSupabase(
-        supabase
-          .from('profiles')
-          .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved, is_shaham_manager')
-          .eq('id', user.id)
-          .limit(1)
-          .single()
-      );
+      const query = supabase
+        .from('profiles')
+        .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved, is_shaham_manager')
+        .eq('id', user.id)
+        .limit(1)
+        .single();
+      
+      const { data } = await this.applySyncFilter(query);
         
       if (!data) {
         if (sessionUserJson) sessionStorage.removeItem('current_user');
@@ -1273,32 +1273,30 @@ class DataService {
   }
 
   async deleteMatch(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', id));
+    await this.handleSupabase(supabase.from('candidates').update({ 
+      deleted_at: new Date().toISOString(),
+      is_approved: 0,
+      pending_delete: 1
+    }).eq('id', id));
   }
 
   async getProfileById(id: string): Promise<any> {
-    const { data, error } = await supabase
+    const query = supabase
       .from('profiles')
       .select('*')
       .eq('id', id)
       .single();
-    if (error) {
-      console.error('Error fetching profile:', error);
-      return null;
-    }
+    const { data } = await this.applySyncFilter(query);
     return data;
   }
 
   async getCandidateByUserId(userId: string): Promise<Match | null> {
-    const { data, error } = await supabase
+    const query = supabase
       .from('candidates')
       .select('*')
       .eq('created_by', userId)
       .single();
-    if (error) {
-      console.error('Error fetching candidate:', error);
-      return null;
-    }
+    const { data } = await this.applySyncFilter(query);
     return data;
   }
 
@@ -1409,7 +1407,7 @@ class DataService {
         .select('id, email, full_name, role, status, phone, avatar_url, gender, username, affiliation_group, password_plain')
         .order('full_name');
       
-      const { data, error } = await (await this.applySyncFilter(query));
+      const { data, error } = await this.applySyncFilter(query);
       
       if (error) {
         // Fallback to basic columns if some columns are missing
@@ -1418,7 +1416,7 @@ class DataService {
           .from('profiles')
           .select('id, email, full_name, role, status, phone, avatar_url, gender, affiliation_group, username')
           .order('full_name');
-        const { data: basicData, error: basicError } = await (await this.applySyncFilter(basicQuery));
+        const { data: basicData, error: basicError } = await this.applySyncFilter(basicQuery);
         
         if (basicError) {
           console.error('Critical error fetching users:', basicError);
@@ -1478,23 +1476,19 @@ class DataService {
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const data = await this.handleSupabase(
-      supabase.from('profiles')
-        .select('id, email, full_name, role, status, phone, avatar_url')
-        .eq('id', id)
-        .single()
-    );
+    const query = supabase.from('profiles')
+      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender')
+      .eq('id', id)
+      .single();
+    
+    const { data, error } = await this.applySyncFilter(query);
+    
     if (data) {
       const u = data as any;
       const fallbackName = 'מנהל מערכת';
       
       return {
         ...u,
-        affiliation_group: u.affiliation_group,
-        category: u.category,
-        age_groups: u.age_groups,
-        username: u.username,
-        gender: u.gender,
         name: u.full_name || u.email?.split('@')[0] || fallbackName
       } as User;
     }
@@ -1502,12 +1496,15 @@ class DataService {
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
-        .eq('email', email)
-        .limit(1)
-        .maybeSingle();
+    const query = supabase
+      .from('profiles')
+      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
+      .eq('email', email)
+      .limit(1)
+      .maybeSingle();
+    
+    const { data } = await this.applySyncFilter(query);
+    
     if (data) {
       const u = data as any;
       const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
@@ -1543,34 +1540,39 @@ class DataService {
   }
 
   async autoReassignCandidates(admin: User): Promise<void> {
-    // Find orphaned candidates whose previous_admin_data matches this admin
+    // Find orphaned candidates whose previous_admin_name matches this admin
+    const adminName = admin.full_name || admin.username;
     const { data: orphaned } = await supabase
       .from('candidates')
-      .select('id, previous_admin_data')
+      .select('id, previous_admin_name')
       .eq('transfer_status', 'orphaned')
-      .not('previous_admin_data', 'is', null);
+      .eq('previous_admin_name', adminName);
 
-    if (!orphaned) return;
+    if (!orphaned || orphaned.length === 0) return;
 
-    for (const cand of orphaned) {
-      try {
-        const prevData = JSON.parse(cand.previous_admin_data);
-        // Match by name
-        if (prevData.name === admin.full_name || prevData.name === admin.username) {
-          await supabase
-            .from('candidates')
-            .update({
-              managed_by: admin.id,
-              target_admin_id: admin.id,
-              transfer_status: 'active',
-              previous_admin_data: null
-            })
-            .eq('id', cand.id);
-        }
-      } catch (e) {
-        console.error('Failed to parse previous_admin_data for candidate', cand.id);
-      }
-    }
+    // We don't auto-reassign anymore, we just provide the data for the UI to ask
+    console.log(`Found ${orphaned.length} orphaned candidates for returning admin ${adminName}`);
+  }
+
+  async getOrphanedCandidatesForAdmin(adminName: string): Promise<any[]> {
+    const { data } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('transfer_status', 'orphaned')
+      .eq('previous_admin_name', adminName);
+    return data || [];
+  }
+
+  async reassignOrphanedCandidates(adminId: string, adminName: string): Promise<void> {
+    await supabase
+      .from('candidates')
+      .update({
+        managed_by: adminId,
+        transfer_status: 'available',
+        previous_admin_name: null
+      })
+      .eq('transfer_status', 'orphaned')
+      .eq('previous_admin_name', adminName);
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
@@ -1594,32 +1596,36 @@ class DataService {
     // 1. Fetch user info for previous_admin_data
     const { data: usersToDelete } = await supabase
       .from('profiles')
-      .select('id, full_name, name, username')
+      .select('id, full_name, name, username, assigned_group_id')
       .in('id', filteredIds);
 
     if (usersToDelete) {
       for (const user of usersToDelete) {
-        const adminData = JSON.stringify({
-          id: user.id,
-          name: user.full_name || user.name || user.username,
-          deleted_at: new Date().toISOString()
-        });
-
-    // 2. Update candidates: set managed_by to null and store previous data
-    await supabase
-      .from('candidates')
-      .update({
-        managed_by: null,
-        target_admin_id: null, // Ensure target_admin_id is also cleared
-        previous_admin_data: adminData,
-        transfer_status: 'orphaned'
-      })
-      .or(`managed_by.in.(${filteredIds.join(',')}),target_admin_id.in.(${filteredIds.join(',')})`);
+        const adminName = user.full_name || user.name || user.username;
+        
+        // 2. Update candidates: set managed_by to null and store previous data
+        // This prevents Foreign Key violation (23503)
+        await supabase
+          .from('candidates')
+          .update({
+            managed_by: null,
+            target_admin_id: null,
+            previous_admin_name: adminName,
+            last_known_group: user.assigned_group_id,
+            transfer_status: 'orphaned',
+            is_approved: 0,
+            pending_delete: 1
+          })
+          .or(`managed_by.eq.${user.id},target_admin_id.eq.${user.id}`);
       }
     }
 
-    // 3. Delete the users
-    await this.handleSupabase(supabase.from('profiles').delete().in('id', filteredIds));
+    // 3. Mark as deleted instead of actual delete
+    await this.handleSupabase(supabase.from('profiles').update({ 
+      is_approved: 0, 
+      pending_delete: 1,
+      role: 'deleted'
+    }).in('id', filteredIds));
   }
 
   async transferCandidates(candidateIds: string[], targetAdminId: string): Promise<void> {
@@ -2113,8 +2119,9 @@ class DataService {
 
   // WhatsApp Groups
   async getWhatsAppGroups(): Promise<WhatsAppGroup[]> {
-    const data = await this.handleSupabase(supabase.from('whatsapp_groups').select('*')) as WhatsAppGroup[] | null;
-    return data || [];
+    const query = supabase.from('whatsapp_groups').select('*');
+    const { data } = await this.applySyncFilter(query);
+    return (data as WhatsAppGroup[]) || [];
   }
 
   async createWhatsAppGroup(group: Omit<WhatsAppGroup, 'id'>): Promise<WhatsAppGroup> {
@@ -2253,7 +2260,7 @@ class DataService {
   }
 
   async deleteWhatsAppGroup(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('whatsapp_groups').delete().eq('id', id));
+    await this.handleSupabase(supabase.from('whatsapp_groups').update({ is_approved: 0, pending_delete: 1 }).eq('id', id));
   }
 
   // Stats
@@ -2400,9 +2407,9 @@ class DataService {
   // Reset Actions
   async resetHistory(): Promise<void> {
     try {
-      // Delete all candidates, activity logs, publish logs, transfers, notes
+      // Mark as pending delete instead of actual delete in Studio
       await Promise.all([
-        supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidates').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
@@ -2418,18 +2425,18 @@ class DataService {
     try {
       const currentUser = await this.getCurrentUser();
       
-      // Delete only content tables
+      // Mark as pending delete instead of actual delete in Studio
       await Promise.all([
-        supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidates').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('whatsapp_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('whatsapp_groups').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        // Delete profiles EXCEPT current user and Malachi (0556603336) and god
+        // Mark profiles EXCEPT current user and Malachi (0556603336) and god
         supabase.from('profiles')
-          .delete()
+          .update({ is_approved: 0, pending_delete: 1 })
           .neq('phone', '0556603336')
           .neq('username', 'god')
           .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')

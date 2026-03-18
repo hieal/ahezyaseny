@@ -75,6 +75,9 @@ export default function AdminManagement() {
   const [stableUsers, setStableUsers] = useState<User[]>([]);
   const [carouselPage, setCarouselPage] = useState(0);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [orphanedCandidates, setOrphanedCandidates] = useState<any[]>([]);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [returningAdmin, setReturningAdmin] = useState<{id: string, name: string} | null>(null);
   
   const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
   const [formData, setFormData] = useState({
@@ -286,6 +289,15 @@ export default function AdminManagement() {
           is_approved: 1,
           is_from_file: 0
         });
+
+        // Check for orphaned candidates
+        const orphaned = await dataService.getOrphanedCandidatesForAdmin(formData.full_name);
+        if (orphaned.length > 0) {
+          setOrphanedCandidates(orphaned);
+          setReturningAdmin({ id: newUser.id, name: formData.full_name });
+          setShowReassignModal(true);
+        }
+
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
           user_name: currentUser?.name || 'System',
@@ -956,6 +968,60 @@ export default function AdminManagement() {
         </div>
       </div>
       </div>
+      {/* Reassign Orphaned Candidates Modal */}
+      <AnimatePresence>
+        {showReassignModal && returningAdmin && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mx-auto">
+                <Users size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900">שיוך משודכים חזרה</h3>
+                <p className="text-slate-500 font-medium">
+                  נמצאו <strong>{orphanedCandidates.length}</strong> משודכים שהיו שייכים ל-<strong>{returningAdmin.name}</strong> בעבר.
+                  <br />
+                  האם ברצונך לשייך אותם חזרה אליו כעת?
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    setShowReassignModal(false);
+                    setReturningAdmin(null);
+                    setOrphanedCandidates([]);
+                  }}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  לא כעת
+                </button>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await dataService.reassignOrphanedCandidates(returningAdmin.id, returningAdmin.name);
+                      toast.success('המשודכים שויכו חזרה בהצלחה');
+                      setShowReassignModal(false);
+                      setReturningAdmin(null);
+                      setOrphanedCandidates([]);
+                    } catch (err) {
+                      toast.error('שגיאה בשיוך המשודכים');
+                    }
+                  }}
+                  className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+                >
+                  כן, שייך חזרה
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Gender Selection Modal */}
       <AnimatePresence>
         {genderModalUser && (

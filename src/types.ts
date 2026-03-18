@@ -147,6 +147,8 @@ export interface Match {
   viewer_group_ids: string | null; // JSON string of array of WhatsAppGroup IDs
   managed_by?: string;
   previous_admin_data?: string | null;
+  previous_admin_name?: string | null;
+  last_known_group?: string | null;
   transfer_status?: 'pending' | 'approved' | 'orphaned' | null;
   target_admin_id?: string | null;
   transfer_approved_at?: string | null;
