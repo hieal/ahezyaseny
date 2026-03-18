@@ -38,21 +38,49 @@ export const parseCandidatePDF = async (file: File) => {
 };
 
 const extractDataFromText = (text: string) => {
-  const extract = (regex: RegExp) => text.match(regex)?.[1]?.trim() || '';
+  const clean = (val: string) => val.replace(/[😊👳🏻🎂🌱✨🏡🙏👪🇮🇱🎓👱🏼‍♀🎯🙌🚬🎚]/g, '').trim();
+  const extract = (regex: RegExp) => {
+    const match = text.match(regex);
+    return match ? clean(match[1]) : '';
+  };
   
-  return {
-    full_name: extract(/שם:\s*(.*)/i),
-    phone: extract(/טלפון:\s*(.*)/i),
-    email: extract(/אימייל:\s*(.*)/i) || extract(/דוא"ל:\s*(.*)/i) || extract(/email:\s*(.*)/i),
-    age: parseInt(extract(/גיל:\s*(\d+)/i)),
-    city: extract(/מגורים:\s*(.*)/i),
-    ethnicity: extract(/עדה:\s*(.*)/i),
-    marital_status: extract(/מצב משפחתי:\s*(.*)/i),
-    occupation: extract(/עיסוק:\s*(.*)/i),
-    about: extract(/קצת עלי:\s*(.*)/i),
-    looking_for: extract(/מה אני מחפש:\s*(.*)/i),
+  const data = {
+    full_name: extract(/(?:😊\s*)?שם:\s*(.*)/i),
+    phone: extract(/(?:📞\s*)?טלפון:\s*(.*)/i),
+    email: extract(/(?:📧\s*)?אימייל:\s*(.*)/i) || extract(/דוא"ל:\s*(.*)/i) || extract(/email:\s*(.*)/i),
+    age: parseInt(extract(/(?:🎂\s*)?גיל:\s*(\d+)/i)) || 0,
+    city: extract(/(?:🏡\s*)?מגורים:\s*(.*)/i),
+    ethnicity: extract(/(?:👳🏻\s*)?עדה:\s*(.*)/i),
+    marital_status: extract(/(?:✨\s*)?מצב משפחתי:\s*(.*)/i),
+    occupation: extract(/(?:🎓\s*)?עיסוק:\s*(.*)/i),
+    about: extract(/(?:👱🏼‍♀\s*)?קצת עלי:\s*(.*)/i),
+    looking_for: extract(/(?:🎯\s*)?אני מחפש\/ת:\s*(.*)/i),
     image_url: extract(/תמונה:\s*(.*)/i),
-    age_range: extract(/טווח גילאים:\s*(\d+-\d+)/i),
+    age_range: extract(/(?:🎚\s*)?טווח גילאים:\s*(\d+-\d+)/i),
     affiliation_group: extract(/שיוך:\s*(.*)/i)
   };
+
+  if (!data.full_name || !data.age || !data.city) {
+    throw new Error(`
+💚 כרטיס שידוכים ״החצי השני״
+
+😊 שם: הדסה ונונו
+👳🏻 עדה: מרוקאי/ת
+🎂 גיל: 31
+🌱 גובה: 1.56
+✨ מצב משפחתי: רווק/ה
+🏡 מגורים: אשקלון
+🙏 מגזר+רמה דתית: דתי לאומי
+👪 תאר/י בקווים כלליים את משפחתך: משפחה דתית וחמה, זוג הורים מקסימים , שני אחים גדולים ונשואים ו5 אחיינים מתוקים
+🇮🇱 שירות צבאי/לאומי/ישיבה: לאומי
+🎓 עיסוק: גננת בגן תקשורת
+👱🏼♀ קצת עלי: > באופן כללי אני מאוד אוהבת ללמוד ,להתפתח ולהתמקצע במה שמעניין אותי , שואפת קדימה , אני מתאמנת 4 פעמים בסטודיו לנשים בלבד, אוהבת מאוד ים וברכה, נהנת ממוזיקה טובה, נהנת מחברה טובה, אוהבת לטייל ולצאת לבית קפה או מסעדה טובה עם חברות, נהנת מלצפות בסרט בקולנוע
+🎯 אני מחפש/ת: אני מחפשת אדם דתי וטוב , רציני ויציב, ממשפחה טובה, שיהיה החבר הכי טוב שלי , אוזן קשבת, תומך ומכיל, אמין ורגיש , כנות ויושר, בעל תכונות אופי דומות לשלי, שיהיה , שיהיה אינטראקציה טובה, אדם בעל שאיפות ומטרות בחיים, בעל עבודה מכובדת, לא מעשן, איש שיחה ובעל אינטליגנציה, חיבור וכימייה טובה
+🙌 שומר/ת נגיעה? לא
+🚬 מעשן/ת? לא
+🎚 טווח גילאים: 29 - 36
+`);
+  }
+
+  return data;
 };

@@ -244,7 +244,7 @@ ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS previous_admin_data TEXT;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS transfer_status TEXT;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS target_admin_id UUID;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS transfer_approved_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS family_description TEXT;
 ALTER TABLE public.publish_logs ADD COLUMN IF NOT EXISTS group_id UUID;
 ALTER TABLE public.game_logs ADD COLUMN IF NOT EXISTS final_state JSONB;
 
@@ -813,7 +813,7 @@ class DataService {
   private sanitizeMatch(match: any): any {
     const allowedFields = [
       'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
-      'city', 'religious_level', 'service', 'occupation', 'about', 
+      'city', 'religious_level', 'service', 'occupation', 'about', 'family_description',
       'looking_for', 'notes', 'smoking', 'negiah', 'age_range', 'image_url', 
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
@@ -1115,6 +1115,21 @@ class DataService {
     }
 
     return uniqueCandidates;
+  }
+
+  async findDuplicate(name: string, phone: string): Promise<Match | null> {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('name', name)
+      .eq('phone', phone)
+      .is('deleted_at', null)
+      .limit(1);
+    
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+    return data[0] as Match;
   }
 
   async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User): Promise<Match> {

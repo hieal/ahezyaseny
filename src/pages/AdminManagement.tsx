@@ -1933,7 +1933,7 @@ export default function AdminManagement() {
                   >
                     <div className="w-full h-full relative">
                       <img 
-                        src={u.avatar_url || ''} 
+                        src={u.avatar_url || undefined} 
                         alt={u.full_name || u.name || '?'} 
                         referrerPolicy="no-referrer"
                         className={`w-full h-full object-cover ${!u.avatar_url ? 'hidden' : ''}`}
@@ -2072,14 +2072,10 @@ export default function AdminManagement() {
                       </div>
                     </td>
                   )}
-                  <td className="px-3 py-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
-                      ((u.pending_delete as any) == 0 || (u.pending_delete as any) === false) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {((u.pending_delete as any) == 0 || (u.pending_delete as any) === false) ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                      {((u.pending_delete as any) == 0 || (u.pending_delete as any) === false) ? 'פעיל' : 'מיועד למחיקה'}
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-green-100 text-green-700`}>
+                      <CheckCircle size={12} />
+                      פעיל
                     </span>
-                  </td>
                   <td className="px-3 py-4 text-left min-w-[200px]">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">

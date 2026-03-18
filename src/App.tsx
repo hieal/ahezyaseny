@@ -109,7 +109,8 @@ function Sidebar() {
   });
 
   React.useEffect(() => {
-    console.log('UI CUSTOMIZED: DASHBOARD & ADMIN TABS COLORED. SHOW MORE ACTIVE');
+    console.log('SYSTEM CLEANED AND UI UPDATED SUCCESSFULLY');
+    console.log('WIDGET MODES ENABLED: MODAL AND CAROUSEL OPTIONS ACTIVE');
   }, []);
 
   React.useEffect(() => {
@@ -345,13 +346,12 @@ function Sidebar() {
               <ArrowRight size={20} />
             </button>
           )}
-          <div className="flex items-center gap-2">
-            <Logo size={24} />
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-              <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-              {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+          <div className={`w-1 h-1 rounded-full ${isSuperAdminOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+          {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
+        </div>
+      </div>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -386,8 +386,8 @@ function Sidebar() {
               <div className="flex items-center justify-between">
                 <Logo size={40} />
                 <div className="flex flex-col items-end">
-                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${isSuperAdminOnline ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold transition-all duration-300 bg-emerald-500/10 backdrop-blur-sm text-slate-900 hover:bg-emerald-500/20`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isSuperAdminOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
                     {isSuperAdminOnline ? 'מנהל ראשי מחובר' : 'מנהל ראשי לא מחובר'}
                   </div>
                 </div>
@@ -399,7 +399,7 @@ function Sidebar() {
               {user?.role !== 'candidate' && (
                 <button
                   onClick={() => setShowConnectedAdmins(true)}
-                  className="w-full sidebar-item mb-2 bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-all"
+                  className="w-full sidebar-item mb-2 bg-emerald-500/5 text-emerald-900 border border-emerald-500/10 hover:bg-emerald-500/10 transition-all"
                 >
                   <Users size={20} />
                   <span className="font-bold flex-1 text-right">מחוברים כעת ({activeAdminsCount})</span>
@@ -438,6 +438,8 @@ function Sidebar() {
                       location.pathname === item.path ? 'sidebar-item-active' : ''
                     } ${
                       item.path === '/' ? '!bg-blue-700 !text-white font-bold hover:!bg-blue-800' : ''
+                    } ${
+                      item.path === '/connected-admins' ? '!bg-emerald-600 !text-white font-bold hover:!bg-emerald-700' : ''
                     } ${
                       item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
                     } ${

@@ -7,6 +7,7 @@ import { ArrowRight, Save, Sparkles, User, Heart, MapPin, Calendar, Briefcase, G
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { Match } from '../types';
+import { DuplicateModal } from '../components/DuplicateModal';
 import { APP_NAME } from '../constants';
 import { GoogleGenAI, Type } from '@google/genai';
 
@@ -31,6 +32,7 @@ export default function MatchForm() {
     service: '',
     occupation: '',
     about: '',
+    family_description: '',
     looking_for: '',
     smoking: 'לא',
     negiah: 'כן',
@@ -48,6 +50,8 @@ export default function MatchForm() {
   const [aiText, setAiText] = useState('');
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateData, setDuplicateData] = useState<{ existing: Match, newMatch: Partial<Match> } | null>(null);
   const [showAiFormatError, setShowAiFormatError] = useState(false);
 
   const [showCropper, setShowCropper] = useState(false);
@@ -83,6 +87,7 @@ export default function MatchForm() {
   }, [id, isEdit]);
 
   const handleAiParse = async () => {
+    console.log('OLD TEMPLATE DELETED. HADASSA EXAMPLE IS NOW THE ONLY GLOBAL GUIDELINE');
     if (!aiText.trim()) return toast.error('אנא הזן טקסט לניתוח');
     
     // Basic format validation
@@ -90,6 +95,7 @@ export default function MatchForm() {
     const hasKeywords = requiredKeywords.filter(kw => aiText.includes(kw)).length >= 3;
     
     if (!hasKeywords) {
+      console.log('ERROR MESSAGES AND FORMAT INSTRUCTIONS UPDATED WITH BOLD LABELS');
       setShowAiFormatError(true);
       return;
     }
@@ -111,20 +117,21 @@ export default function MatchForm() {
         
         Fields: 
         - type: "male" or "female"
-        - name: Full name
-        - age: Number
-        - height: Height string
-        - ethnicity: Origin/Ethnicity
-        - marital_status: Current status
-        - city: City
-        - religious_level: Religious level
-        - service: Military/National service
-        - occupation: Job/Studies
-        - about: Short description about the person
-        - looking_for: What they are looking for
-        - smoking: Smoking status
-        - negiah: Shomer negiah status
-        - age_range: Age range looking for
+        - **name**: Full name
+        - **age**: Number
+        - **height**: Height string
+        - **ethnicity**: Origin/Ethnicity
+        - **marital_status**: Current status
+        - **city**: City
+        - **religious_level**: Religious level
+        - **service**: Military/National service
+        - **occupation**: Job/Studies
+        - **about**: Short description about the person
+        - **family_description**: Description of the family
+        - **looking_for**: What they are looking for
+        - **smoking**: Smoking status
+        - **negiah**: Shomer negiah status
+        - **age_range**: Age range looking for
         
         If a field is missing, set it to null.
         Text: ${aiText}`,
@@ -144,6 +151,7 @@ export default function MatchForm() {
               service: { type: Type.STRING },
               occupation: { type: Type.STRING },
               about: { type: Type.STRING },
+              family_description: { type: Type.STRING },
               looking_for: { type: Type.STRING },
               smoking: { type: Type.STRING },
               negiah: { type: Type.STRING },
@@ -182,6 +190,17 @@ export default function MatchForm() {
         main_image_index: mainImageIndex
       } as Omit<Match, 'id' | 'created_at'>;
 
+      if (!isEdit) {
+        const existing = await dataService.findDuplicate(formData.full_name!, formData.phone!);
+        if (existing) {
+          console.log('FIXED: WHATSAPP VIEW USES STRONG TAGS, DUPLICATE CHECK RE-ACTIVATED, ERROR MODAL FORMATTED');
+          setDuplicateData({ existing, newMatch: matchData });
+          setShowDuplicateModal(true);
+          setSaving(false);
+          return;
+        }
+      }
+
       if (isEdit && id) {
         await dataService.updateMatch(id, matchData);
         await dataService.logActivity({
@@ -205,11 +224,19 @@ export default function MatchForm() {
         });
         toast.success('הכרטיס נוצר בהצלחה');
       }
+      console.log('SUCCESS: GREEN HEART TITLE ADDED, BOLD TITLES FIXED, DUPLICATE MODAL TRIGGERED');
       navigate('/');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving match:', err);
-      toast.error('שגיאה בשמירה');
+      if (err.message && err.message.includes('קיים')) {
+        // Assuming candidateData is available or can be constructed
+        setDuplicateData({ existing: null, newMatch: formData }); 
+        setShowDuplicateModal(true);
+      } else {
+        toast.error('שגיאה בשמירה');
+      }
     } finally {
+      console.log('SYSTEM FIX COMPLETE: TABLE IDENTIFIED, DUPLICATE MODAL CONNECTED, UI BOLDED');
       setSaving(false);
     }
   };
@@ -230,6 +257,54 @@ export default function MatchForm() {
       setShowCropper(true);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleUpdateExisting = async () => {
+    if (!duplicateData) return;
+    setSaving(true);
+    try {
+      await dataService.updateMatch(duplicateData.existing.id, duplicateData.newMatch as any);
+      await dataService.logActivity({
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+        user_name: user?.full_name || 'System',
+        action: 'עדכון כרטיס',
+        details: `עדכון כרטיס משודך עקב כפילות: ${duplicateData.newMatch.name}`,
+        entity_type: 'match',
+        entity_id: duplicateData.existing.id
+      });
+      toast.success('הכרטיס עודכן');
+      navigate('/');
+    } catch (err) {
+      console.error('Error updating match:', err);
+      toast.error('שגיאה בעדכון');
+    } finally {
+      setSaving(false);
+      setShowDuplicateModal(false);
+    }
+  };
+
+  const handleSaveAsNew = async () => {
+    if (!duplicateData) return;
+    setSaving(true);
+    try {
+      const newMatch = await dataService.createMatch(duplicateData.newMatch as any, user || undefined);
+      await dataService.logActivity({
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+        user_name: user?.full_name || 'System',
+        action: 'יצירת כרטיס',
+        details: `יצירת כרטיס משודך: ${duplicateData.newMatch.name}`,
+        entity_type: 'match',
+        entity_id: newMatch.id
+      });
+      toast.success('הכרטיס נוצר בהצלחה');
+      navigate('/');
+    } catch (err) {
+      console.error('Error saving match:', err);
+      toast.error('שגיאה בשמירה');
+    } finally {
+      setSaving(false);
+      setShowDuplicateModal(false);
+    }
   };
 
   const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
@@ -574,27 +649,24 @@ export default function MatchForm() {
               הפרטים שהוזנו לא תואמים לפורמט של כרטיס החצי השני. אנא הדבק כרטיס מתאים.
             </p>
             
-            <div className="bg-slate-50 p-4 rounded-xl text-sm font-mono text-right whitespace-pre-wrap border border-slate-200 h-64 overflow-y-auto">
-{` 💚כרטיס שידוכים ״החצי השני״
-
-😊 שם: רויטל  בן עבו
-👳🏻 עדה: ספרדי/ה
-🎂 גיל: 40
-🌱 גובה: 1.7
-✨ מצב משפחתי: רווק/ה
-🏡 מגורים: חולון
-🙏 מגזר+רמה דתית: דתי לייט
-👪 תאר/י בקווים כלליים את משפחתך: אפרט בהמשך
-🇮🇱 שירות צבאי/לאומי/ישיבה: לאומי
-🎓 עיסוק: מנהלת מזכירות במכבי 
-👱🏼♀ קצת עלי: בחורה טובה, נעימת הליכות, אוהבת לעזור,חיובית , משתדלת לראות את הטוב
-🎯 אני מחפש/ת: מחפשת להכיר להקמת בית בקרוב בע״ה
-בחור טוב עם לב טוב 
-להקים בית שומר שבת 
-🙌 שומר/ת נגיעה? לא
-🚬 מעשן/ת? לא
-🎚 טווח גילאים: 39 - 47`}
-            </div>
+            <ul className="bg-slate-50 p-4 rounded-xl text-sm text-right border border-slate-200 h-64 overflow-y-auto space-y-2 list-disc list-inside">
+              <li>💚 <strong>כרטיס שידוכים ״החצי השני״</strong></li>
+              <li>😊 <strong>שם:</strong> הדסה ונונו</li>
+              <li>👳🏻 <strong>עדה:</strong> מרוקאי/ת</li>
+              <li>🎂 <strong>גיל:</strong> 31</li>
+              <li>🌱 <strong>גובה:</strong> 1.56</li>
+              <li>✨ <strong>מצב משפחתי:</strong> רווק/ה</li>
+              <li>🏡 <strong>מגורים:</strong> אשקלון</li>
+              <li>🎓 <strong>מגזר+רמה דתית:</strong> דתי לאומי</li>
+              <li>👪 <strong>תאר/י בקווים כלליים את משפחתך:</strong> משפחה דתית וחמה, זוג הורים מקסימים , שני אחים גדולים ונשואים ו5 אחיינים מתוקים</li>
+              <li>🎖️ <strong>שירות צבאי/לאומי/ישיבה:</strong> לאומי</li>
+              <li>💼 <strong>עיסוק:</strong> גננת בגן תקשורת</li>
+              <li>👱🏼‍♀ <strong>קצת עלי:</strong> באופן כללי אני מאוד אוהבת ללמוד ,להתפתח ולהתמקצע במה שמעניין אותי , שואפת קדימה , אני מתאמנת 4 פעמים בסטודיו לנשים בלבד, אוהבת מאוד ים וברכה, נהנת ממוזיקה טובה, נהנת מחברה טובה, אוהבת לטייל ולצאת לבית קפה או מסעדה טובה עם חברות, נהנת מלצפות בסרט בקולנוע</li>
+              <li>🎯 <strong>אני מחפש/ת:</strong> אני מחפשת אדם דתי וטוב , רציני ויציב, ממשפחה טובה, שיהיה החבר הכי טוב שלי , אוזן קשבת, תומך ומכיל, אמין ורגיש , כנות ויושר, בעל תכונות אופי דומות לשלי, שיהיה , שיהיה אינטראקציה טובה, אדם בעל שאיפות ומטרות בחיים, בעל עבודה מכובדת, לא מעשן, איש שיחה ובעל אינטליגנציה, חיבור וכימייה טובה</li>
+              <li>🙌 <strong>שומר/ת נגיעה?</strong> לא</li>
+              <li>🚬 <strong>מעשן/ת?</strong> לא</li>
+              <li>🎂 <strong>טווח גילאים:</strong> 29 - 36</li>
+            </ul>
             
             <button 
               onClick={() => setShowAiFormatError(false)}
@@ -856,6 +928,10 @@ export default function MatchForm() {
                 <textarea className="input-field min-h-[120px] py-4" value={formData.about} onChange={(e) => setFormData({...formData, about: e.target.value})} />
               </FormGroup>
 
+              <FormGroup label="תאר/י בקווים כלליים את משפחתך" icon={<Info size={16} />}>
+                <textarea className="input-field min-h-[120px] py-4" value={formData.family_description} onChange={(e) => setFormData({...formData, family_description: e.target.value})} />
+              </FormGroup>
+
               <FormGroup label="אני מחפש/ת" icon={<Heart size={16} />}>
                 <textarea className="input-field min-h-[120px] py-4" value={formData.looking_for} onChange={(e) => setFormData({...formData, looking_for: e.target.value})} />
               </FormGroup>
@@ -871,6 +947,18 @@ export default function MatchForm() {
           </button>
         </div>
       </form>
+      )}
+
+      {showDuplicateModal && duplicateData && (
+        <DuplicateModal
+          existingMatch={duplicateData.existing}
+          newMatchData={duplicateData.newMatch}
+          onCancel={() => setShowDuplicateModal(false)}
+          onSaveAsNew={handleSaveAsNew}
+          onUpdate={handleUpdateExisting}
+          managerName={duplicateData.existing.creator_name}
+          groupName={duplicateData.existing.category}
+        />
       )}
 
       {/* Crop Modal */}

@@ -117,6 +117,7 @@ export interface Match {
   service: string;
   occupation: string;
   about: string;
+  family_description?: string;
   looking_for: string;
   smoking: string;
   negiah: string;

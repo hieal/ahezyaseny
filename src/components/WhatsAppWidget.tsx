@@ -236,20 +236,20 @@ export function WhatsAppWidget({
       // if (!confirm) return;
     }
 
-    const text = includeText ? (matchMessage || `*כרטיס חדש במערכת:*
-שם: ${currentMatch.name}
-גיל: ${currentMatch.age}
-גובה: ${currentMatch.height || '---'}
-עדה: ${currentMatch.ethnicity || '---'}
-מצב משפחתי: ${currentMatch.marital_status || '---'}
-עיר: ${currentMatch.city || '---'}
-מגזר: ${currentMatch.religious_level || '---'}
-שירות: ${currentMatch.service || '---'}
-עיסוק: ${currentMatch.occupation || '---'}
-מעשן/ת: ${currentMatch.smoking || '---'}
-שומר/ת נגיעה: ${currentMatch.negiah || '---'}
-טווח גילאים: ${currentMatch.age_range || '---'}
-על עצמי: ${currentMatch.about}`) : "";
+    const text = includeText ? (matchMessage || `<strong>כרטיס חדש במערכת:</strong>
+<strong>שם:</strong> ${currentMatch.name}
+<strong>גיל:</strong> ${currentMatch.age}
+<strong>גובה:</strong> ${currentMatch.height || '---'}
+<strong>עדה:</strong> ${currentMatch.ethnicity || '---'}
+<strong>מצב משפחתי:</strong> ${currentMatch.marital_status || '---'}
+<strong>עיר:</strong> ${currentMatch.city || '---'}
+<strong>מגזר:</strong> ${currentMatch.religious_level || '---'}
+<strong>שירות:</strong> ${currentMatch.service || '---'}
+<strong>עיסוק:</strong> ${currentMatch.occupation || '---'}
+<strong>מעשן/ת:</strong> ${currentMatch.smoking || '---'}
+<strong>שומר/ת נגיעה:</strong> ${currentMatch.negiah || '---'}
+<strong>טווח גילאים:</strong> ${currentMatch.age_range || '---'}
+<strong>על עצמי:</strong> ${currentMatch.about}`) : "";
     
     if (!text && !includeImage) {
       toast.error('יש לבחור לפחות תוכן אחד לפרסום (טקסט או תמונה)');
@@ -323,7 +323,7 @@ export function WhatsAppWidget({
             <Share2 size={20} />
           </div>
           <div>
-            <h3 className="font-bold text-sm">{groupName}</h3>
+            <h3 className="font-bold text-sm">💚כרטיס שידוכים ״החצי השני״</h3>
             <p className="text-[10px] opacity-80">מחובר כעת • {groupId ? 'API פעיל' : 'מזהה קבוצה חסר'}</p>
           </div>
         </div>

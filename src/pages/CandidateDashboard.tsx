@@ -464,21 +464,21 @@ function CandidateDashboard() {
                             פרטי כרטיס (פורמט הודעה):
                           </h3>
                           <div className="space-y-1 text-sm font-medium text-slate-800 whitespace-pre-wrap leading-relaxed">
-                            <p>✨ *כרטיס משודך חדש* ✨</p>
-                            <p>👤 *שם:* {myMatch.name}</p>
-                            <p>🎂 *גיל:* {myMatch.age}</p>
-                            <p>📍 *עיר:* {myMatch.city}</p>
-                            <p>📏 *גובה:* {myMatch.height}</p>
-                            <p>💍 *מצב משפחתי:* {myMatch.marital_status}</p>
-                            <p>🕍 *מגזר:* {myMatch.religious_level}</p>
-                            <p>💼 *עיסוק:* {myMatch.occupation}</p>
-                            <p>✡️ *עדה:* {myMatch.ethnicity}</p>
-                            <p>🎖️ *שירות:* {myMatch.service}</p>
-                            <p>🚬 *מעשן:* {myMatch.smoking}</p>
-                            <p>👐 *שומר נגיעה:* {myMatch.negiah}</p>
-                            <p>📝 *קצת עלי:* {myMatch.about || "לא צוין"}</p>
+                            <p>✨ <strong>כרטיס שידוכים החצי השני 💍</strong></p>
+                            <p>👤 <strong>שם:</strong> {myMatch.name}</p>
+                            <p>🎂 <strong>גיל:</strong> {myMatch.age}</p>
+                            <p>📍 <strong>עיר:</strong> {myMatch.city}</p>
+                            <p>📏 <strong>גובה:</strong> {myMatch.height}</p>
+                            <p>💍 <strong>מצב משפחתי:</strong> {myMatch.marital_status}</p>
+                            <p>🕍 <strong>מגזר:</strong> {myMatch.religious_level}</p>
+                            <p>💼 <strong>עיסוק:</strong> {myMatch.occupation}</p>
+                            <p>✡️ <strong>עדה:</strong> {myMatch.ethnicity}</p>
+                            <p>🎖️ <strong>שירות:</strong> {myMatch.service}</p>
+                            <p>🚬 <strong>מעשן:</strong> {myMatch.smoking}</p>
+                            <p>👐 <strong>שומר נגיעה:</strong> {myMatch.negiah}</p>
+                            <p>📝 <strong>קצת עלי:</strong> {myMatch.about || "לא צוין"}</p>
                             <p>
-                              🎯 *מה מחפש:* {myMatch.looking_for || "לא צוין"}
+                              🎯 <strong>מה מחפש:</strong> {myMatch.looking_for || "לא צוין"}
                             </p>
                             <p className="mt-4 text-[10px] opacity-60">
                               פורסם באמצעות פורטל יוחאי

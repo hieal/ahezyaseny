@@ -453,7 +453,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col items-start gap-2">
                 <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
                 <div className="flex bg-slate-100 p-0.5 rounded-lg scale-75 origin-right">
                   <button 
