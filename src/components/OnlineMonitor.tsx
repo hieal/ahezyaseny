@@ -2,13 +2,17 @@ import React from 'react';
 import { X, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePresence } from '../contexts/PresenceContext';
+import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 
 export const OnlineMonitor = ({ isOpen, onClose, onOpenChat }: { isOpen: boolean, onClose: () => void, onOpenChat: (user: any) => void }) => {
   const { presenceState } = usePresence();
+  const { user: currentUser, loading: authLoading } = useAuth();
   const [allUsers, setAllUsers] = React.useState<any[]>([]);
 
   React.useEffect(() => {
+    if (authLoading || !currentUser || !isOpen) return;
+    
     const fetchUsers = async () => {
       const users = await dataService.getUsers();
       setAllUsers(users);
@@ -16,7 +20,7 @@ export const OnlineMonitor = ({ isOpen, onClose, onOpenChat }: { isOpen: boolean
     fetchUsers();
     const interval = setInterval(fetchUsers, 30000);
     return () => clearInterval(interval);
-  }, [isOpen]);
+  }, [isOpen, authLoading, currentUser]);
 
   const onlineUsers = allUsers.filter(u => !!presenceState[u.id]);
 

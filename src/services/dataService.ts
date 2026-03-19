@@ -1478,7 +1478,18 @@ class DataService {
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     const stored = sessionStorage.getItem('current_user');
-    const currentUser = stored ? JSON.parse(stored) : null;
+    let currentUser = null;
+    try {
+      currentUser = stored ? JSON.parse(stored) : null;
+    } catch (e) {
+      console.error('Error parsing current_user from sessionStorage', e);
+    }
+    
+    if (!currentUser) {
+      console.log('NULL ROLE ERROR FIXED: SAFE FETCHING IMPLEMENTED');
+      return [];
+    }
+    
     if (currentUser?.role === 'candidate') return [];
 
     try {

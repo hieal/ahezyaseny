@@ -2,29 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup, User as UserType } from '../types';
-import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, MessageSquare, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User as UserIcon, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save, Activity } from 'lucide-react';
+import { Users, Heart, Send, Clock, Plus, Search, Filter, ExternalLink, UserCheck, Globe, Image as ImageIcon, RefreshCw, CheckCircle, ShieldAlert, Trash2, AlertCircle, AlertTriangle, Edit, History, ChevronDown, ChevronUp, Check, X, Sparkles, User as UserIcon, Phone, Database, Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Paperclip, Save, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { formatMatchMessage, WHATSAPP_GROUPS, APP_NAME, CATEGORIES } from '../constants';
 import MatchCard from '../components/MatchCard';
 import { MatchActions } from '../components/MatchActions';
 import { MatchCarousel } from '../components/MatchCarousel';
-import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import { MatchSuggestions } from '../components/MatchSuggestions';
+import { WhatsAppWidget } from '../components/WhatsAppWidget';
 import MatchesManagement from '../components/MatchesManagement';
 import NewMatchesModal from '../components/NewMatchesModal';
 import { getGenderedText } from '../utils/gender';
 
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
-import { useChat } from '../contexts/ChatContext';
 import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
 
 export default function Dashboard() {
   const { user, effectiveUser, refreshUser } = useAuth();
   const activeUser = effectiveUser || user;
-  const { openChat } = useChat();
   const { presenceState } = usePresence();
   const { type } = useParams();
   const navigate = useNavigate();
@@ -99,7 +97,6 @@ export default function Dashboard() {
   const [selectedGroupType, setSelectedGroupType] = usePersistedState<string>('dashboard_group_type', 'all');
   const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [showWhatsAppFloating, setShowWhatsAppFloating] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showConnectedAdminsModal, setShowConnectedAdminsModal] = useState(false);
   const [sortAlphabetically, setSortAlphabetically] = usePersistedState<boolean>('dashboard_sort_alphabetic', false);
@@ -1208,17 +1205,12 @@ export default function Dashboard() {
                   {whatsappGroups
                     .filter(g => g.category === user.category || (user.category === 'פרויקט שח"ם' && g.category.startsWith('פרויקט שח"ם')))
                     .map(group => (
-                      <button 
+                      <span 
                         key={group.id} 
-                        onClick={() => {
-                          setSelectedGroupId(group.id);
-                          setShowWhatsAppFloating(true);
-                        }}
-                        className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-100 flex items-center gap-1 hover:bg-emerald-100 transition-colors"
+                        className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-100 flex items-center gap-1"
                       >
-                        <MessageSquare size={10} />
                         {group.name}
-                      </button>
+                      </span>
                     ))
                   }
                 </div>
@@ -1488,7 +1480,7 @@ export default function Dashboard() {
                   {/* Recent Team Publications */}
                   <div className="space-y-4">
                     <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                      <MessageSquare size={20} className="text-emerald-600" />
+                      <Activity size={20} className="text-emerald-600" />
                       פרסומים אחרונים של הצוות
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1653,18 +1645,9 @@ export default function Dashboard() {
                                 className="p-2 bg-green-500 text-white rounded-xl hover:scale-110 transition-transform shadow-lg"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <MessageSquare size={14} />
+
                               </a>
                             )}
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openChat({ id: m.id, name: displayName });
-                              }}
-                              className="p-2 bg-luxury-blue text-white rounded-xl hover:scale-110 transition-transform shadow-lg"
-                            >
-                              <Send size={14} />
-                            </button>
                           </div>
                         </div>
                       );
@@ -1797,7 +1780,6 @@ export default function Dashboard() {
                                 match={match}
                                 whatsappGroups={whatsappGroups}
                                 isViewer={true}
-                                onOpenChat={(userId, initialMessage) => openChat({id: userId, name: match.creator_name || 'מנהל'}, initialMessage)}
                                 onPublish={(m) => handlePublish(m)}
                                 onNotes={(m) => {
                                   setNotesMatch(m);
@@ -1823,6 +1805,7 @@ export default function Dashboard() {
                                   generateDesignedImage(m);
                                   setShowDesignedCardModal(true);
                                 }}
+                                onOpenChat={() => {}}
                               />
                             </div>
                           </div>
@@ -3238,12 +3221,6 @@ export default function Dashboard() {
                           <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
                             <Phone size={18} />
                           </button>
-                          <button onClick={() => {
-                            setShowSameGroupsAdminsModal(false);
-                            openChat({ id: u.id, name: u.full_name || u.name });
-                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                            <MessageSquare size={18} />
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -3296,12 +3273,6 @@ export default function Dashboard() {
                           <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
                             <Phone size={18} />
                           </button>
-                          <button onClick={() => {
-                            setShowSameGroupsAdminsModal(false);
-                            openChat({ id: u.id, name: u.full_name || u.name });
-                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                            <MessageSquare size={18} />
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -3326,12 +3297,6 @@ export default function Dashboard() {
                         <div className="flex gap-2">
                           <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
                             <Phone size={18} />
-                          </button>
-                          <button onClick={() => {
-                            setShowSameGroupsAdminsModal(false);
-                            openChat({ id: u.id, name: u.full_name || u.name });
-                          }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                            <MessageSquare size={18} />
                           </button>
                         </div>
                       </div>
@@ -3377,12 +3342,6 @@ export default function Dashboard() {
                     <div className="flex gap-2">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
                         <Phone size={18} />
-                      </button>
-                      <button onClick={() => {
-                        setShowConnectedAdminsModal(false);
-                        openChat({ id: u.id, name: u.name });
-                      }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="שלח הודעת צ'אט">
-                        <MessageSquare size={18} />
                       </button>
                     </div>
                   </div>
@@ -3711,48 +3670,7 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Floating WhatsApp Widget */}
-      <div className="fixed bottom-6 left-6 z-40">
-        <AnimatePresence>
-          {showWhatsAppFloating && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 100, x: -100 }}
-              animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 100, x: -100 }}
-              className="absolute bottom-20 left-0 w-[350px] h-[500px] shadow-2xl"
-            >
-              {(() => {
-                const adminGroups = whatsappGroups.filter(g => g.category === user?.category);
-                const primaryGroup = selectedGroupId ? whatsappGroups.find(g => g.id === selectedGroupId) : adminGroups[0];
-                
-                // If super admin or no group found, maybe show a general one or let them pick
-                const finalGroupId = primaryGroup?.whapi_id || primaryGroup?.name || "120363210658789236@g.us";
-                const finalGroupName = primaryGroup?.name || (user?.role === 'super_admin' ? "ניהול כללי" : "אין קבוצה משוייכת");
 
-                return (
-                  <WhatsAppWidget 
-                    groupId={finalGroupId}
-                    groupName={finalGroupName}
-                    senderName={user?.name}
-                    mode="chat-only"
-                    onClose={() => setShowWhatsAppFloating(false)}
-                  />
-                );
-              })()}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        
-        <button
-          onClick={() => setShowWhatsAppFloating(!showWhatsAppFloating)}
-          className="w-16 h-16 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-[#128C7E] transition-all hover:scale-110 active:scale-95 group"
-        >
-          {showWhatsAppFloating ? <Plus size={32} className="rotate-45" /> : <MessageSquare size={32} />}
-          <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-full border-2 border-white animate-bounce">
-            API
-          </span>
-        </button>
-      </div>
     </div>
   );
 }
