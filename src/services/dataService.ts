@@ -843,7 +843,7 @@ class DataService {
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
       'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
       'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
-      'crop_config', 'creation_source', 'managed_by', 'target_admin_id', 'admin_id'
+      'crop_config', 'image_position', 'creation_source', 'managed_by', 'target_admin_id', 'admin_id'
     ];
     
     const sanitized: any = {};
@@ -998,6 +998,30 @@ class DataService {
       console.error('Error fetching WhatsApp messages:', err);
       return [];
     }
+  }
+
+  async getWhapiGroups(): Promise<any[]> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) {
+      throw new Error('Whapi API Token is missing');
+    }
+    
+    const response = await fetch('https://gate.whapi.cloud/groups?limit=50', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Whapi API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('WHAPI GROUP FETCHING ACTIVE: IDS RETRIEVED SUCCESSFULLY');
+    return data.groups || [];
   }
 
   async clearInternalMessages(): Promise<void> {

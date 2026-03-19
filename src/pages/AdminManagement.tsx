@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -96,7 +96,8 @@ export default function AdminManagement() {
     google_login_allowed: 'true',
     avatar_url: '',
     is_shaham_manager: 0,
-    created_by: ''
+    created_by: '',
+    assigned_group_id: ''
   });
 
   const fetchWhatsAppGroups = async () => {
@@ -118,31 +119,6 @@ export default function AdminManagement() {
       ]);
       
       let admins = usersData;
-      
-      // Only add manual god user if NO super_admin exists at all
-      if (!admins.find(a => a.username === 'god' || a.role === 'super_admin')) {
-        const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b'; 
-        admins.unshift({ 
-          id: godId,
-          username: 'god', 
-          full_name: 'מנהל על', 
-          name: 'מנהל על',
-          role: 'super_admin',
-          status: 'active',
-          email: '',
-          category: null,
-          secondary_category: null,
-          gender: 'male',
-          phone: null,
-          google_login_allowed: 'false',
-          avatar_url: null,
-          deleted_at: null,
-          daily_message_template: null,
-          is_from_file: 0,
-          is_approved: 1,
-          created_at: new Date().toISOString()
-        } as User);
-      }
       
       setUsers(admins);
       setWhatsappGroups(groupsData);
@@ -360,7 +336,8 @@ export default function AdminManagement() {
         google_login_allowed: 'true', 
         avatar_url: '',
         is_shaham_manager: 0,
-        created_by: ''
+        created_by: '',
+        assigned_group_id: ''
       });
       fetchUsers();
     } catch (err) {
@@ -622,6 +599,38 @@ export default function AdminManagement() {
     }
   };
 
+  const [showWhapiModal, setShowWhapiModal] = useState(false);
+  const [whapiGroups, setWhapiGroups] = useState<any[]>([]);
+  const [selectedWhapiGroupIds, setSelectedWhapiGroupIds] = useState<string[]>([]);
+  const [isFetchingWhapi, setIsFetchingWhapi] = useState(false);
+
+  const fetchWhapiGroups = async () => {
+    setIsFetchingWhapi(true);
+    try {
+      const groups = await dataService.getWhapiGroups();
+      setWhapiGroups(groups);
+      setShowWhapiModal(true);
+    } catch (err: any) {
+      toast.error(`שגיאה בטעינת קבוצות: ${err.message}`);
+    } finally {
+      setIsFetchingWhapi(false);
+    }
+  };
+
+  const handleAssignWhapiGroup = (groupId: string) => {
+    setFormData(prev => ({ ...prev, assigned_group_id: groupId }));
+    setShowWhapiModal(false);
+    toast.success('ה-ID הועבר לשדה הקבוצה');
+  };
+
+  const handleBulkAssignWhapiGroups = () => {
+    if (selectedWhapiGroupIds.length === 0) return toast.error('בחר לפחות קבוצה אחת');
+    const ids = selectedWhapiGroupIds.join(', ');
+    setFormData(prev => ({ ...prev, assigned_group_id: ids }));
+    setShowWhapiModal(false);
+    toast.success('ה-IDs הועברו לשדה הקבוצה');
+  };
+
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setFormData({
@@ -637,7 +646,8 @@ export default function AdminManagement() {
       google_login_allowed: user.google_login_allowed || 'true',
       avatar_url: user.avatar_url || '',
       is_shaham_manager: user.is_shaham_manager || 0,
-      created_by: user.created_by || ''
+      created_by: user.created_by || '',
+      assigned_group_id: user.assigned_group_id || ''
     });
     setShowModal(true);
   };
@@ -980,7 +990,8 @@ export default function AdminManagement() {
                   google_login_allowed: 'true', 
                   avatar_url: '',
                   is_shaham_manager: 0,
-                  created_by: ''
+                  created_by: '',
+                  assigned_group_id: ''
                 });
                 setShowModal(true);
               }}
@@ -2390,12 +2401,22 @@ export default function AdminManagement() {
       <div className="card overflow-hidden border-none shadow-lg mt-8">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
           <h2 className="text-2xl font-extrabold text-text-main">ניהול קבוצות וואטסאפ</h2>
-          <button 
-            onClick={() => setShowWhatsAppModal(true)}
-            className="bg-luxury-blue text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
-          >
-            <Plus size={16} /> הוסף קבוצה
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={fetchWhapiGroups}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
+              disabled={isFetchingWhapi}
+            >
+              {isFetchingWhapi ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              סנכרון קבוצות מוואטסאפ
+            </button>
+            <button 
+              onClick={() => setShowWhatsAppModal(true)}
+              className="bg-luxury-blue text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
+            >
+              <Plus size={16} /> הוסף קבוצה
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-right">
@@ -2959,6 +2980,27 @@ export default function AdminManagement() {
                       </select>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">WhatsApp Group ID</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        className="input-field font-mono text-xs" 
+                        value={formData.assigned_group_id || ''} 
+                        onChange={(e) => setFormData({...formData, assigned_group_id: e.target.value})} 
+                        placeholder="לדוגמה: 120363023456789@g.us"
+                      />
+                      <button 
+                        type="button"
+                        onClick={fetchWhapiGroups}
+                        className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                        disabled={isFetchingWhapi}
+                      >
+                        {isFetchingWhapi ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+                        סנכרן
+                      </button>
+                    </div>
+                  </div>
                   <div className="flex justify-end gap-3 pt-6 pb-4">
                     <button type="button" onClick={() => setShowModal(false)} className="btn-secondary px-6 py-3 font-bold">ביטול</button>
                     <button type="submit" className="btn-primary px-8 py-3 font-bold shadow-md">שמור מנהל</button>
@@ -3044,6 +3086,173 @@ export default function AdminManagement() {
                   <RefreshCw size={18} />
                   סנכרן תמונות
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Whapi Groups Modal */}
+      <AnimatePresence>
+        {showWhapiModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-green-600">
+                    <RefreshCw size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">סנכרון קבוצות מוואטסאפ</h3>
+                    <p className="text-slate-500 text-xs font-medium">בחר קבוצות כדי להעתיק את ה-ID שלהן או לשייך למנהל</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowWhapiModal(false)} className="p-2 text-slate-400 hover:bg-white rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                <table className="w-full text-right border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 w-10">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-600 cursor-pointer"
+                          checked={selectedWhapiGroupIds.length > 0 && selectedWhapiGroupIds.length === whapiGroups.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedWhapiGroupIds(whapiGroups.map(g => g.id));
+                            } else {
+                              setSelectedWhapiGroupIds([]);
+                            }
+                          }}
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">שם הקבוצה</th>
+                      <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">קישור להצטרפות</th>
+                      <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Group ID</th>
+                      <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider text-left">פעולות</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {whapiGroups.map((group) => (
+                      <tr key={group.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-600 cursor-pointer"
+                            checked={selectedWhapiGroupIds.includes(group.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedWhapiGroupIds([...selectedWhapiGroupIds, group.id]);
+                              } else {
+                                setSelectedWhapiGroupIds(selectedWhapiGroupIds.filter(id => id !== group.id));
+                              }
+                            }}
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm font-bold text-slate-700">{group.name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {group.invite_link ? (
+                            <a 
+                              href={group.invite_link} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs text-blue-500 hover:underline flex items-center gap-1"
+                            >
+                              <ExternalLink size={12} />
+                              קישור
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">לא זמין</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <code className="text-[10px] font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+                            {group.id}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3 text-left">
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(group.id);
+                                toast.success('ה-ID הועתק');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-luxury-blue transition-colors"
+                              title="העתק ID"
+                            >
+                              <Copy size={16} />
+                            </button>
+                            {showModal && (
+                              <button 
+                                onClick={() => handleAssignWhapiGroup(group.id)}
+                                className="text-[10px] font-bold bg-green-50 text-green-700 px-2 py-1 rounded-md border border-green-100 hover:bg-green-100 transition-colors"
+                              >
+                                שייך למנהל
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {whapiGroups.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-10 text-center text-slate-400 italic">
+                          לא נמצאו קבוצות
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <div className="text-xs font-bold text-slate-500">
+                  נבחרו {selectedWhapiGroupIds.length} קבוצות
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowWhapiModal(false)}
+                    className="px-6 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                  >
+                    סגור
+                  </button>
+                  {showModal && selectedWhapiGroupIds.length > 0 && (
+                    <button 
+                      onClick={handleBulkAssignWhapiGroups}
+                      className="px-6 py-2 bg-green-600 text-white rounded-xl font-bold shadow-lg hover:bg-green-700 transition-all flex items-center gap-2"
+                    >
+                      <Check size={18} />
+                      שייך הכל למנהל
+                    </button>
+                  )}
+                  {selectedWhapiGroupIds.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        const list = whapiGroups
+                          .filter(g => selectedWhapiGroupIds.includes(g.id))
+                          .map(g => `${g.name}: ${g.id}`)
+                          .join('\n');
+                        navigator.clipboard.writeText(list);
+                        toast.success('הרשימה הועתקה');
+                      }}
+                      className="px-6 py-2 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all flex items-center gap-2"
+                    >
+                      <Copy size={18} />
+                      ייצא רשימה
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

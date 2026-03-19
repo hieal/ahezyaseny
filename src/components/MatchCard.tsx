@@ -1,6 +1,6 @@
 import React from 'react';
 import { Match, WhatsAppGroup, ImagePosition } from '../types';
-import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move, TrendingUp, Shield } from 'lucide-react';
+import { User, MapPin, Calendar, Heart, Send, Edit, Trash2, Briefcase, GraduationCap, Info, Eye, Sparkles, Database, AlertTriangle, History as HistoryIcon, MessageSquare, Paperclip, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Save, CheckCircle, Check, X, Users, Image as ImageIcon, Move, TrendingUp, Shield, RotateCcw, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActionDisabled } from '../hooks/useActionDisabled';
@@ -80,6 +80,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       // Ensure x and y stay within 0-100
       if (next.x !== undefined) next.x = Math.max(0, Math.min(100, next.x));
       if (next.y !== undefined) next.y = Math.max(0, Math.min(100, next.y));
+      // Allow more zoom out (down to 0.1)
+      if (next.zoom !== undefined) next.zoom = Math.max(0.1, Math.min(5, next.zoom));
       return next;
     });
   };
@@ -272,11 +274,10 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      // Don't close automatically if adjusting, unless it's a deliberate cancel/save
-      // This respects the user's request to only confirm via button
       if (isAdjusting && !(e.target as HTMLElement).closest('.match-card-container')) {
-        // We could show a prompt here, but for now we just keep it open
-        // to prevent accidental closing and data loss.
+        setIsAdjusting(false);
+        setIsFreeMoving(false);
+        setShowConfirmCancel(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -427,40 +428,37 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               {/* Main Adjustment Panel */}
               {!isDragging && !showConfirmCancel && !isFreeMoving && (
                 <div 
-                  className={`flex flex-col items-center gap-6 bg-white/5 backdrop-blur-2xl p-8 rounded-[4rem] border border-white/20 w-[280px] transition-all pointer-events-auto shadow-[0_25px_50px_rgba(0,0,0,0.3)] ${
+                  className={`flex flex-col items-center gap-4 bg-black/20 p-6 rounded-[3rem] border border-white/10 w-[220px] transition-all pointer-events-auto shadow-2xl ${
                     isAdjusting ? 'scale-100' : 'scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100'
                   }`} 
                   onClick={e => e.stopPropagation()}
                 >
-                  <div className="text-center space-y-1">
-                    <div className="text-[16px] font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+                  <div className="text-center space-y-0.5">
+                    <div className="text-[14px] font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
                       {isAdjusting ? 'כוונון תמונה' : 'שיפור מיקום'}
-                    </div>
-                    <div className="text-[11px] font-bold text-white/80 uppercase tracking-widest drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
-                      {isAdjusting ? 'גרור או השתמש בחצים' : 'לחץ להתחלת עריכה'}
                     </div>
                   </div>
                   
-                  <div className="flex flex-col items-center gap-4 w-full">
+                  <div className="flex flex-col items-center gap-3 w-full">
                     <button 
                       onClick={(e) => handleAdjust(e, { y: localCropConfig.y + 5 })} 
-                      className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                      className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
                     >
-                      <ChevronUp size={32} strokeWidth={3} />
+                      <ChevronUp size={24} strokeWidth={3} />
                     </button>
                     
-                    <div className="flex items-center justify-between w-full gap-5">
+                    <div className="flex items-center justify-between w-full gap-3">
                       <button 
                         onClick={(e) => handleAdjust(e, { x: localCropConfig.x - 5 })} 
-                        className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                        className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
                       >
-                        <ChevronRight size={32} strokeWidth={3} />
+                        <ChevronRight size={24} strokeWidth={3} />
                       </button>
                       
-                      <div className="flex flex-col gap-5">
-                        <div className="flex gap-2 bg-black/30 p-2 rounded-[2rem] border border-white/10 backdrop-blur-3xl shadow-inner">
-                          <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, (localCropConfig.zoom || 1) + 0.1) })} className="p-3.5 bg-white hover:bg-slate-50 rounded-2xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הגדל"><ZoomIn size={24} strokeWidth={2.5} /></button>
-                          <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, (localCropConfig.zoom || 1) - 0.1) })} className="p-3.5 bg-white hover:bg-slate-50 rounded-2xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הקטן"><ZoomOut size={24} strokeWidth={2.5} /></button>
+                      <div className="flex flex-col gap-3">
+                        <div className="flex gap-1.5 bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner">
+                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) + 0.1 })} className="p-2 bg-white hover:bg-slate-50 rounded-xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הגדל"><ZoomIn size={18} strokeWidth={2.5} /></button>
+                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) - 0.1 })} className="p-2 bg-white hover:bg-slate-50 rounded-xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הקטן"><ZoomOut size={18} strokeWidth={2.5} /></button>
                         </div>
 
                         <button 
@@ -471,38 +469,65 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                             setInitialCropConfig({ ...localCropConfig });
                             toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
                           }} 
-                          className={`flex flex-col items-center justify-center gap-2 p-5 rounded-[3rem] transition-all shadow-2xl ${isFreeMoving ? 'bg-gradient-to-br from-luxury-blue to-blue-900 text-white scale-110 ring-4 ring-white/30' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                          className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-3xl transition-all shadow-xl ${isFreeMoving ? 'bg-gradient-to-br from-luxury-blue to-blue-900 text-white scale-105 ring-2 ring-white/30' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
                           title="הזזה חופשית"
                         >
-                          <Move size={32} strokeWidth={2.5} />
-                          <span className="text-[10px] font-black uppercase tracking-widest">הזזה חופשית</span>
+                          <Move size={24} strokeWidth={2.5} />
+                          <span className="text-[9px] font-black uppercase tracking-widest">הזזה חופשית</span>
                         </button>
                       </div>
 
                       <button 
                         onClick={(e) => handleAdjust(e, { x: localCropConfig.x + 5 })} 
-                        className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                        className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
                       >
-                        <ChevronLeft size={32} strokeWidth={3} />
+                        <ChevronLeft size={24} strokeWidth={3} />
                       </button>
                     </div>
                     
                     <button 
                       onClick={(e) => handleAdjust(e, { y: localCropConfig.y - 5 })} 
-                      className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                      className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
                     >
-                      <ChevronDown size={32} strokeWidth={3} />
+                      <ChevronDown size={24} strokeWidth={3} />
+                    </button>
+                  </div>
+
+                  {/* Reset and Original View Buttons */}
+                  <div className="flex gap-2 w-full">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLocalCropConfig({ x: 50, y: 50, zoom: 1 });
+                        setHasChanges(true);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all text-[10px] font-bold border border-white/10"
+                      title="איפוס"
+                    >
+                      <RotateCcw size={14} />
+                      <span>איפוס</span>
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(dataService.getPublicImageUrl(mainImage), '_blank');
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all text-[10px] font-bold border border-white/10"
+                      title="תמונה מקורית"
+                    >
+                      <ExternalLink size={14} />
+                      <span>מקור</span>
                     </button>
                   </div>
                   
                   {isAdjusting && hasChanges && (
-                    <div className="flex gap-2 mt-4 pt-6 border-t border-white/20 w-full justify-center">
+                    <div className="flex gap-2 mt-2 pt-4 border-t border-white/10 w-full justify-center">
                       <button 
                         onClick={saveAdjustment}
-                        className="flex items-center gap-3 px-10 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-[2rem] hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-2xl shadow-emerald-500/40 font-black text-base w-full justify-center active:scale-95 hover:scale-105"
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-xl shadow-emerald-500/30 font-black text-sm w-full justify-center active:scale-95 hover:scale-105"
                       >
-                        <Check size={24} strokeWidth={3} />
-                        <span>שמור שינויים</span>
+                        <Check size={18} strokeWidth={3} />
+                        <span>שמור</span>
                       </button>
                     </div>
                   )}

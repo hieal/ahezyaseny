@@ -26,16 +26,23 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     type: [] as string[],
     gender: [] as string[],
     syncStatus: [] as string[],
-    category: [] as string[]
+    category: [] as string[],
+    hasImage: null as boolean | null
   });
 
-  const toggleFilter = (key: keyof typeof filters, value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: prev[key].includes(value) 
-        ? prev[key].filter(v => v !== value)
-        : [...prev[key], value]
-    }));
+  const toggleFilter = (key: keyof typeof filters, value: any) => {
+    setFilters(prev => {
+      if (key === 'hasImage') {
+        return { ...prev, hasImage: prev.hasImage === value ? null : value };
+      }
+      const current = prev[key] as string[];
+      return {
+        ...prev,
+        [key]: current.includes(value) 
+          ? current.filter(v => v !== value)
+          : [...current, value]
+      };
+    });
   };
 
   const filteredItems = items.filter(item => {
@@ -46,6 +53,10 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
       if (!filters.syncStatus.includes(status)) return false;
     }
     if (filters.category.length > 0 && !filters.category.includes(item.category || '')) return false;
+    if (filters.hasImage !== null) {
+      const hasUrl = !!item.url;
+      if (hasUrl !== filters.hasImage) return false;
+    }
     return true;
   });
 
@@ -126,6 +137,14 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     noImage: items.filter(i => !i.url).length,
     admins: items.filter(i => i.type === 'admin').length,
     candidates: items.filter(i => i.type === 'candidate').length,
+  };
+
+  const setExclusiveFilter = (key: keyof typeof filters, value: any) => {
+    setFilters(prev => ({
+      type: [], gender: [], syncStatus: [], category: [], hasImage: null,
+      [key]: prev[key] === value || (Array.isArray(prev[key]) && (prev[key] as string[]).includes(value) && (prev[key] as string[]).length === 1) ? (Array.isArray(prev[key]) ? [] : null) : (Array.isArray(prev[key]) ? [value] : value)
+    }));
+    if (!showFilters) setShowFilters(true);
   };
 
   return (
@@ -257,27 +276,73 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
             )}
           </AnimatePresence>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
-              <p className="text-[10px] font-black text-blue-600 uppercase">סה"כ</p>
-              <p className="text-xl font-black text-blue-900">{stats.total}</p>
-            </div>
-            <div className="bg-green-50 p-3 rounded-2xl border border-green-100 text-center">
-              <p className="text-[10px] font-black text-green-600 uppercase">סונכרנו</p>
-              <p className="text-xl font-black text-green-900">{stats.synced}</p>
-            </div>
-            <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 text-center">
-              <p className="text-[10px] font-black text-amber-600 uppercase">ממתינים</p>
-              <p className="text-xl font-black text-amber-900">{stats.pending}</p>
-            </div>
-            <div className="bg-red-50 p-3 rounded-2xl border border-red-100 text-center">
-              <p className="text-[10px] font-black text-red-600 uppercase">ללא תמונה</p>
-              <p className="text-xl font-black text-red-900">{stats.noImage}</p>
-            </div>
-            <div className="bg-purple-50 p-3 rounded-2xl border border-purple-100 text-center">
-              <p className="text-[10px] font-black text-purple-600 uppercase">מנהלים</p>
-              <p className="text-xl font-black text-purple-900">{stats.admins}</p>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+            <button 
+              onClick={() => setFilters({ type: [], gender: [], syncStatus: [], category: [], hasImage: null })}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.type.length === 0 && filters.gender.length === 0 && filters.syncStatus.length === 0 && filters.category.length === 0 && filters.hasImage === null
+                ? 'bg-blue-600 text-white border-blue-700 shadow-md'
+                : 'bg-blue-50 border-blue-100 text-blue-900 hover:bg-blue-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">סה"כ</p>
+              <p className="text-xl font-black">{stats.total}</p>
+            </button>
+            <button 
+              onClick={() => setExclusiveFilter('syncStatus', 'synced')}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.syncStatus.includes('synced')
+                ? 'bg-green-600 text-white border-green-700 shadow-md'
+                : 'bg-green-50 border-green-100 text-green-900 hover:bg-green-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">סונכרנו</p>
+              <p className="text-xl font-black">{stats.synced}</p>
+            </button>
+            <button 
+              onClick={() => setExclusiveFilter('syncStatus', 'pending')}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.syncStatus.includes('pending')
+                ? 'bg-amber-600 text-white border-amber-700 shadow-md'
+                : 'bg-amber-50 border-amber-100 text-amber-900 hover:bg-amber-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">ממתינים</p>
+              <p className="text-xl font-black">{stats.pending}</p>
+            </button>
+            <button 
+              onClick={() => setExclusiveFilter('hasImage', false)}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.hasImage === false
+                ? 'bg-red-600 text-white border-red-700 shadow-md'
+                : 'bg-red-50 border-red-100 text-red-900 hover:bg-red-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">ללא תמונה</p>
+              <p className="text-xl font-black">{stats.noImage}</p>
+            </button>
+            <button 
+              onClick={() => setExclusiveFilter('type', 'admin')}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.type.includes('admin')
+                ? 'bg-purple-600 text-white border-purple-700 shadow-md'
+                : 'bg-purple-50 border-purple-100 text-purple-900 hover:bg-purple-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">מנהלים</p>
+              <p className="text-xl font-black">{stats.admins}</p>
+            </button>
+            <button 
+              onClick={() => setExclusiveFilter('type', 'candidate')}
+              className={`p-3 rounded-2xl border text-center transition-all ${
+                filters.type.includes('candidate')
+                ? 'bg-pink-600 text-white border-pink-700 shadow-md'
+                : 'bg-pink-50 border-pink-100 text-pink-900 hover:bg-pink-100'
+              }`}
+            >
+              <p className="text-[10px] font-black uppercase opacity-80">משודכים</p>
+              <p className="text-xl font-black">{stats.candidates}</p>
+            </button>
           </div>
         </div>
 
