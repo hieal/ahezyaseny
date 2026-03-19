@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { User } from '../types';
 import { getGenderedText } from '../utils/gender';
-import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle, Filter, ChevronDown, UserCheck } from 'lucide-react';
+import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle, Filter, ChevronDown, UserCheck, LayoutGrid, Table as TableIcon, Layers, ChevronRight, ChevronLeft } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChat } from '../contexts/ChatContext';
@@ -17,88 +17,155 @@ export default function ConnectedAdmins() {
   const { presenceState } = usePresence();
   const [allAdmins, setAllAdmins] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showList, setShowList] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'team_leader' | 'viewer'>('all');
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'carousel'>('cards');
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
-  const filteredAdmins = allAdmins.filter(admin => 
-    (admin.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-     admin.phone?.includes(searchTerm))
-  );
+  useEffect(() => {
+    const fetchAdmins = async () => {
+      setLoading(true);
+      try {
+        const admins = await dataService.getUsers();
+        setAllAdmins(admins);
+      } catch (err) {
+        toast.error('שגיאה בטעינת מנהלים');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAdmins();
+  }, []);
+
+  const filteredAdmins = allAdmins.filter(admin => {
+    const matchesSearch = (admin.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          admin.phone?.includes(searchTerm));
+    const matchesRole = roleFilter === 'all' || 
+                        (roleFilter === 'admin' && (admin.role === 'admin' || admin.role === 'super_admin')) || 
+                        admin.role === roleFilter;
+    const matchesGroup = groupFilter === 'all' || admin.affiliation_group === groupFilter;
+    
+    return matchesSearch && matchesRole && matchesGroup;
+  });
+
+  const carouselItems = filteredAdmins.slice(carouselIndex, carouselIndex + 3);
+
+  const nextCarousel = () => {
+    if (carouselIndex + 3 < filteredAdmins.length) {
+      setCarouselIndex(carouselIndex + 3);
+    }
+  };
+
+  const prevCarousel = () => {
+    if (carouselIndex - 3 >= 0) {
+      setCarouselIndex(carouselIndex - 3);
+    }
+  };
 
   return (
-    <>
-      <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
-        {/* Header and Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
-              <Users className="text-luxury-blue" size={32} />
-              מנהלים מחוברים ({Object.keys(presenceState).length})
-            </h1>
-            <p className="text-slate-500 mt-2 font-medium">צפה במנהלים המחוברים כעת למערכת וצור איתם קשר</p>
+    <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header and Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
+            <Users className="text-luxury-blue" size={32} />
+            מנהלים מחוברים ({allAdmins.length})
+          </h1>
+          <p className="text-slate-500 mt-2 font-medium">צפה בכל המנהלים במערכת וצור איתם קשר</p>
+        </div>
+
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+          <button 
+            onClick={() => setViewMode('table')}
+            className={`p-2 rounded-xl transition-all ${viewMode === 'table' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            title="תצוגת טבלה"
+          >
+            <TableIcon size={20} />
+          </button>
+          <button 
+            onClick={() => setViewMode('cards')}
+            className={`p-2 rounded-xl transition-all ${viewMode === 'cards' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            title="תצוגת כרטיסים"
+          >
+            <LayoutGrid size={20} />
+          </button>
+          <button 
+            onClick={() => setViewMode('carousel')}
+            className={`p-2 rounded-xl transition-all ${viewMode === 'carousel' ? 'bg-white text-luxury-blue shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            title="תצוגת קרוסלה"
+          >
+            <Layers size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+        <div className="space-y-2">
+          <label className="text-xs font-black text-slate-400 uppercase mr-1">חיפוש חופשי</label>
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text"
+              placeholder="חפש לפי שם או טלפון..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none text-sm font-bold"
+            />
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-sm font-bold text-slate-600">סינון לפי תפקיד:</span>
-          {(['all', 'admin', 'team_leader', 'viewer'] as const).map(role => (
-            <button 
-              key={role}
-              onClick={() => setRoleFilter(role)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${roleFilter === role ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-            >
-              {role === 'all' ? 'הכל' : role === 'admin' ? 'מנהל' : role === 'team_leader' ? 'ראש צוות' : 'צופה'}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAdmins
-            .filter(a => roleFilter === 'all' || (roleFilter === 'admin' && (a.role === 'admin' || a.role === 'super_admin')) || a.role === roleFilter)
-            .map(admin => (
-              <div key={admin.id} className="bg-white p-6 rounded-2xl border-2 border-slate-100 shadow-sm hover:border-luxury-blue transition-all flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-2 border-white shadow-inner">
-                  {admin.avatar_url ? <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={32} />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-black text-slate-900">{admin.full_name}</h3>
-                  <p className="text-sm font-bold text-luxury-blue">{admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}</p>
-                </div>
-                <button onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100">
-                  <MessageSquare size={20} />
-                </button>
-              </div>
+        <div className="space-y-2">
+          <label className="text-xs font-black text-slate-400 uppercase mr-1">סינון לפי תפקיד</label>
+          <div className="flex flex-wrap gap-2">
+            {(['all', 'admin', 'team_leader', 'viewer'] as const).map(role => (
+              <button 
+                key={role}
+                onClick={() => setRoleFilter(role)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${roleFilter === role ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'}`}
+              >
+                {role === 'all' ? 'הכל' : role === 'admin' ? 'מנהל' : role === 'team_leader' ? 'ראש צוות' : 'צופה'}
+              </button>
             ))}
+          </div>
         </div>
 
-        <AnimatePresence>
-          {showList && (
+        <div className="space-y-2">
+          <label className="text-xs font-black text-slate-400 uppercase mr-1">סינון לפי קבוצה</label>
+          <select 
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none text-sm font-bold text-slate-700"
+          >
+            <option value="all">כל הקבוצות</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin" />
+          <p className="font-bold text-slate-500">טוען מנהלים...</p>
+        </div>
+      ) : (
+        <AnimatePresence mode="wait">
+          {viewMode === 'table' && (
             <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              key="table"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
               className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden"
             >
-              <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-xl font-bold text-slate-800">רשימת מנהלים</h2>
-                <div className="relative w-full md:w-64">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text"
-                    placeholder="חפש מנהל..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-luxury-blue outline-none text-sm"
-                  />
-                </div>
-              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-right">
                   <thead className="bg-slate-50 text-slate-500 text-sm">
                     <tr>
                       <th className="px-6 py-4 font-bold">שם המנהל</th>
                       <th className="px-6 py-4 font-bold">תפקיד</th>
+                      <th className="px-6 py-4 font-bold">קבוצה</th>
                       <th className="px-6 py-4 font-bold">סטטוס</th>
                       <th className="px-6 py-4 font-bold">נראה לאחרונה</th>
                       <th className="px-6 py-4 font-bold text-center">פעולות</th>
@@ -112,59 +179,47 @@ export default function ConnectedAdmins() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="relative">
-                                {admin.avatar_url ? (
-                                  <div className="relative">
-                                    <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
-                                    {admin.avatar_url.includes('supabase.co') && (
-                                      <div className="absolute -top-1 -right-1 bg-green-500 text-white p-0.5 rounded-full border border-white shadow-sm" title="תמונה מסונכרנת">
-                                        <CheckCircle size={10} />
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border border-slate-200">
+                                  {admin.avatar_url ? (
+                                    <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
                                     <UserIcon size={20} />
-                                  </div>
-                                )}
-                                {isOnline && <OnlineIndicator isOnline={true} className="absolute bottom-0 right-0" />}
+                                  )}
+                                </div>
+                                <OnlineIndicator isOnline={isOnline} className="absolute bottom-0 right-0 border-2 border-white" />
                               </div>
                               <div className={`font-bold ${admin.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>
                                 {admin.full_name || 'מנהל'}
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-slate-600">
-                            {admin.phone === '0556603336' ? (
-                              <span className="text-[#D4AF37] font-bold">מנהל העמותה</span>
-                            ) : (
-                              admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'
-                            )}
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${
+                              admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                              admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-bold text-slate-500">
+                            {admin.affiliation_group || 'ללא קבוצה'}
                           </td>
                           <td className="px-6 py-4">
                             {isOnline ? (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black bg-green-100 text-green-800">
                                 מחובר כעת
                               </span>
                             ) : (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600">
                                 לא מחובר
                               </span>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-slate-500 text-sm">
+                          <td className="px-6 py-4 text-slate-500 text-xs font-bold">
                             {isOnline ? 'עכשיו' : (admin.last_seen ? new Date(admin.last_seen).toLocaleString('he-IL') : 'לא ידוע')}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-center gap-2">
-                              {admin.role !== 'super_admin' && (
-                                <button 
-                                  onClick={() => admin.phone ? window.open(`https://wa.me/${admin.phone.replace(/\D/g, '')}`) : toast.error('אין מספר טלפון')} 
-                                  className="p-2 text-green-600 hover:bg-green-100 rounded-xl transition-colors" 
-                                  title="שלח וואטסאפ"
-                                >
-                                  <Phone size={20} />
-                                </button>
-                              )}
                               <button 
                                 onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
                                 className="p-2 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" 
@@ -172,25 +227,207 @@ export default function ConnectedAdmins() {
                               >
                                 <MessageSquare size={20} />
                               </button>
+                              {admin.phone && (
+                                <button 
+                                  onClick={() => window.open(`https://wa.me/${admin.phone?.replace(/\D/g, '')}`)} 
+                                  className="p-2 text-green-600 hover:bg-green-100 rounded-xl transition-colors" 
+                                  title="שלח וואטסאפ"
+                                >
+                                  <Phone size={20} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
                       );
                     })}
-                    {filteredAdmins.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium">
-                          {searchTerm ? 'לא נמצאו מנהלים התואמים את החיפוש' : 'אין מנהלים אחרים במערכת'}
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
             </motion.div>
           )}
+
+          {viewMode === 'cards' && (
+            <motion.div 
+              key="cards"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              {filteredAdmins.map(admin => {
+                const isOnline = !!presenceState[admin.id];
+                return (
+                  <div key={admin.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-luxury-blue/5 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:scale-150" />
+                    
+                    <div className="flex items-start justify-between mb-4 relative z-10">
+                      <div className="relative">
+                        <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-2 border-white shadow-md">
+                          {admin.avatar_url ? (
+                            <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <UserIcon size={40} />
+                          )}
+                        </div>
+                        <OnlineIndicator isOnline={isOnline} className="absolute -bottom-1 -right-1 border-4 border-white w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                          admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                          admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                        </span>
+                        {isOnline ? (
+                          <span className="text-[10px] font-black text-green-600">מחובר כעת</span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400">לא מחובר</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="relative z-10">
+                      <h3 className="text-xl font-black text-slate-900 mb-1">{admin.full_name}</h3>
+                      <p className="text-sm font-bold text-slate-500 mb-4">{admin.affiliation_group || 'ללא קבוצה'}</p>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-luxury-blue text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                        >
+                          <MessageSquare size={18} />
+                          צ'אט
+                        </button>
+                        {admin.phone && (
+                          <button 
+                            onClick={() => window.open(`https://wa.me/${admin.phone?.replace(/\D/g, '')}`)} 
+                            className="p-2.5 bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-all border border-green-100"
+                          >
+                            <Phone size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </motion.div>
+          )}
+
+          {viewMode === 'carousel' && (
+            <motion.div 
+              key="carousel"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative"
+            >
+              <div className="flex items-center gap-6">
+                <button 
+                  onClick={prevCarousel}
+                  disabled={carouselIndex === 0}
+                  className="p-4 bg-white rounded-full shadow-xl border border-slate-100 text-slate-400 hover:text-luxury-blue disabled:opacity-30 transition-all"
+                >
+                  <ChevronRight size={32} />
+                </button>
+
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <AnimatePresence mode="popLayout">
+                    {carouselItems.map(admin => {
+                      const isOnline = !!presenceState[admin.id];
+                      return (
+                        <motion.div 
+                          key={admin.id}
+                          layout
+                          initial={{ opacity: 0, x: 50 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -50 }}
+                          className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl text-center flex flex-col items-center"
+                        >
+                          <div className="relative mb-6">
+                            <div className="w-32 h-32 rounded-[32px] bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-4 border-white shadow-xl rotate-3 group-hover:rotate-0 transition-transform">
+                              {admin.avatar_url ? (
+                                <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <UserIcon size={64} />
+                              )}
+                            </div>
+                            <OnlineIndicator isOnline={isOnline} className="absolute bottom-2 right-2 border-4 border-white w-8 h-8" />
+                          </div>
+
+                          <h3 className="text-2xl font-black text-slate-900 mb-2">{admin.full_name}</h3>
+                          <div className="flex flex-col items-center gap-2 mb-6">
+                            <span className={`px-4 py-1.5 rounded-full text-xs font-black ${
+                              admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                              admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                            </span>
+                            <span className="text-sm font-bold text-slate-400">{admin.affiliation_group || 'ללא קבוצה'}</span>
+                          </div>
+
+                          <div className="w-full grid grid-cols-2 gap-3">
+                            <button 
+                              onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
+                              className="flex items-center justify-center gap-2 py-3 bg-luxury-blue text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                            >
+                              <MessageSquare size={20} />
+                              צ'אט
+                            </button>
+                            <button 
+                              onClick={() => admin.phone && window.open(`https://wa.me/${admin.phone.replace(/\D/g, '')}`)}
+                              className="flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 rounded-2xl font-bold hover:bg-green-100 transition-all border border-green-100"
+                            >
+                              <Phone size={20} />
+                              וואטסאפ
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                  
+                  {carouselItems.length === 0 && (
+                    <div className="col-span-3 py-20 text-center text-slate-400 font-bold">
+                      אין מנהלים להצגה לפי הסינון הנוכחי
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={nextCarousel}
+                  disabled={carouselIndex + 3 >= filteredAdmins.length}
+                  className="p-4 bg-white rounded-full shadow-xl border border-slate-100 text-slate-400 hover:text-luxury-blue disabled:opacity-30 transition-all"
+                >
+                  <ChevronLeft size={32} />
+                </button>
+              </div>
+
+              <div className="flex justify-center gap-2 mt-8">
+                {Array.from({ length: Math.ceil(filteredAdmins.length / 3) }).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCarouselIndex(i * 3)}
+                    className={`w-3 h-3 rounded-full transition-all ${Math.floor(carouselIndex / 3) === i ? 'bg-luxury-blue w-8' : 'bg-slate-200'}`}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
-      </div>
-    </>
+      )}
+
+      {filteredAdmins.length === 0 && !loading && (
+        <div className="bg-white p-20 rounded-[40px] border border-dashed border-slate-200 text-center">
+          <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Search size={40} className="text-slate-300" />
+          </div>
+          <h3 className="text-xl font-black text-slate-900 mb-2">לא נמצאו מנהלים</h3>
+          <p className="text-slate-500 font-medium">נסה לשנות את מסנני החיפוש או התפקיד</p>
+        </div>
+      )}
+    </div>
   );
 }
+

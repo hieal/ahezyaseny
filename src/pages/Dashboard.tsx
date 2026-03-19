@@ -148,7 +148,7 @@ export default function Dashboard() {
   const [showSameGroupsAdminsModal, setShowSameGroupsAdminsModal] = useState(false);
   const [cardsPerRow, setCardsPerRow] = useState(3);
   const [rowsPerPage, setRowsPerPage] = useState(1);
-  const [sliderViewEnabled, setSliderViewEnabled] = useState(false);
+  const [sliderViewEnabled, setSliderViewEnabled] = useState(true);
   const [currentSliderIndex, setCurrentSliderIndex] = useState(0);
 
   // Reset slider index when layout changes
@@ -1193,7 +1193,7 @@ export default function Dashboard() {
                     מנהל קבוצת {user.category}
                   </span>
                   {whatsappGroups
-                    .filter(g => g.category === user.category)
+                    .filter(g => g.category === user.category || (user.category === 'פרויקט שח"ם' && g.category.startsWith('פרויקט שח"ם')))
                     .map(group => (
                       <button 
                         key={group.id} 
@@ -2284,8 +2284,13 @@ export default function Dashboard() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => {
-                      setSelectedGroupType('פרויקט שח"ם');
-                      setShowShahamSubgroups(!showShahamSubgroups);
+                      if (selectedGroupType === 'פרויקט שח"ם') {
+                        setSelectedGroupType('all');
+                        setShowShahamSubgroups(false);
+                      } else {
+                        setSelectedGroupType('פרויקט שח"ם');
+                        setShowShahamSubgroups(true);
+                      }
                     }}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
                       selectedGroupType === 'פרויקט שח"ם' || selectedGroupType.startsWith('פרויקט שח"ם')
@@ -2313,47 +2318,7 @@ export default function Dashboard() {
                               : 'bg-transparent text-purple-400 hover:text-purple-600'
                           }`}
                         >
-                          {cat.replace('פרויקט שח"ם ', '')}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </div>
-
-                {/* Shaham Project Grouping */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setSelectedGroupType('פרויקט שח"ם');
-                      setShowShahamSubgroups(!showShahamSubgroups);
-                    }}
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
-                      selectedGroupType === 'פרויקט שח"ם' || selectedGroupType.startsWith('פרויקט שח"ם')
-                        ? 'bg-purple-600 text-white shadow-md'
-                        : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-                    }`}
-                  >
-                    פרויקט שח"ם
-                    <ChevronDown size={12} className={`transition-transform ${showShahamSubgroups ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showShahamSubgroups && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="flex gap-1 ml-2 p-1 bg-purple-50 rounded-full border border-purple-100"
-                    >
-                      {CATEGORIES.filter(c => c.startsWith('פרויקט שח"ם ') && c !== 'פרויקט שח"ם').map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => setSelectedGroupType(cat)}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
-                            selectedGroupType === cat
-                              ? 'bg-white text-purple-600 shadow-sm border border-purple-200'
-                              : 'bg-transparent text-purple-400 hover:text-purple-600'
-                          }`}
-                        >
-                          {cat.replace('פרויקט שח"ם ', '')}
+                          {cat.replace('פרויקט שח"ם ', 'שח"ם ')}
                         </button>
                       ))}
                     </motion.div>

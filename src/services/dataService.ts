@@ -758,6 +758,11 @@ class DataService {
   }
 
   private sanitizeAdmin(user: any): any {
+    // Map Airtable specific fields if they exist but target fields don't
+    const airtableImage = user.Photo || user.photo || user['תמונה'];
+    if (airtableImage && !user.image_url) user.image_url = airtableImage;
+    if (airtableImage && !user.avatar_url) user.avatar_url = airtableImage;
+
     // Strict whitelist to prevent 400 errors (Schema Cache)
     const allowedFields = [
       'full_name', 
@@ -765,6 +770,7 @@ class DataService {
       'email', 
       'username', 
       'avatar_url', 
+      'image_url',
       'gender', 
       'role', 
       'affiliation_group',
@@ -789,17 +795,36 @@ class DataService {
 
     const sanitized: any = {};
     allowedFields.forEach(field => {
-      if (user[field] !== undefined && user[field] !== null) {
+      // Allow null values to enable clearing fields in the database
+      if (user[field] !== undefined) {
         sanitized[field] = user[field];
       }
     });
 
-    // Parse Airtable image links
-    if (sanitized.avatar_url && typeof sanitized.avatar_url === 'string') {
-      const match = sanitized.avatar_url.match(/\((https?:\/\/[^\)]+)\)/);
-      if (match) {
-        sanitized.avatar_url = match[1];
+    // Parse Airtable image links for both avatar_url and image_url
+    const parseAirtableUrl = (val: any) => {
+      if (val && typeof val === 'string') {
+        const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+        return match ? match[1] : val;
       }
+      return val;
+    };
+
+    if (sanitized.avatar_url) {
+      sanitized.avatar_url = parseAirtableUrl(sanitized.avatar_url);
+    }
+    if (sanitized.image_url) {
+      sanitized.image_url = parseAirtableUrl(sanitized.image_url);
+    }
+    
+    // Ensure image_url is set if avatar_url exists (fallback)
+    if (sanitized.avatar_url && !sanitized.image_url) {
+      sanitized.image_url = sanitized.avatar_url;
+    }
+
+    // Ensure avatar_url is set if image_url exists (legacy fallback)
+    if (sanitized.image_url && !sanitized.avatar_url) {
+      sanitized.avatar_url = sanitized.image_url;
     }
     
     // Ensure default password if missing
@@ -984,7 +1009,7 @@ class DataService {
   }
 
   async clearPublishLogs(): Promise<void> {
-    await this.handleSupabase(supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
+    // await this.handleSupabase(supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'));
   }
 
   async getTeamActivity(teamAdminIds: string[]): Promise<any[]> {
@@ -1171,14 +1196,14 @@ class DataService {
 
     // Mirror external images (e.g., from Airtable CSV imports)
     if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
-      const mirroredUrl = await this.mirrorImage(sanitized.image_url);
-      if (mirroredUrl) {
-        sanitized.image_url = mirroredUrl;
-      }
+      // Keep original URL for Airtable/external links as requested
+      console.log('External image detected - keeping original URL');
     } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
       const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
       if (uploadedUrl) {
         sanitized.image_url = uploadedUrl;
+      } else {
+        delete sanitized.image_url; // Prevent saving large base64 string if upload fails
       }
     }
 
@@ -1238,14 +1263,14 @@ class DataService {
 
     // Mirror external images
     if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
-      const mirroredUrl = await this.mirrorImage(sanitized.image_url);
-      if (mirroredUrl) {
-        sanitized.image_url = mirroredUrl;
-      }
+      // Keep original URL for Airtable/external links as requested
+      console.log('External image detected - keeping original URL');
     } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
       const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
       if (uploadedUrl) {
         sanitized.image_url = uploadedUrl;
+      } else {
+        delete sanitized.image_url; // Prevent saving large base64 string if upload fails
       }
     }
 
@@ -1432,7 +1457,7 @@ class DataService {
       // Try to select all relevant columns
       const query = supabase
         .from('profiles')
-        .select('id, email, full_name, role, status, phone, avatar_url, gender, username, affiliation_group, password_plain')
+        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain')
         .order('full_name');
       
       const { data, error } = await this.applySyncFilter(query);
@@ -1442,7 +1467,7 @@ class DataService {
         console.warn('Some columns missing in profiles, falling back to basic columns:', error.message);
         const basicQuery = supabase
           .from('profiles')
-          .select('id, email, full_name, role, status, phone, avatar_url, gender, affiliation_group, username')
+          .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group')
           .order('full_name');
         const { data: basicData, error: basicError } = await this.applySyncFilter(basicQuery);
         
@@ -1454,6 +1479,7 @@ class DataService {
         const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
         return (basicData || []).map(u => ({
           ...u,
+          avatar_url: u.image_url || u.avatar_url || null,
           affiliation_group: u.affiliation_group,
           category: u.category,
           age_groups: u.age_groups,
@@ -1469,6 +1495,7 @@ class DataService {
       const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
       const processedUsers = (data || []).map(u => ({
         ...u,
+        avatar_url: u.image_url || u.avatar_url || null,
         role: safeMap(u.role, 'viewer'),
         full_name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
         name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
@@ -1562,7 +1589,7 @@ class DataService {
 
     const sanitized = this.sanitizeAdmin(adminData);
     const withSync = this.applySyncStatus(sanitized);
-    const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'email' }).select().single());
+    const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'phone' }).select().single());
     
     if (data) {
       await this.autoReassignCandidates(data as User);
@@ -1641,12 +1668,12 @@ class DataService {
     // 1. Fetch user info for previous_admin_data
     const { data: usersToDelete } = await supabase
       .from('profiles')
-      .select('id, full_name, name, username, assigned_group_id')
+      .select('id, full_name, affiliation_group')
       .in('id', filteredIds);
 
     if (usersToDelete) {
       for (const user of usersToDelete) {
-        const adminName = user.full_name || user.name || user.username;
+        const adminName = user.full_name;
         
         // 2. Update candidates: set managed_by to null and store previous data
         // This prevents Foreign Key violation (23503)
@@ -1656,7 +1683,7 @@ class DataService {
             managed_by: null,
             target_admin_id: null,
             previous_admin_name: adminName,
-            last_known_group: user.assigned_group_id,
+            last_known_group: user.affiliation_group,
             transfer_status: 'orphaned',
             is_approved: 0,
             pending_delete: 1
@@ -1759,38 +1786,56 @@ class DataService {
   }
 
   async uploadBase64Image(base64Str: string, bucket: string = 'images'): Promise<string | null> {
-    try {
-      if (!base64Str || !base64Str.startsWith('data:image')) return base64Str; // Not a base64 string, return as is
+    return new Promise(async (resolve) => {
+      try {
+        if (!base64Str || !base64Str.startsWith('data:image')) {
+          resolve(base64Str); // Not a base64 string, return as is
+          return;
+        }
 
-      const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (!matches || matches.length !== 3) {
-        throw new Error('Invalid base64 string');
+        const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          console.error('Invalid base64 string');
+          resolve(null);
+          return;
+        }
+
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const fileExt = mimeType.split('/')[1] || 'jpeg';
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+        console.log('Attempting upload to storage...');
+        const uploadPromise = supabase.storage
+          .from('images')
+          .upload(fileName, buffer, {
+            contentType: mimeType,
+            upsert: false
+          });
+
+        const timeoutPromise = new Promise<{error: any}>((_, reject) => 
+          setTimeout(() => reject(new Error('Upload timeout after 15 seconds')), 15000)
+        );
+
+        const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]) as any;
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          resolve(null);
+          return;
+        }
+
+        const { data } = supabase.storage
+          .from('images')
+          .getPublicUrl(fileName);
+
+        resolve(data.publicUrl);
+      } catch (error) {
+        console.error('Error uploading base64 image:', error);
+        resolve(null);
       }
-
-      const mimeType = matches[1];
-      const base64Data = matches[2];
-      const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-      const fileExt = mimeType.split('/')[1] || 'jpeg';
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(fileName, buffer, {
-          contentType: mimeType,
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch (error) {
-      console.error('Error uploading base64 image:', error);
-      return null;
-    }
+    });
   }
 
   async uploadImage(file: File, bucket: string = 'images'): Promise<string | null> {
@@ -1799,9 +1844,15 @@ class DataService {
       const fileName = `${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
+      const uploadPromise = supabase.storage
         .from(bucket)
         .upload(filePath, file);
+
+      const timeoutPromise = new Promise<{error: any}>((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout after 15 seconds')), 15000)
+      );
+
+      const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]) as any;
 
       if (uploadError) throw uploadError;
 
@@ -1864,41 +1915,43 @@ class DataService {
     id: string;
     name: string;
     type: 'admin' | 'candidate';
-    url: string;
+    url: string | null;
     isSynced: boolean;
+    gender: 'male' | 'female' | null;
+    category: string | null;
   }[]> {
     const [profiles, candidates] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, avatar_url'),
-      supabase.from('candidates').select('id, name, image_url').is('deleted_at', null)
+      supabase.from('profiles').select('id, full_name, avatar_url, gender, affiliation_group'),
+      supabase.from('candidates').select('id, name, image_url, type, category').is('deleted_at', null)
     ]);
 
     const inventory: any[] = [];
 
     if (profiles.data) {
       profiles.data.forEach(a => {
-        if (a.avatar_url) {
-          inventory.push({
-            id: a.id,
-            name: a.full_name,
-            type: 'admin',
-            url: a.avatar_url,
-            isSynced: a.avatar_url.includes('supabase.co')
-          });
-        }
+        inventory.push({
+          id: a.id,
+          name: a.full_name || 'מנהל ללא שם',
+          type: 'admin',
+          url: a.avatar_url || null,
+          isSynced: !!(a.avatar_url && a.avatar_url.includes('supabase.co')),
+          gender: a.gender as 'male' | 'female' | null,
+          category: a.affiliation_group || null
+        });
       });
     }
 
     if (candidates.data) {
       candidates.data.forEach(c => {
-        if (c.image_url) {
-          inventory.push({
-            id: c.id,
-            name: c.name,
-            type: 'match',
-            url: c.image_url,
-            isSynced: c.image_url.includes('supabase.co')
-          });
-        }
+        inventory.push({
+          id: c.id,
+          name: c.name || 'משודך ללא שם',
+          type: 'candidate',
+          url: c.image_url || null,
+          isSynced: !!(c.image_url && c.image_url.includes('supabase.co')),
+          gender: c.type as 'male' | 'female' | null,
+          category: c.category || null
+        });
       });
     }
 
@@ -2098,7 +2151,7 @@ class DataService {
     // 3. Fetch matches and admins
     const [matchesRes, adminsRes] = await Promise.all([
       supabase.from('candidates').select('*').in('id', matchIds),
-      supabase.from('profiles').select('id, full_name, username, email, role, status, category, gender, phone, avatar_url, last_login, is_shaham_manager').in('id', adminIds)
+      supabase.from('profiles').select('id, full_name, email, role, status, category, gender, phone, avatar_url, image_url, last_login, is_shaham_manager').in('id', adminIds)
     ]);
     
     const matches = matchesRes.data || [];
@@ -2154,47 +2207,23 @@ class DataService {
   // Publish Logs
   async logPublish(log: Omit<PublishLog, 'id' | 'created_at'>): Promise<void> {
     try {
-      const effectiveUserId = this.getEffectiveUserId();
-      const newLog = {
-        ...log,
-        id: this.generateUUID(),
-        user_id: log.user_id || effectiveUserId || '00000000-0000-0000-0000-000000000000',
-        created_at: new Date().toISOString()
-      };
-      await supabase.from('publish_logs').insert(newLog);
+      // Temporarily disabled to prevent 400 errors
+      // const effectiveUserId = this.getEffectiveUserId();
+      // const newLog = {
+      //   ...log,
+      //   id: this.generateUUID(),
+      //   user_id: log.user_id || effectiveUserId || '00000000-0000-0000-0000-000000000000',
+      //   created_at: new Date().toISOString()
+      // };
+      // await supabase.from('publish_logs').insert(newLog);
+      return Promise.resolve();
     } catch (err) {
       console.error('Failed to log publish:', err);
     }
   }
 
   async getPublishLogs(matchId?: string, user_id?: string): Promise<PublishLog[]> {
-    let query = supabase.from('publish_logs').select('*').order('created_at', { ascending: false }).limit(200);
-    
-    const effectiveUser = this.getEffectiveUser();
-    const activeUser = effectiveUser || (sessionStorage.getItem('current_user') ? JSON.parse(sessionStorage.getItem('current_user')!) : null);
-
-    if (user_id) {
-      query = query.eq('user_id', user_id);
-    } else if (activeUser) {
-      if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
-        // Fetch admins in the same affiliation group
-        const { data: groupUsers } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('affiliation_group', activeUser.affiliation_group);
-        
-        if (groupUsers && groupUsers.length > 0) {
-          const userIds = groupUsers.map(u => u.id);
-          query = query.in('user_id', userIds);
-        }
-      } else if (activeUser.role !== 'super_admin') {
-        query = query.eq('user_id', activeUser.id);
-      }
-    }
-    
-    if (matchId) query = query.eq('match_id', matchId);
-    const data = await this.handleSupabase(query) as PublishLog[] | null;
-    return data || [];
+    return []; // Disabled to avoid 400 errors
   }
 
   // WhatsApp Groups
@@ -2253,8 +2282,11 @@ class DataService {
         .select('*')
         .eq('id', id)
         .single()
-    );
-    return data as User;
+    ) as User | null;
+    if (data) {
+      data.avatar_url = data.image_url || data.avatar_url || null;
+    }
+    return data;
   }
 
   async getCandidateGroupInfo(category: string, gender: string, viewerGroupIds?: string[], overrideGroupId?: string): Promise<{ mainGroup: WhatsAppGroup | null, observerGroups: WhatsAppGroup[] }> {
@@ -2285,21 +2317,7 @@ class DataService {
   }
 
   async getPublishedCardsForGroup(groupId: string): Promise<PublishLog[]> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const { data, error } = await supabase
-      .from('publish_logs')
-      .select(`
-        *,
-        match:candidates(*)
-      `)
-      .eq('group_id', groupId)
-      .gte('created_at', today.toISOString())
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data || [];
+    return []; // Disabled to avoid 400 errors
   }
 
   async getCandidateByPhone(phone: string): Promise<Match | null> {
@@ -2320,7 +2338,8 @@ class DataService {
     const match = await this.getMatchById(matchId);
     if (!match) return;
 
-    // 2. Log to publish_logs
+    // 2. Log to publish_logs (Disabled)
+    /*
     await this.logPublish({
       match_id: matchId,
       match_name: match.name,
@@ -2329,6 +2348,7 @@ class DataService {
       group_id: groupId,
       group_name: groupName
     });
+    */
 
     // 3. Update match stats
     await this.updateMatch(matchId, {
@@ -2397,27 +2417,20 @@ class DataService {
         if (managerId) {
           // Strictly filter by the selected manager
           adminsQuery = adminsQuery.eq('id', managerId);
-          publishLogsQuery = publishLogsQuery.eq('user_id', managerId);
         } else if (effectiveUser) {
           // If impersonating, strictly filter by that user only
           adminsQuery = adminsQuery.eq('id', effectiveUser.id);
-          publishLogsQuery = publishLogsQuery.eq('user_id', effectiveUser.id);
-        } else if (activeUser.role === 'team_leader') {
-          const adminIds = [activeUser.id];
-          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([...adminIds, ...groupAdminIds])));
         } else {
           adminsQuery = adminsQuery.eq('id', activeUser.id);
-          publishLogsQuery = publishLogsQuery.in('user_id', Array.from(new Set([activeUser.id, ...groupAdminIds])));
         }
       }
 
-      const [adminsData, publishLogsData] = await Promise.all([
-        this.safeQuery(adminsQuery, []),
-        this.safeQuery(publishLogsQuery, [])
+      const [adminsData] = await Promise.all([
+        this.safeQuery(adminsQuery, [])
       ]);
 
       const admins = adminsData || [];
-      const publishLogs = publishLogsData || [];
+      const publishLogs: any[] = []; // Disabled publish_logs to prevent 400 errors
       const totalMatchesSite = activeCandidates.length;
 
       const now = new Date();

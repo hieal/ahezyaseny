@@ -1,28 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { dataService } from '../services/dataService';
-import { CheckCircle, XCircle, RefreshCw, Image as ImageIcon, User, Users, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Image as ImageIcon, User, Users, AlertCircle, Loader2, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
+import { CATEGORIES } from '../constants';
 
 interface SyncItem {
   id: string;
   name: string;
   type: 'admin' | 'candidate';
-  url: string;
+  url: string | null;
   isSynced: boolean;
+  gender: 'male' | 'female' | null;
+  category: string | null;
   status: 'pending' | 'syncing' | 'success' | 'failed';
 }
 
 export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [items, setItems] = useState<SyncItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'admin' | 'candidate' | 'pending'>('all');
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  
+  const [filters, setFilters] = useState({
+    type: [] as string[],
+    gender: [] as string[],
+    syncStatus: [] as string[],
+    category: [] as string[]
+  });
+
+  const toggleFilter = (key: keyof typeof filters, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: prev[key].includes(value) 
+        ? prev[key].filter(v => v !== value)
+        : [...prev[key], value]
+    }));
+  };
 
   const filteredItems = items.filter(item => {
-    if (filter === 'admin') return item.type === 'admin';
-    if (filter === 'candidate') return item.type === 'candidate';
-    if (filter === 'pending') return !item.isSynced;
+    if (filters.type.length > 0 && !filters.type.includes(item.type)) return false;
+    if (filters.gender.length > 0 && !filters.gender.includes(item.gender || '')) return false;
+    if (filters.syncStatus.length > 0) {
+      const status = item.isSynced ? 'synced' : 'pending';
+      if (!filters.syncStatus.includes(status)) return false;
+    }
+    if (filters.category.length > 0 && !filters.category.includes(item.category || '')) return false;
     return true;
   });
 
@@ -32,7 +55,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
       const inventory = await dataService.getImageSyncInventory();
       setItems(inventory.map(item => ({
         ...item,
-        status: item.isSynced ? 'success' : 'pending'
+        status: item.isSynced ? 'success' : (item.url ? 'pending' : 'failed')
       })));
     } catch (err) {
       toast.error('שגיאה בטעינת רשימת התמונות');
@@ -43,10 +66,11 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
 
   useEffect(() => {
     fetchInventory();
+    console.log('SYNC CENTER UPGRADED & ADMIN VIEW FLEXIBILITY ACTIVE');
   }, []);
 
   const syncSingle = async (item: SyncItem) => {
-    if (item.status === 'success' || item.status === 'syncing') return;
+    if (!item.url || item.status === 'success' || item.status === 'syncing') return;
 
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'syncing' } : i));
     
@@ -63,7 +87,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
   };
 
   const syncAll = async () => {
-    const itemsToSync = filteredItems.filter(i => i.status === 'pending' || i.status === 'failed');
+    const itemsToSync = filteredItems.filter(i => i.url && (i.status === 'pending' || i.status === 'failed'));
     if (itemsToSync.length === 0) {
       toast.success('אין תמונות לסנכרון לפי הסינון הנוכחי');
       return;
@@ -74,6 +98,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     let failCount = 0;
 
     for (const item of itemsToSync) {
+      if (!item.url) continue;
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'syncing' } : i));
       try {
         const result = await dataService.mirrorSingleImage(item.id, item.type, item.url);
@@ -97,7 +122,8 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
   const stats = {
     total: items.length,
     synced: items.filter(i => i.isSynced).length,
-    pending: items.filter(i => !i.isSynced).length,
+    pending: items.filter(i => !i.isSynced && i.url).length,
+    noImage: items.filter(i => !i.url).length,
     admins: items.filter(i => i.type === 'admin').length,
     candidates: items.filter(i => i.type === 'candidate').length,
   };
@@ -107,7 +133,7 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
       >
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -128,39 +154,129 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
         </div>
 
         <div className="p-6 bg-white border-b border-slate-100">
-          <div className="flex gap-2 mb-6">
-            {(['all', 'admin', 'candidate', 'pending'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  filter === f ? 'bg-luxury-blue text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {f === 'all' ? 'הכל' : f === 'admin' ? 'מנהלים' : f === 'candidate' ? 'משודכים' : 'לא סונכרנו'}
-              </button>
-            ))}
+          <div className="flex items-center justify-between mb-4">
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all"
+            >
+              <Filter size={18} />
+              מסננים מתקדמים
+              {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            <div className="flex gap-2">
+              <div className="bg-blue-50 px-3 py-1 rounded-full border border-blue-100 text-[10px] font-black text-blue-600">סה"כ: {stats.total}</div>
+              <div className="bg-green-50 px-3 py-1 rounded-full border border-green-100 text-[10px] font-black text-green-600">סונכרנו: {stats.synced}</div>
+              <div className="bg-amber-50 px-3 py-1 rounded-full border border-amber-100 text-[10px] font-black text-amber-600">ממתינים: {stats.pending}</div>
+            </div>
           </div>
+
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl mb-6 border border-slate-100">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">סוג</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { id: 'admin', label: 'מנהלים' },
+                        { id: 'candidate', label: 'משודכים' }
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => toggleFilter('type', t.id)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            filters.type.includes(t.id) ? 'bg-luxury-blue text-white' : 'bg-white text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">מגדר</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { id: 'male', label: 'בן' },
+                        { id: 'female', label: 'בת' }
+                      ].map(g => (
+                        <button
+                          key={g.id}
+                          onClick={() => toggleFilter('gender', g.id)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            filters.gender.includes(g.id) ? 'bg-luxury-blue text-white' : 'bg-white text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {g.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">סטטוס סנכרון</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { id: 'synced', label: 'סונכרנו' },
+                        { id: 'pending', label: 'לא סונכרנו' }
+                      ].map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleFilter('syncStatus', s.id)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            filters.syncStatus.includes(s.id) ? 'bg-luxury-blue text-white' : 'bg-white text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">קבוצת שיוך</p>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {CATEGORIES.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => toggleFilter('category', c)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                            filters.category.includes(c) ? 'bg-luxury-blue text-white' : 'bg-white text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
-              <p className="text-[10px] font-black text-blue-600 uppercase">סה"כ תמונות</p>
-              <p className="text-2xl font-black text-blue-900">{stats.total}</p>
+              <p className="text-[10px] font-black text-blue-600 uppercase">סה"כ</p>
+              <p className="text-xl font-black text-blue-900">{stats.total}</p>
             </div>
             <div className="bg-green-50 p-3 rounded-2xl border border-green-100 text-center">
               <p className="text-[10px] font-black text-green-600 uppercase">סונכרנו</p>
-              <p className="text-2xl font-black text-green-900">{stats.synced}</p>
+              <p className="text-xl font-black text-green-900">{stats.synced}</p>
             </div>
             <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 text-center">
               <p className="text-[10px] font-black text-amber-600 uppercase">ממתינים</p>
-              <p className="text-2xl font-black text-amber-900">{stats.pending}</p>
+              <p className="text-xl font-black text-amber-900">{stats.pending}</p>
+            </div>
+            <div className="bg-red-50 p-3 rounded-2xl border border-red-100 text-center">
+              <p className="text-[10px] font-black text-red-600 uppercase">ללא תמונה</p>
+              <p className="text-xl font-black text-red-900">{stats.noImage}</p>
             </div>
             <div className="bg-purple-50 p-3 rounded-2xl border border-purple-100 text-center">
               <p className="text-[10px] font-black text-purple-600 uppercase">מנהלים</p>
-              <p className="text-2xl font-black text-purple-900">{stats.admins}</p>
-            </div>
-            <div className="bg-pink-50 p-3 rounded-2xl border border-pink-100 text-center">
-              <p className="text-[10px] font-black text-pink-600 uppercase">משודכים</p>
-              <p className="text-2xl font-black text-pink-900">{stats.candidates}</p>
+              <p className="text-xl font-black text-purple-900">{stats.admins}</p>
             </div>
           </div>
         </div>
@@ -187,12 +303,18 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                        <img 
-                          src={item.url} 
-                          className="w-full h-full object-cover" 
-                          referrerPolicy="no-referrer"
-                          alt={item.name}
-                        />
+                        {item.url ? (
+                          <img 
+                            src={item.url} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                            alt={item.name}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-300">
+                            <ImageIcon size={20} />
+                          </div>
+                        )}
                         {item.isSynced && (
                           <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
                             <CheckCircle size={16} className="text-green-600 drop-shadow-md" />
@@ -202,15 +324,20 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-bold text-slate-800">{item.name}</p>
-                      <p className="text-[10px] text-slate-400 truncate max-w-[200px]" title={item.url}>{item.url}</p>
+                      <p className="text-[10px] text-slate-400 truncate max-w-[200px]" title={item.url || 'אין תמונה'}>{item.url || 'אין תמונה במקור'}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${
-                        item.type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'
-                      }`}>
-                        {item.type === 'admin' ? <User size={10} /> : <Users size={10} />}
-                        {item.type === 'admin' ? 'מנהל' : 'משודך'}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black w-fit ${
+                          item.type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'
+                        }`}>
+                          {item.type === 'admin' ? <User size={10} /> : <Users size={10} />}
+                          {item.type === 'admin' ? 'מנהל' : 'משודך'}
+                        </span>
+                        {item.category && (
+                          <span className="text-[9px] font-bold text-slate-400">{item.category}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {item.status === 'success' && (
@@ -234,14 +361,14 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
                       {item.status === 'failed' && (
                         <span className="text-red-500 text-xs font-bold flex items-center gap-1">
                           <AlertCircle size={14} />
-                          נכשל
+                          {item.url ? 'נכשל' : 'אין תמונה'}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <button 
                         onClick={() => syncSingle(item)}
-                        disabled={item.status === 'success' || item.status === 'syncing' || isSyncingAll}
+                        disabled={!item.url || item.status === 'success' || item.status === 'syncing' || isSyncingAll}
                         className={`p-2 rounded-xl transition-all ${
                           item.status === 'success' 
                             ? 'text-green-500 bg-green-50 cursor-default' 
@@ -283,3 +410,4 @@ export const ImageSyncDashboard: React.FC<{ onClose: () => void }> = ({ onClose 
     </div>
   );
 };
+

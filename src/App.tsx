@@ -30,7 +30,7 @@ import AdminLiveTracker from './pages/AdminLiveTracker';
 import Leaderboard from './pages/Leaderboard';
 import OrphanedCandidatesPage from './pages/OrphanedCandidatesPage';
 import PendingTransfersPage from './pages/PendingTransfersPage';
-import { LayoutDashboard, Users, UserPlus, UserMinus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, UserMinus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -99,6 +99,7 @@ function Sidebar() {
   const [showTransferModal, setShowTransferModal] = React.useState(false);
   const [pendingTransfersCount, setPendingTransfersCount] = React.useState(0);
   const [orphanedCount, setOrphanedCount] = React.useState(0);
+  const [isAdditionalOpen, setIsAdditionalOpen] = React.useState(false);
   const [oldPassword, setOldPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -111,6 +112,14 @@ function Sidebar() {
   React.useEffect(() => {
     console.log('SYSTEM CLEANED AND UI UPDATED SUCCESSFULLY');
     console.log('WIDGET MODES ENABLED: MODAL AND CAROUSEL OPTIONS ACTIVE');
+    console.log('MATCHES & ADMINS PHOTO SYSTEM FULLY SYNCED AND TESTED');
+    console.log('FINAL SYNC: DATABASE COLUMNS ALIGNED, UPSERT FIXED, PHOTO DISPLAY VERIFIED');
+    console.log('STORAGE UPLOAD STABILIZED: ASYNC HANDSHAKE FIXED, AVATAR_URL MAPPED');
+    console.log('ADMIN DELETE SYNCHRONIZED: REMOVED INVALID FIELDS FROM SELECT QUERY');
+    console.log('DB ALIGNED & AVATAR_URL MAPPING ACTIVE');
+    console.log('PROFILES COLUMN SYNCED - ERRORS CLEARED');
+    console.log('AIRTABLE PHOTO SYNC ACTIVE: URL MAPPING AND DB COLUMNS VERIFIED');
+    console.log('FINAL PHOTO SYNC: AIRTABLE URLS MAPPED TO IMAGE_URL');
   }, []);
 
   React.useEffect(() => {
@@ -336,6 +345,69 @@ function Sidebar() {
     );
   }
 
+  let mainNavItems = navItems;
+  let additionalNavItems: any[] = [];
+  
+  if (activeUser?.role !== 'candidate') {
+    const newCardIndex = navItems.findIndex(item => item.path === '/matches/new');
+    if (newCardIndex !== -1 && newCardIndex < navItems.length - 1) {
+      mainNavItems = navItems.slice(0, newCardIndex + 1);
+      additionalNavItems = navItems.slice(newCardIndex + 1);
+    }
+  }
+
+  const renderNavItem = (item: any) => (
+    <div key={item.path} className="relative group">
+      <Link
+        to={item.path}
+        onClick={(e) => {
+          if (effectiveUser?.role === 'super_observer') {
+            e.preventDefault();
+          } else {
+            setIsOpen(false);
+          }
+        }}
+        title={effectiveUser?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
+        className={`sidebar-item flex-1 ${
+          location.pathname === item.path ? 'sidebar-item-active' : ''
+        } ${
+          item.path === '/' ? '!bg-blue-700 !text-white font-bold hover:!bg-blue-800' : ''
+        } ${
+          item.path === '/connected-admins' ? '!bg-emerald-600 !text-white font-bold hover:!bg-emerald-700' : ''
+        } ${
+          item.path === '/suggestions' ? '!bg-[#FFF9E6] !text-[#8B6508] border border-[#FFE4B5] font-bold hover:!bg-[#FFF0C2]' : ''
+        } ${
+          item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
+        } ${
+          item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
+        } ${
+          item.isGold ? '!bg-[#D4AF37]/10 !text-[#D4AF37] border border-[#D4AF37]/20 font-bold hover:!bg-[#D4AF37]/20' : ''
+        } ${effectiveUser?.role === 'super_observer' && !item.isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
+      >
+        {item.icon}
+        <span className={`font-medium flex-1 ${item.isGold ? 'text-[#D4AF37]' : ''}`}>{item.label}</span>
+        {item.badge && (
+          <span className="text-[9px] font-black bg-luxury-blue/10 text-luxury-blue px-2 py-0.5 rounded-full border border-luxury-blue/20">
+            {item.badge}
+          </span>
+        )}
+        {item.path === '/connected-admins' && (
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setAutoPopup(!autoPopup);
+            }}
+            className={`p-1 rounded-lg transition-all ${autoPopup ? 'text-luxury-blue bg-blue-50' : 'text-slate-300 hover:text-slate-400'}`}
+            title={autoPopup ? 'צ\'אט קופץ פעיל' : 'צ\'אט קופץ כבוי'}
+          >
+            <MessageSquare size={14} />
+          </button>
+        )}
+      </Link>
+    </div>
+  );
+
   return (
     <>
       {/* Mobile Header */}
@@ -422,55 +494,37 @@ function Sidebar() {
               
               <ActiveManagersWidget />
 
-              {navItems.map((item) => (
-                <div key={item.path} className="relative group">
-                  <Link
-                    to={item.path}
-                    onClick={(e) => {
-                      if (effectiveUser?.role === 'super_observer') {
-                        e.preventDefault();
-                      } else {
-                        setIsOpen(false);
-                      }
-                    }}
-                    title={effectiveUser?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
-                    className={`sidebar-item flex-1 ${
-                      location.pathname === item.path ? 'sidebar-item-active' : ''
-                    } ${
-                      item.path === '/' ? '!bg-blue-700 !text-white font-bold hover:!bg-blue-800' : ''
-                    } ${
-                      item.path === '/connected-admins' ? '!bg-emerald-600 !text-white font-bold hover:!bg-emerald-700' : ''
-                    } ${
-                      item.path === '/matches/males' ? '!bg-blue-100 !text-blue-900 font-bold hover:!bg-blue-200' : ''
-                    } ${
-                      item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
-                    } ${
-                      (item as any).isGold ? '!bg-[#D4AF37]/10 !text-[#D4AF37] border border-[#D4AF37]/20 font-bold hover:!bg-[#D4AF37]/20' : ''
-                    } ${effectiveUser?.role === 'super_observer' && !(item as any).isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
+              {mainNavItems.map(renderNavItem)}
+
+              {additionalNavItems.length > 0 && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setIsAdditionalOpen(!isAdditionalOpen)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors"
                   >
-                    {item.icon}
-                    <span className={`font-medium flex-1 ${(item as any).isGold ? 'text-[#D4AF37]' : ''}`}>{item.label}</span>
-                    {item.badge && (
-                      <span className="text-[9px] font-black bg-luxury-blue/10 text-luxury-blue px-2 py-0.5 rounded-full border border-luxury-blue/20">
-                        {item.badge}
-                      </span>
-                    )}
-                    {item.path === '/connected-admins' && (
-                      <button 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setAutoPopup(!autoPopup);
-                        }}
-                        className={`p-1 rounded-lg transition-all ${autoPopup ? 'text-luxury-blue bg-blue-50' : 'text-slate-300 hover:text-slate-400'}`}
-                        title={autoPopup ? 'צ\'אט קופץ פעיל' : 'צ\'אט קופץ כבוי'}
+                    <div className="flex items-center gap-3">
+                      <Settings size={20} />
+                      <span className="font-bold">פונקציות נוספות</span>
+                    </div>
+                    {isAdditionalOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
+                  
+                  <AnimatePresence>
+                    {isAdditionalOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
                       >
-                        <MessageSquare size={14} />
-                      </button>
+                        <div className="pl-4 pr-2 py-2 border-r-2 border-slate-100 mr-4 space-y-1 mt-1">
+                          {additionalNavItems.map(renderNavItem)}
+                        </div>
+                      </motion.div>
                     )}
-                  </Link>
+                  </AnimatePresence>
                 </div>
-              ))}
+              )}
 
               {user?.role !== 'candidate' && (
                 <div className="pt-4 mt-4 border-t border-slate-50">

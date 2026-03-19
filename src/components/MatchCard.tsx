@@ -42,7 +42,11 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   const [tempPhone, setTempPhone] = React.useState(match.phone || '');
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
-  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
+  const [isFreeMoving, setIsFreeMoving] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+  const [hasChanges, setHasChanges] = React.useState(false);
+  const [showConfirmCancel, setShowConfirmCancel] = React.useState(false);
+  const [initialCropConfig, setInitialCropConfig] = React.useState<ImagePosition | null>(null);
   const [showViewerSelector, setShowViewerSelector] = React.useState(false);
   const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
 
@@ -70,43 +74,74 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     if (isViewer) return;
     e.stopPropagation();
     setIsAdjusting(true);
-    setLocalCropConfig(prev => ({ ...prev, ...updates }));
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isViewer) return;
-    setIsAdjusting(true);
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-      cropX: localCropConfig.x,
-      cropY: localCropConfig.y
+    setHasChanges(true);
+    setLocalCropConfig(prev => {
+      const next = { ...prev, ...updates };
+      // Ensure x and y stay within 0-100
+      if (next.x !== undefined) next.x = Math.max(0, Math.min(100, next.x));
+      if (next.y !== undefined) next.y = Math.max(0, Math.min(100, next.y));
+      return next;
     });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
+    if (!isDragging || !isAdjusting) return;
+    
+    setDragStart(prevStart => {
+      const dx = e.clientX - prevStart.x;
+      const dy = e.clientY - prevStart.y;
+      
+      // Sensitivity: how many pixels move 1% of the image
+      // Higher zoom means smaller movements in pixels should result in smaller changes in %
+      const sensitivity = 0.25 / (localCropConfig.zoom || 1);
+      
+      setLocalCropConfig(prevConfig => ({
+        ...prevConfig,
+        x: Math.max(0, Math.min(100, prevConfig.x - dx * sensitivity)),
+        y: Math.max(0, Math.min(100, prevConfig.y - dy * sensitivity))
+      }));
+      
+      return { x: e.clientX, y: e.clientY };
+    });
+  }, [isDragging, isAdjusting, localCropConfig.zoom]);
+
+  const handleMouseUp = React.useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      setIsFreeMoving(false);
+      setShowConfirmCancel(true);
+    }
+  }, [isDragging]);
+
+  React.useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isViewer || !isAdjusting) return;
+    
+    // Don't start dragging if clicking on a button
+    if ((e.target as HTMLElement).closest('button')) return;
+
     e.preventDefault();
     e.stopPropagation();
-    
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-    
-    // Sensitivity factor - adjust based on container size and zoom
-    const sensitivity = 0.15 / localCropConfig.zoom; 
-    
-    setLocalCropConfig(prev => ({
-      ...prev,
-      x: Math.max(0, Math.min(100, dragStart.cropX - (dx * sensitivity * 100 / 20))), // Rough mapping
-      y: Math.max(0, Math.min(100, dragStart.cropY - (dy * sensitivity * 100 / 20)))
-    }));
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
+    setIsDragging(true);
+    setHasChanges(true);
+    setInitialCropConfig({ ...localCropConfig });
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY
+    });
   };
 
   const saveAdjustment = async (e: React.MouseEvent) => {
@@ -121,6 +156,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         await onQuickUpdate(match.id, updates);
       }
       setIsAdjusting(false);
+      setHasChanges(false);
+      setShowConfirmCancel(false);
       toast.success('מיקום התמונה נשמר');
     } catch (err) {
       toast.error('שגיאה בשמירה');
@@ -129,7 +166,23 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
   const cancelAdjustment = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsAdjusting(false);
+    if (initialCropConfig) {
+      setLocalCropConfig(initialCropConfig);
+    } else {
+      const pos = typeof match.image_position === 'string' ? JSON.parse(match.image_position) : match.image_position;
+      setLocalCropConfig(pos || match.crop_config || { x: 50, y: 50, zoom: 1 } as ImagePosition);
+    }
+    setIsDragging(false);
+    setIsFreeMoving(false);
+    setShowConfirmCancel(false);
+    setHasChanges(false);
+  };
+
+  const confirmFreeMove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowConfirmCancel(false);
+    setIsFreeMoving(false);
+    // Returns to the "special adjustment screen" (the panel)
   };
 
   const [showManualPublishModal, setShowManualPublishModal] = React.useState(false);
@@ -219,8 +272,11 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      // Don't close automatically if adjusting, unless it's a deliberate cancel/save
+      // This respects the user's request to only confirm via button
       if (isAdjusting && !(e.target as HTMLElement).closest('.match-card-container')) {
-        setIsAdjusting(false);
+        // We could show a prompt here, but for now we just keep it open
+        // to prevent accidental closing and data loss.
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -281,12 +337,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {match.image_url && !minimal && (
         <div 
-          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? 'cursor-grab' : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : ''}`}
+          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? (isAdjusting ? 'cursor-move' : 'cursor-pointer') : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : ''}`}
           onClick={() => !isViewer && !isAdjusting && onImageClick?.(match)}
           onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
         >
           {onPrev && (
             <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80">
@@ -331,68 +384,130 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           
           {/* Adjustment Controls Overlay */}
           {!isViewer && (
-            <div className={`absolute inset-0 bg-black/10 transition-all flex flex-col items-center justify-center ${isAdjusting ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}>
-              <div className="flex flex-col items-center gap-3 bg-white/40 backdrop-blur-md p-4 rounded-3xl shadow-2xl scale-100 border border-white/20 w-[220px] transition-opacity opacity-100" onClick={e => e.stopPropagation()}>
-                <div className="text-[11px] font-bold text-slate-800 text-center leading-tight">
-                  שיפור מקום התמונה<br/>
-                  <span className="text-[9px] font-medium opacity-70">לחץ על אישור לשמירה</span>
-                </div>
-                
-                <div className="flex flex-col items-center gap-2 w-full">
-                  {!isDragging && (
-                    <>
-                      <button onClick={(e) => handleAdjust(e, { y: Math.max(0, localCropConfig.y - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronUp size={20} /></button>
-                      
-                      <div className="flex items-center justify-between w-full gap-2">
-                        <button onClick={(e) => handleAdjust(e, { x: Math.max(0, localCropConfig.x - 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronRight size={20} /></button>
-                        
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/20">
-                            <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, localCropConfig.zoom + 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הגדל"><ZoomIn size={18} /></button>
-                            <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, localCropConfig.zoom - 0.1) })} className="p-2 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-sm transition-transform active:scale-95" title="הקטן"><ZoomOut size={18} /></button>
-                          </div>
-
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsAdjusting(true);
-                              toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
-                            }} 
-                            className={`flex flex-col items-center justify-center gap-1 p-2.5 rounded-2xl transition-all shadow-md ${isAdjusting ? 'bg-gradient-to-br from-luxury-blue to-blue-700 text-white scale-105 ring-4 ring-blue-100' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-100'}`}
-                            title="הזזה חופשית"
-                          >
-                            <Move size={22} />
-                            <span className="text-[9px] font-bold">הזזה חופשית</span>
-                          </button>
-                        </div>
-
-                        <button onClick={(e) => handleAdjust(e, { x: Math.min(100, localCropConfig.x + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronLeft size={20} /></button>
-                      </div>
-                      
-                      <button onClick={(e) => handleAdjust(e, { y: Math.min(100, localCropConfig.y + 5) })} className="p-1.5 hover:bg-white/50 rounded-full text-slate-900 border border-white/20 shadow-sm"><ChevronDown size={20} /></button>
-                    </>
-                  )}
-                </div>
-                
-                {isAdjusting && (
-                  <div className="flex gap-2 mt-2 pt-2 border-t border-white/20 w-full justify-center">
+            <div 
+              className={`absolute inset-0 transition-all flex flex-col items-center justify-center ${
+                isAdjusting ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none'
+              } ${isDragging || isFreeMoving ? 'bg-transparent' : 'bg-black/5'}`}
+              onClick={e => isAdjusting && e.stopPropagation()}
+            >
+              {/* Free Move Confirmation Screen */}
+              {showConfirmCancel && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  className="bg-white/90 backdrop-blur-2xl p-10 rounded-[3.5rem] shadow-[0_30px_70px_rgba(0,0,0,0.4)] border border-white/60 flex flex-col items-center gap-8 z-50 ring-1 ring-black/5"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="text-center space-y-2">
+                    <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <ImageIcon className="text-emerald-600" size={32} />
+                    </div>
+                    <p className="text-slate-900 font-black text-2xl tracking-tight">לשמור את המיקום החדש?</p>
+                    <p className="text-slate-500 text-sm font-bold opacity-70">התמונה הוזזה בהצלחה</p>
+                  </div>
+                  <div className="flex gap-4 w-full">
                     <button 
-                      onClick={saveAdjustment}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm font-bold text-xs"
+                      onClick={confirmFreeMove}
+                      className="flex-1 flex items-center justify-center gap-3 px-10 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-[2rem] hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-xl shadow-emerald-500/40 font-black text-base active:scale-95 hover:scale-105"
                     >
-                      <Check size={14} />
+                      <Check size={24} strokeWidth={3} />
                       <span>אישור</span>
                     </button>
                     <button 
                       onClick={cancelAdjustment}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm font-bold text-xs"
+                      className="flex-1 flex items-center justify-center gap-3 px-10 py-5 bg-gradient-to-br from-rose-500 to-rose-700 text-white rounded-[2rem] hover:from-rose-600 hover:to-rose-800 transition-all shadow-xl shadow-rose-500/40 font-black text-base active:scale-95 hover:scale-105"
                     >
-                      <X size={14} />
+                      <X size={24} strokeWidth={3} />
                       <span>ביטול</span>
                     </button>
                   </div>
-                )}
-              </div>
+                </motion.div>
+              )}
+
+              {/* Main Adjustment Panel */}
+              {!isDragging && !showConfirmCancel && !isFreeMoving && (
+                <div 
+                  className={`flex flex-col items-center gap-6 bg-white/5 backdrop-blur-2xl p-8 rounded-[4rem] border border-white/20 w-[280px] transition-all pointer-events-auto shadow-[0_25px_50px_rgba(0,0,0,0.3)] ${
+                    isAdjusting ? 'scale-100' : 'scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100'
+                  }`} 
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="text-center space-y-1">
+                    <div className="text-[16px] font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+                      {isAdjusting ? 'כוונון תמונה' : 'שיפור מיקום'}
+                    </div>
+                    <div className="text-[11px] font-bold text-white/80 uppercase tracking-widest drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
+                      {isAdjusting ? 'גרור או השתמש בחצים' : 'לחץ להתחלת עריכה'}
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-4 w-full">
+                    <button 
+                      onClick={(e) => handleAdjust(e, { y: localCropConfig.y + 5 })} 
+                      className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                    >
+                      <ChevronUp size={32} strokeWidth={3} />
+                    </button>
+                    
+                    <div className="flex items-center justify-between w-full gap-5">
+                      <button 
+                        onClick={(e) => handleAdjust(e, { x: localCropConfig.x - 5 })} 
+                        className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                      >
+                        <ChevronRight size={32} strokeWidth={3} />
+                      </button>
+                      
+                      <div className="flex flex-col gap-5">
+                        <div className="flex gap-2 bg-black/30 p-2 rounded-[2rem] border border-white/10 backdrop-blur-3xl shadow-inner">
+                          <button onClick={(e) => handleAdjust(e, { zoom: Math.min(3, (localCropConfig.zoom || 1) + 0.1) })} className="p-3.5 bg-white hover:bg-slate-50 rounded-2xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הגדל"><ZoomIn size={24} strokeWidth={2.5} /></button>
+                          <button onClick={(e) => handleAdjust(e, { zoom: Math.max(1, (localCropConfig.zoom || 1) - 0.1) })} className="p-3.5 bg-white hover:bg-slate-50 rounded-2xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הקטן"><ZoomOut size={24} strokeWidth={2.5} /></button>
+                        </div>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsAdjusting(true);
+                            setIsFreeMoving(true);
+                            setInitialCropConfig({ ...localCropConfig });
+                            toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
+                          }} 
+                          className={`flex flex-col items-center justify-center gap-2 p-5 rounded-[3rem] transition-all shadow-2xl ${isFreeMoving ? 'bg-gradient-to-br from-luxury-blue to-blue-900 text-white scale-110 ring-4 ring-white/30' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                          title="הזזה חופשית"
+                        >
+                          <Move size={32} strokeWidth={2.5} />
+                          <span className="text-[10px] font-black uppercase tracking-widest">הזזה חופשית</span>
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={(e) => handleAdjust(e, { x: localCropConfig.x + 5 })} 
+                        className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                      >
+                        <ChevronLeft size={32} strokeWidth={3} />
+                      </button>
+                    </div>
+                    
+                    <button 
+                      onClick={(e) => handleAdjust(e, { y: localCropConfig.y - 5 })} 
+                      className="p-4 bg-white/95 hover:bg-white rounded-full text-slate-900 shadow-[0_10px_25px_rgba(0,0,0,0.2)] transition-all active:scale-75 hover:scale-110 border border-white/50"
+                    >
+                      <ChevronDown size={32} strokeWidth={3} />
+                    </button>
+                  </div>
+                  
+                  {isAdjusting && hasChanges && (
+                    <div className="flex gap-2 mt-4 pt-6 border-t border-white/20 w-full justify-center">
+                      <button 
+                        onClick={saveAdjustment}
+                        className="flex items-center gap-3 px-10 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-[2rem] hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-2xl shadow-emerald-500/40 font-black text-base w-full justify-center active:scale-95 hover:scale-105"
+                      >
+                        <Check size={24} strokeWidth={3} />
+                        <span>שמור שינויים</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Phone, User, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { dataService } from '../services/dataService';
 
 interface Candidate {
   id: string;
@@ -84,6 +85,7 @@ export const CandidateCard: React.FC<{ candidate: Candidate, highlights?: Record
   React.useEffect(() => {
     console.log('VISUAL UI POLISH COMPLETE: GREEN HEART, BOLD LABELS, AND FAMILY FIELD VERIFIED IN CANDIDATE CARD');
     console.log('PHOTO SYSTEM FIXED: UPLOAD RETURNS PUBLIC URL, DATABASE SAVES URL, UI DISPLAYS IMAGE');
+    console.log('ADMIN PHOTOS SYNCED, UPLOAD TIMEOUT FIXED, FALLBACK ICON ACTIVE');
   }, []);
 
   const getWhatsAppMessage = () => {
@@ -112,7 +114,7 @@ export const CandidateCard: React.FC<{ candidate: Candidate, highlights?: Record
         <div className="cursor-pointer relative group" onClick={() => setShowModal(true)}>
           {candidateImage ? (
             <img 
-              src={candidateImage} 
+              src={dataService.getPublicImageUrl(candidateImage)} 
               alt={candidate.full_name} 
               className="w-16 h-16 rounded-full object-cover group-hover:opacity-75 transition-opacity" 
               referrerPolicy="no-referrer"

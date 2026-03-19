@@ -204,10 +204,19 @@ export default function AdminManagement() {
                           (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
                           (u.email || '').toLowerCase().includes(search.toLowerCase());
     const matchesCategory = (u.role === 'super_admin' || u.role === 'super_observer') || filterCategory.length === 0 || 
-                            filterCategory.some(cat => 
-                              (u.affiliation_group === cat || u.secondary_category === cat) ||
-                              (cat.includes('שח"ם') && (u.affiliation_group === 'פרויקט שח"ם' || u.secondary_category === 'פרויקט שח"ם'))
-                            );
+                            filterCategory.some(cat => {
+                              // If filtering by parent 'פרויקט שח"ם', show all Shaham admins
+                              if (cat === 'פרויקט שח"ם') {
+                                return (u.affiliation_group || '').startsWith('פרויקט שח"ם') || 
+                                       (u.secondary_category || '').startsWith('פרויקט שח"ם');
+                              }
+                              // If user is a general 'פרויקט שח"ם' manager, they match any Shaham sub-category filter
+                              if (u.affiliation_group === 'פרויקט שח"ם' || u.secondary_category === 'פרויקט שח"ם') {
+                                return cat.startsWith('פרויקט שח"ם');
+                              }
+                              // Exact match
+                              return u.affiliation_group === cat || u.secondary_category === cat;
+                            });
     const matchesConnection = filterConnection === 'all' || 
                               (filterConnection === 'online' && !!presenceState[u.id]) || 
                               (filterConnection === 'offline' && !presenceState[u.id]);
@@ -286,7 +295,9 @@ export default function AdminManagement() {
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
-          affiliation_group: formData.affiliation_group
+          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
+          avatar_url: formData.avatar_url,
+          image_url: formData.avatar_url // Map to both columns
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -307,7 +318,8 @@ export default function AdminManagement() {
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           avatar_url: formData.avatar_url,
-          affiliation_group: formData.affiliation_group,
+          image_url: formData.avatar_url, // Map to both columns
+          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
           deleted_at: null,
           daily_message_template: null,
           is_approved: 1,
@@ -432,12 +444,14 @@ export default function AdminManagement() {
                 else if (val === 'בן' || val === 'זכר' || val.toLowerCase() === 'male') admin.gender = 'male';
                 else admin.gender = null;
             }
-            if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
+            if (header === 'תמונה' || header === 'avatar' || header === 'image' || header === 'Photo' || header === 'photo' || header.includes('תמונה')) {
               const match = val.match(/\((https?:\/\/[^\)]+)\)/);
               if (match) {
                 admin.avatar_url = match[1];
+                admin.image_url = match[1];
               } else if (val.trim().startsWith('http')) {
                 admin.avatar_url = val.trim();
+                admin.image_url = val.trim();
               }
             }
             if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
@@ -507,9 +521,16 @@ export default function AdminManagement() {
           phone: admin.phone || null,
           affiliation_group: admin.selected_group || admin.affiliation_group || null,
           role: admin.role || 'viewer',
+          image_url: admin.image_url || admin.avatar_url || null,
+          avatar_url: admin.avatar_url || admin.image_url || null,
+          is_from_file: 1
         };
         
-        console.log('Admins to save:', adminData);
+        console.log('Admins to save (FULL OBJECT WITH IMAGES):', JSON.stringify(adminData, null, 2));
+        console.log('AIRTABLE IMAGE MAPPING VERIFIED:', { 
+          image_url: adminData.image_url, 
+          avatar_url: adminData.avatar_url 
+        });
         
         // Use upsertAdmin to prevent 409 Conflict with logically deleted users
         await dataService.upsertAdmin(adminData);
@@ -588,7 +609,10 @@ export default function AdminManagement() {
   const handleUpdateAvatar = async () => {
     if (!avatarModalUser) return;
     try {
-      const updatedUser = await dataService.updateUser(avatarModalUser.id, { avatar_url: tempAvatarUrl });
+      const updatedUser = await dataService.updateUser(avatarModalUser.id, { 
+        avatar_url: tempAvatarUrl,
+        image_url: tempAvatarUrl // Map to both columns
+      });
       setUsers(prev => prev.map(u => u.id === avatarModalUser.id ? updatedUser : u));
       toast.success('תמונת פרופיל עודכנה');
       setShowAvatarModal(false);
@@ -661,24 +685,23 @@ export default function AdminManagement() {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) return toast.error('התמונה גדולה מדי (מקסימום 2MB)');
     
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
-    const filePath = `avatars/${fileName}`;
-
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from('images').getPublicUrl(filePath);
-      setFormData(prev => ({ ...prev, avatar_url: data.publicUrl }));
-      toast.success('התמונה הועלתה בהצלחה');
-    } catch (err) {
-      console.error('Error uploading avatar:', err);
-      toast.error('שגיאה בהעלאת התמונה');
-    }
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      try {
+        const url = await dataService.uploadBase64Image(base64, 'images');
+        if (url) {
+          setFormData(prev => ({ ...prev, avatar_url: url }));
+          toast.success('התמונה הועלתה בהצלחה');
+        } else {
+          throw new Error('Upload failed');
+        }
+      } catch (err) {
+        console.error('Error uploading avatar:', err);
+        toast.error('שגיאה בהעלאת התמונה');
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleOpenSyncModal = async () => {
@@ -691,7 +714,8 @@ export default function AdminManagement() {
       
       setSyncAdmins(data.map(admin => ({
         ...admin,
-        new_avatar_url: admin.avatar_url || ''
+        new_avatar_url: admin.avatar_url || '',
+        new_image_url: admin.image_url || admin.avatar_url || ''
       })));
       setShowSyncImagesModal(true);
     } catch (err) {
@@ -705,11 +729,14 @@ export default function AdminManagement() {
     let failed = 0;
     
     for (const admin of syncAdmins) {
-      if (admin.new_avatar_url !== admin.avatar_url) {
+      if (admin.new_avatar_url !== admin.avatar_url || admin.new_image_url !== admin.image_url) {
         try {
           const { error } = await supabase
             .from('profiles')
-            .update({ avatar_url: admin.new_avatar_url })
+            .update({ 
+              avatar_url: admin.new_avatar_url,
+              image_url: admin.new_image_url || admin.new_avatar_url 
+            })
             .eq('id', admin.id);
           
           if (error) throw error;
@@ -800,6 +827,7 @@ export default function AdminManagement() {
         entity_type: 'user',
         entity_id: 'multiple'
       });
+      fetchUsers();
     } catch (err) {
       toast.error('שגיאה במחיקת מנהלים');
     }
@@ -1204,7 +1232,7 @@ export default function AdminManagement() {
                     {tempAvatarUrl ? (
                       <>
                         <img 
-                          src={tempAvatarUrl} 
+                          src={dataService.getPublicImageUrl(tempAvatarUrl)} 
                           className="w-full h-full object-cover" 
                           referrerPolicy="no-referrer" 
                           onError={(e) => {
@@ -1224,16 +1252,62 @@ export default function AdminManagement() {
                   </div>
                 </div>
                 
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">URL של התמונה</label>
-                  <input 
-                    type="text" 
-                    className="input-field font-bold" 
-                    value={tempAvatarUrl} 
-                    onChange={(e) => setTempAvatarUrl(e.target.value)}
-                    placeholder="https://example.com/image.jpg"
-                    dir="ltr"
-                  />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">העלאת קובץ</label>
+                    <label className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-3 rounded-2xl font-bold cursor-pointer hover:bg-slate-200 transition-colors">
+                      <Image size={18} />
+                      <span>בחר תמונה מהמחשב</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 2 * 1024 * 1024) return toast.error('התמונה גדולה מדי (מקסימום 2MB)');
+                          
+                          const reader = new FileReader();
+                          reader.onloadend = async () => {
+                            const base64 = reader.result as string;
+                            try {
+                              const toastId = toast.loading('מעלה תמונה...');
+                              const url = await dataService.uploadBase64Image(base64, 'images');
+                              toast.dismiss(toastId);
+                              if (url) {
+                                setTempAvatarUrl(url);
+                                toast.success('התמונה הועלתה בהצלחה');
+                              } else {
+                                throw new Error('Upload failed');
+                              }
+                            } catch (err) {
+                              console.error('Error uploading avatar:', err);
+                              toast.error('שגיאה בהעלאת התמונה');
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="relative flex items-center py-2">
+                    <div className="flex-grow border-t border-slate-200"></div>
+                    <span className="flex-shrink-0 mx-4 text-slate-400 text-xs font-bold">או</span>
+                    <div className="flex-grow border-t border-slate-200"></div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">URL של התמונה</label>
+                    <input 
+                      type="text" 
+                      className="input-field font-bold" 
+                      value={tempAvatarUrl} 
+                      onChange={(e) => setTempAvatarUrl(e.target.value)}
+                      placeholder="https://example.com/image.jpg"
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
                 
                 <div className="flex gap-3 pt-2">
@@ -1271,7 +1345,7 @@ export default function AdminManagement() {
                   {impersonateUser.avatar_url ? (
                     <>
                       <img 
-                        src={impersonateUser.avatar_url} 
+                        src={dataService.getPublicImageUrl(impersonateUser.avatar_url)} 
                         alt={impersonateUser.full_name} 
                         referrerPolicy="no-referrer"
                         className="w-full h-full rounded-full object-cover"
@@ -1478,7 +1552,7 @@ export default function AdminManagement() {
                       {u.avatar_url ? (
                         <>
                           <img 
-                            src={u.avatar_url} 
+                            src={dataService.getPublicImageUrl(u.avatar_url)} 
                             className="w-10 h-10 rounded-full object-cover" 
                             referrerPolicy="no-referrer" 
                             onError={(e) => {
@@ -1487,12 +1561,12 @@ export default function AdminManagement() {
                             }}
                           />
                           <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 hidden">
-                            {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                            <UserIcon size={20} className="text-slate-400" />
                           </div>
                         </>
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                          {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                          <UserIcon size={20} className="text-slate-400" />
                         </div>
                       )}
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
@@ -1593,7 +1667,51 @@ export default function AdminManagement() {
           <div className="relative">
             <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
             <div className="flex flex-wrap gap-2 pr-10 min-h-[42px] items-center bg-white border border-slate-200 rounded-xl p-2">
-              {affiliationGroups.map(cat => (
+              {/* Shaham Hierarchical Filter */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    if (filterCategory.includes('פרויקט שח"ם')) {
+                      setFilterCategory(prev => prev.filter(c => !c.startsWith('פרויקט שח"ם')));
+                    } else {
+                      setFilterCategory(prev => [...prev.filter(c => !c.startsWith('פרויקט שח"ם')), 'פרויקט שח"ם']);
+                    }
+                  }}
+                  className={`text-[10px] font-bold px-3 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                    filterCategory.some(c => c.startsWith('פרויקט שח"ם'))
+                      ? 'bg-purple-600 text-white shadow-sm border-purple-600'
+                      : 'bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-100'
+                  }`}
+                >
+                  פרויקט שח"ם
+                  <ChevronDown size={10} />
+                </button>
+                
+                {filterCategory.some(c => c.startsWith('פרויקט שח"ם')) && (
+                  <div className="flex gap-1 bg-purple-50/50 p-1 rounded-full border border-purple-100">
+                    {CATEGORIES.filter(c => c.startsWith('פרויקט שח"ם ') && c !== 'פרויקט שח"ם').map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          setFilterCategory(prev => {
+                            const withoutShaham = prev.filter(c => !c.startsWith('פרויקט שח"ם'));
+                            return prev.includes(cat) ? withoutShaham : [...withoutShaham, cat];
+                          });
+                        }}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${
+                          filterCategory.includes(cat)
+                            ? 'bg-white text-purple-600 shadow-sm border-purple-200'
+                            : 'bg-transparent text-purple-400 border-transparent hover:text-purple-600'
+                        }`}
+                      >
+                        {cat.replace('פרויקט שח"ם ', 'שח"ם ')}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {affiliationGroups.filter(cat => !cat.startsWith('פרויקט שח"ם')).map(cat => (
                 <button
                   key={cat}
                   onClick={() => {
@@ -1706,10 +1824,10 @@ export default function AdminManagement() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative shadow-inner">
-                                  {u.avatar_url ? (
+                                  {(u.image_url || u.avatar_url) ? (
                                     <>
                                       <img 
-                                        src={u.avatar_url} 
+                                        src={dataService.getPublicImageUrl(u.image_url || u.avatar_url)} 
                                         className="w-full h-full object-cover" 
                                         referrerPolicy="no-referrer" 
                                         onError={(e) => {
@@ -1718,12 +1836,12 @@ export default function AdminManagement() {
                                         }}
                                       />
                                       <div className="w-full h-full flex items-center justify-center text-slate-400 hidden">
-                                        {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                                        <UserIcon size={20} className="text-slate-400" />
                                       </div>
                                     </>
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                      {u.gender === 'female' ? <Heart size={20} className="text-pink-400" /> : <UserIcon size={20} className="text-blue-400" />}
+                                      <UserIcon size={20} className="text-slate-400" />
                                     </div>
                                   )}
                                   <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
@@ -1896,7 +2014,6 @@ export default function AdminManagement() {
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">תמונה</th>
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שם מלא</th>
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">מין</th>
                 <th className="px-3 py-4 font-bold text-text-secondary uppercase tracking-wider text-xs">שם משתמש</th>
@@ -1923,36 +2040,36 @@ export default function AdminManagement() {
                     )}
                   </td>
                   <td className="px-3 py-4">
-                  <div 
-                    className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-200 cursor-pointer hover:border-luxury-blue transition-colors group"
-                    onClick={() => {
-                      setAvatarModalUser(u);
-                      setTempAvatarUrl(u.avatar_url || '');
-                      setShowAvatarModal(true);
-                    }}
-                  >
-                    <div className="w-full h-full relative">
-                      <img 
-                        src={u.avatar_url || undefined} 
-                        alt={u.full_name || u.name || '?'} 
-                        referrerPolicy="no-referrer"
-                        className={`w-full h-full object-cover ${!u.avatar_url ? 'hidden' : ''}`}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-200 cursor-pointer hover:border-luxury-blue transition-colors group flex-shrink-0"
+                        onClick={() => {
+                          setAvatarModalUser(u);
+                          setTempAvatarUrl(u.avatar_url || '');
+                          setShowAvatarModal(true);
                         }}
-                      />
-                      <div className={`w-full h-full flex items-center justify-center text-white font-bold ${u.avatar_url ? 'hidden' : ''}`} style={{ backgroundColor: stringToColor(u.full_name || u.name || '?') }}>
-                        {(u.full_name || u.name || '?').charAt(0)}
+                      >
+                        <div className="w-full h-full relative">
+                          <img 
+                            src={dataService.getPublicImageUrl(u.image_url || u.avatar_url || '')} 
+                            alt={u.full_name || u.name || '?'} 
+                            referrerPolicy="no-referrer"
+                            className={`w-full h-full object-cover ${(u.image_url || u.avatar_url) ? '' : 'hidden'}`}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                          <div className={`w-full h-full flex items-center justify-center bg-slate-200 text-slate-400 ${(u.image_url || u.avatar_url) ? 'hidden' : ''}`}>
+                            <UserIcon size={20} />
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Edit2 size={16} className="text-white" />
+                        </div>
                       </div>
+                      <span className={`font-bold text-sm ${u.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
                     </div>
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Edit2 size={16} className="text-white" />
-                    </div>
-                  </div>
-                  </td>
-                  <td className="px-3 py-4">
-                    <span className={`font-bold text-sm ${u.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
                   </td>
                   <td className="px-3 py-4">
                     {u.role !== 'super_admin' && (
@@ -2013,7 +2130,11 @@ export default function AdminManagement() {
                         <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 z-50 hidden group-hover/nav:block">
                           <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider">קבוצות מנוהלות</p>
                           <div className="space-y-1">
-                            {whatsappGroups.filter(g => g.category?.trim() === u.affiliation_group?.trim() || g.category?.trim() === u.secondary_category?.trim()).map(g => (
+                            {whatsappGroups.filter(g => 
+                              g.category?.trim() === u.affiliation_group?.trim() || 
+                              g.category?.trim() === u.secondary_category?.trim() ||
+                              (u.affiliation_group === 'פרויקט שח"ם' && g.category?.startsWith('פרויקט שח"ם'))
+                            ).map(g => (
                               <a 
                                 key={g.id}
                                 href={g.link}
@@ -2025,7 +2146,11 @@ export default function AdminManagement() {
                                 <ExternalLink size={10} className="text-slate-400" />
                               </a>
                             ))}
-                            {whatsappGroups.filter(g => g.category?.trim() === u.affiliation_group?.trim() || g.category?.trim() === u.secondary_category?.trim()).length === 0 && (
+                            {whatsappGroups.filter(g => 
+                              g.category?.trim() === u.affiliation_group?.trim() || 
+                              g.category?.trim() === u.secondary_category?.trim() ||
+                              (u.affiliation_group === 'פרויקט שח"ם' && g.category?.startsWith('פרויקט שח"ם'))
+                            ).length === 0 && (
                               <p className="text-[10px] text-slate-400 p-2 text-center italic">אין קבוצות מוגדרות</p>
                             )}
                           </div>
@@ -2129,7 +2254,7 @@ export default function AdminManagement() {
                   {impersonateUser.avatar_url ? (
                     <>
                       <img 
-                        src={impersonateUser.avatar_url} 
+                        src={dataService.getPublicImageUrl(impersonateUser.avatar_url)} 
                         alt="" 
                         className="w-full h-full object-cover" 
                         onError={(e) => {
@@ -2691,7 +2816,7 @@ export default function AdminManagement() {
                         {formData.avatar_url ? (
                           <>
                             <img 
-                              src={formData.avatar_url} 
+                              src={dataService.getPublicImageUrl(formData.avatar_url)} 
                               alt="Avatar" 
                               referrerPolicy="no-referrer" 
                               className="w-full h-full object-cover" 
@@ -2700,10 +2825,10 @@ export default function AdminManagement() {
                                 (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
                               }}
                             />
-                            <UserCheck size={32} className="text-slate-300 hidden" />
+                            <UserIcon size={32} className="text-slate-300 hidden" />
                           </>
                         ) : (
-                          <UserCheck size={32} className="text-slate-300" />
+                          <UserIcon size={32} className="text-slate-300" />
                         )}
                         <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${presenceState[editingUser?.id || ''] ? 'bg-green-500' : 'bg-slate-300'}`} />
                       </div>
@@ -2867,9 +2992,9 @@ export default function AdminManagement() {
                 {syncAdmins.map((admin, idx) => (
                   <div key={admin.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="w-12 h-12 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border-2 border-white shadow-sm">
-                      {admin.new_avatar_url ? (
+                      {(admin.new_image_url || admin.new_avatar_url) ? (
                         <img 
-                          src={admin.new_avatar_url} 
+                          src={dataService.getPublicImageUrl(admin.new_image_url || admin.new_avatar_url)} 
                           alt={admin.full_name} 
                           className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
@@ -2892,9 +3017,10 @@ export default function AdminManagement() {
                         type="text"
                         placeholder="הדבק לינק לתמונה (URL)..."
                         className="input-field text-xs"
-                        value={admin.new_avatar_url}
+                        value={admin.new_image_url || admin.new_avatar_url || ''}
                         onChange={(e) => {
                           const newSyncAdmins = [...syncAdmins];
+                          newSyncAdmins[idx].new_image_url = e.target.value;
                           newSyncAdmins[idx].new_avatar_url = e.target.value;
                           setSyncAdmins(newSyncAdmins);
                         }}

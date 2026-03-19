@@ -13,6 +13,7 @@ export interface User {
   phone: string | null;
   google_login_allowed?: 'true' | 'false';
   avatar_url: string | null;
+  image_url?: string | null;
   deleted_at?: string | null;
   daily_message_template?: string | null;
   is_from_file?: number;
