@@ -1076,7 +1076,12 @@ class DataService {
     const activeUser = effectiveUser || user;
     const effectiveUserId = this.getEffectiveUserId();
 
-    let query = supabase
+    // Use supabaseAdmin for admin/team_leader to bypass RLS as requested
+    const client = (activeUser && (activeUser.role === 'admin' || activeUser.role === 'team_leader' || activeUser.role === 'super_admin')) 
+      ? supabaseAdmin 
+      : supabase;
+
+    let query = client
       .from('candidates')
       .select('*')
       .order('created_at', { ascending: false });
@@ -2405,6 +2410,7 @@ class DataService {
   // Stats
   async getStats(user?: User, managerId?: string): Promise<Stats> {
     try {
+      console.log('PRODUCTION SYNC FIXED: COUNTERS AND DATA FETCHING ALIGNED');
       const effectiveUser = this.getEffectiveUser();
       const activeUser = effectiveUser || user;
       
@@ -2416,14 +2422,17 @@ class DataService {
         !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status)
       );
 
-      let adminsQuery = supabase.from('profiles').select('gender, category');
-      let publishLogsQuery = supabase.from('publish_logs').select('created_at, user_id');
+      // Use supabaseAdmin for stats to ensure full visibility for admins
+      const isAdminRole = activeUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(activeUser.role);
+      const client = isAdminRole ? supabaseAdmin : supabase;
+      let adminsQuery = client.from('profiles').select('gender, category, affiliation_group');
+      let publishLogsQuery = client.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
       if (activeUser && activeUser.role !== 'super_admin') {
         if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
           // Fetch admins in the same affiliation group
-          const { data: sameGroupAdmins } = await supabase.from('profiles')
+          const { data: sameGroupAdmins } = await client.from('profiles')
             .select('id')
             .eq('affiliation_group', activeUser.affiliation_group);
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
@@ -2431,7 +2440,7 @@ class DataService {
           // Fetch admins in the same category (original logic for admins)
           const myCategories = [activeUser.category].filter(Boolean);
           if (myCategories.length > 0) {
-            const { data: sameGroupAdmins } = await supabase.from('profiles')
+            const { data: sameGroupAdmins } = await client.from('profiles')
               .select('id')
               .in('category', myCategories);
             groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
@@ -2441,8 +2450,11 @@ class DataService {
         if (managerId) {
           // Strictly filter by the selected manager
           adminsQuery = adminsQuery.eq('id', managerId);
+        } else if (activeUser.affiliation_group) {
+          // Fix: Count all admins in the same affiliation group instead of just '1'
+          adminsQuery = adminsQuery.eq('affiliation_group', activeUser.affiliation_group);
         } else if (effectiveUser) {
-          // If impersonating, strictly filter by that user only
+          // If impersonating and no group, filter by that user only
           adminsQuery = adminsQuery.eq('id', effectiveUser.id);
         } else {
           adminsQuery = adminsQuery.eq('id', activeUser.id);
