@@ -2985,9 +2985,27 @@ class DataService {
   }
 
   async performAdminCleanup(): Promise<void> {
+    const superAdminUsername = 'good';
+
     try {
-      // Cleanup logic removed.
-      console.log('CLEANUP: EMAIL-BASED ADMIN LOGIC REMOVED.');
+      // 1. Update the 'good' user to be Super Admin
+      await supabaseAdmin
+        .from('profiles')
+        .update({ 
+          role: 'super_admin',
+          status: 'active'
+        })
+        .eq('username', superAdminUsername);
+
+      // 2. Ensure hiealbokris@gmail.com is a regular admin
+      await supabaseAdmin
+        .from('profiles')
+        .update({ 
+          role: 'admin'
+        })
+        .eq('email', 'hiealbokris@gmail.com');
+        
+      console.log('CLEANUP COMPLETE: GOOD IS SUPER ADMIN, HIEAL IS ADMIN.');
     } catch (err) {
       console.error('Error during admin cleanup:', err);
     }

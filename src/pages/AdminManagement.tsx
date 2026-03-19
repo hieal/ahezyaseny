@@ -50,7 +50,7 @@ const getAvatarUrl = (user: any) => {
   return fallback;
 };
 
-const isGoodAdmin = (u: any) => u?.username === 'good-';
+const isGoodAdmin = (u: any) => u?.username === 'good';
 const isMalachiAdmin = (u: any) => u?.name === 'מלאכי צוריאל' || u?.full_name === 'מלאכי צוריאל' || u?.role === 'super_observer';
 
 export default function AdminManagement() {
