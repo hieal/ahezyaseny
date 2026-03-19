@@ -139,11 +139,11 @@ export default function AdminManagement() {
   };
 
   useEffect(() => {
-    console.log('HOOK ORDER FIXED: ADMIN MANAGEMENT RESTORED');
-    console.log('ALL ADMINS ARE NOW AUTO-ACTIVE. NO MORE PENDING STATUS');
-    console.log('HORIZONTAL CARDS SYNCED: MALACHI VISIBLE UNDER OBSERVER FILTER');
-    console.log('SIDEBAR WIDGET OPTIMIZED: MAX 3 USERS + ACTIVE STATUS FIXED');
-    fetchUsers();
+    // Perform admin cleanup and initialization
+    dataService.performAdminCleanup().then(() => {
+      fetchUsers();
+    });
+
     const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
     return () => clearInterval(interval);
   }, []);
@@ -151,8 +151,7 @@ export default function AdminManagement() {
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
   const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => {
-    const isMalachi = u.phone === '0556603336';
-    const key = isMalachi ? 'malachi_unique_key' : (u.phone || u.id);
+    const key = u.phone || u.id;
     return [key, u];
   })).values());
 
@@ -162,17 +161,19 @@ export default function AdminManagement() {
     // Manager Unification logic
     const isSuperAdmin = currentUser?.role === 'super_admin';
     const isSuperObserver = currentUser?.role === 'super_observer';
-    const isTeamLeader = currentUser?.role === 'team_leader';
-    const isSameCategory = currentUser?.affiliation_group && (u.affiliation_group === currentUser.affiliation_group || u.secondary_category === currentUser.affiliation_group);
+    const isShaham = (group: string) => group?.includes('שח"ם');
+    const isSameCategory = currentUser?.affiliation_group && (
+      u.affiliation_group === currentUser.affiliation_group || 
+      u.secondary_category === currentUser.affiliation_group ||
+      (isShaham(currentUser.affiliation_group) && isShaham(u.affiliation_group || ''))
+    );
     const isCreator = u.created_by === currentUser?.id;
     const isSelf = u.id === currentUser?.id;
 
+    // Server-side already filters by affiliation_group for non-super admins.
+    // We keep basic filtering for UI consistency but it's mostly handled by dataService.
     if (!isSuperAdmin && !isSuperObserver) {
-      if (isTeamLeader) {
-        if (!isSameCategory && !isCreator && !isSelf) return false;
-      } else {
-        if (!isSameCategory && !isSelf) return false;
-      }
+      if (!isSameCategory && !isCreator && !isSelf) return false;
     }
 
     const matchesSearch = (u.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
@@ -198,12 +199,12 @@ export default function AdminManagement() {
                               (filterConnection === 'offline' && !presenceState[u.id]);
     const matchesRole = (
       roleTab === 'all' || 
-      (roleTab === 'viewer' && (u.role === 'viewer' || u.role === 'super_observer' || (u.role as string) === 'observer' || u.phone === '0556603336')) ||
+      (roleTab === 'viewer' && (u.role === 'viewer' || u.role === 'super_observer' || (u.role as string) === 'observer')) ||
       (roleTab === 'admin' && u.role === 'admin') ||
       (roleTab === 'super_admin' && u.role === 'super_admin') ||
       u.role === roleTab
     ) && (selectedRoles.length === 0 || selectedRoles.some(role => {
-      if (role === 'viewer') return u.role === 'viewer' || u.role === 'super_observer' || (u.role as string) === 'observer' || u.phone === '0556603336';
+      if (role === 'viewer') return u.role === 'viewer' || u.role === 'super_observer' || (u.role as string) === 'observer';
       return u.role === role;
     }));
     
@@ -215,9 +216,6 @@ export default function AdminManagement() {
 
     return matchesSearch && matchesCategory && matchesConnection && matchesRole && matchesAirtable && matchesApproval;
   }).sort((a, b) => {
-    if (a.username === 'god') return -1;
-    if (b.username === 'god') return 1;
-    
     const rolePriority: Record<string, number> = {
       'super_admin': 1,
       'super_observer': 1,
@@ -527,8 +525,8 @@ export default function AdminManagement() {
   };
 
   const confirmDelete = (user: User) => {
-    if (user.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b' || user.role === 'super_observer') {
-      toast.error('לא ניתן למחוק מנהל זה');
+    if (user.email === 'hiealbokris@gmail.com') {
+      toast.error('לא ניתן למחוק את מנהל העל הראשי');
       return;
     }
     if (user.id === currentUser?.id) {
@@ -671,7 +669,6 @@ export default function AdminManagement() {
   };
 
   const getRowColor = (user: User) => {
-    if (user.username === 'god' || user.phone === '0556603336') return 'bg-[#fff9c4] border-r-4 border-r-yellow-600 shadow-[inset_0_0_10px_rgba(250,204,21,0.2)]';
     if (user.role === 'super_admin') return 'bg-yellow-50/50 border-r-4 border-r-yellow-400 shadow-[inset_0_0_10px_rgba(250,204,21,0.1)]';
     if (user.is_shaham_manager) return 'bg-purple-50/30 border-r-4 border-r-purple-400';
     if (!user.category) return '';
@@ -807,10 +804,10 @@ export default function AdminManagement() {
   const handleBulkDelete = async () => {
     if (selectedUserIds.length === 0) return;
     
-    // Filter out God and Malachi
+    // Filter out protected admins
     const idsToDelete = selectedUserIds.filter(id => {
       const user = users.find(u => u.id === id);
-      return user && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b' && user.role !== 'super_observer';
+      return user && user.email !== 'hiealbokris@gmail.com' && user.id !== currentUser?.id;
     });
     
     if (idsToDelete.length === 0) {
@@ -844,7 +841,7 @@ export default function AdminManagement() {
   };
 
   const toggleSelectAll = () => {
-    const selectableUsers = filteredUsers.filter(u => u.username !== 'god');
+    const selectableUsers = filteredUsers.filter(u => u.email !== 'hiealbokris@gmail.com');
     if (selectedUserIds.length === selectableUsers.length && selectableUsers.length > 0) {
       setSelectedUserIds([]);
     } else {
@@ -862,7 +859,8 @@ export default function AdminManagement() {
   };
 
   const toggleSelectUser = (id: string) => {
-    if (id === 'god-id') return;
+    const user = users.find(u => u.id === id);
+    if (user?.email === 'hiealbokris@gmail.com') return;
     setSelectedUserIds(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
@@ -1585,7 +1583,7 @@ export default function AdminManagement() {
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name || u.email || 'מנהל מערכת'}</p>
                       <p className="text-[10px] text-slate-500">
-                        {u.username === 'god' ? (
+                        {u.email === 'hiealbokris@gmail.com' ? (
                           <span className="font-bold text-[#D4AF37]">מנהל העמותה</span>
                         ) : (u.role === 'super_admin' ? 'מנהל על' : u.category || 'ללא קטגוריה')}
                       </p>
@@ -1827,7 +1825,7 @@ export default function AdminManagement() {
                         </div>
                         {displayChunk.map(u => (
                           <div key={u.id} className={`bg-white p-4 rounded-2xl border-2 shadow-sm hover:shadow-md transition-all group/card ${
-                            (u.username === 'god' || u.phone === '0556603336') ? 'border-yellow-400 bg-yellow-50/30' : 
+                            u.email === 'hiealbokris@gmail.com' ? 'border-luxury-blue bg-luxury-blue/5' : 
                             u.gender === 'male' ? 'border-blue-400 bg-blue-50/10' : 
                             u.gender === 'female' ? 'border-pink-400 bg-pink-50/10' : 
                             'border-slate-300 bg-slate-50/10'
@@ -1858,9 +1856,9 @@ export default function AdminManagement() {
                                   <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
                                 </div>
                                 <div>
-                                  <p className={`font-bold text-base leading-tight ${u.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>{u.full_name || u.name}</p>
+                                  <p className="font-bold text-base leading-tight text-slate-900">{u.full_name || u.name}</p>
                                   {u.role !== 'super_admin' && (
-                                    <p className={`text-[10px] font-medium ${u.phone === '0556603336' ? 'text-[#D4AF37]/80' : 'text-slate-500'}`}>{u.username || '-'}</p>
+                                    <p className="text-[10px] font-medium text-slate-500">{u.username || '-'}</p>
                                   )}
                                 </div>
                               </div>
@@ -1876,7 +1874,7 @@ export default function AdminManagement() {
                                 )}
                                 <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
                                 <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
-                                {(u.username !== 'god' && u.phone !== '0556603336') && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                                {u.email !== 'hiealbokris@gmail.com' && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
                               </div>
                             </div>
                             
@@ -1900,10 +1898,10 @@ export default function AdminManagement() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className={`px-3 py-1 rounded-full text-[10px] font-black w-fit shadow-sm ${
                                     u.role === 'super_admin' ? 'bg-yellow-400 text-black' : 
-                                    (u.role === 'super_observer' || u.phone === '0556603336') ? 'bg-[#D4AF37] text-white' :
+                                    u.role === 'super_observer' ? 'bg-[#D4AF37] text-white' :
                                     u.role === 'team_leader' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
                                   }`}>
-                                    {(u.role === 'super_observer' || u.phone === '0556603336') ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                                    {u.role === 'super_observer' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
                                   </span>
                                   {u.role !== 'super_admin' && (
                                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
@@ -2021,7 +2019,7 @@ export default function AdminManagement() {
                   <input 
                     type="checkbox" 
                     className="w-4 h-4 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue cursor-pointer"
-                    checked={selectedUserIds.length > 0 && selectedUserIds.length === filteredUsers.filter(u => u.username !== 'god').length}
+                    checked={selectedUserIds.length > 0 && selectedUserIds.length === filteredUsers.filter(u => u.email !== 'hiealbokris@gmail.com').length}
                     onChange={toggleSelectAll}
                   />
                 </th>
@@ -2039,9 +2037,9 @@ export default function AdminManagement() {
             </thead>
             <tbody className="divide-y divide-slate-50 bg-white">
               {displayUsers.slice(0, scrollThreshold).map((u) => (
-                <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${u.phone === '0556603336' ? 'bg-[#fff9c4] border-l-4 border-[#D4AF37] font-bold' : (u.username === 'god' ? 'bg-yellow-50 font-bold' : getRowColor(u))} ${selectedUserIds.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
+                <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${u.email === 'hiealbokris@gmail.com' ? 'bg-luxury-blue/5 border-l-4 border-luxury-blue font-bold' : getRowColor(u)} ${selectedUserIds.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
                   <td className="px-4 py-4">
-                    {(u.username !== 'god' && u.phone !== '0556603336') && (
+                    {u.email !== 'hiealbokris@gmail.com' && (
                       <input 
                         type="checkbox" 
                         className="w-4 h-4 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue cursor-pointer"
@@ -2079,20 +2077,20 @@ export default function AdminManagement() {
                           <Edit2 size={16} className="text-white" />
                         </div>
                       </div>
-                      <span className={`font-bold text-sm ${u.phone === '0556603336' ? 'text-[#D4AF37]' : 'text-slate-900'}`}>{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
+                      <span className="font-bold text-sm text-slate-900">{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
                     </div>
                   </td>
                   <td className="px-3 py-4">
                     {u.role !== 'super_admin' && (
                       <button 
                         onClick={() => setGenderModalUser(u)}
-                        className={`text-sm hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4 ${u.phone === '0556603336' ? 'text-[#D4AF37]/80' : 'text-slate-600'}`}
+                        className="text-sm hover:text-luxury-blue transition-colors underline decoration-dotted underline-offset-4 text-slate-600"
                       >
                         {u.gender === 'female' ? 'בת' : (u.gender === 'male' ? 'בן' : 'לא צוין')}
                       </button>
                     )}
                   </td>
-                  <td className={`px-3 py-4 text-sm font-medium ${u.phone === '0556603336' ? 'text-[#D4AF37]/80' : 'text-slate-600'}`}>
+                  <td className="px-3 py-4 text-sm font-medium text-slate-600">
                     {u.role === 'super_admin' ? '-' : ((!u.username || u.username === u.phone) ? '-' : u.username)}
                   </td>
                   <td className="px-3 py-4">
@@ -2104,7 +2102,7 @@ export default function AdminManagement() {
                       className="flex flex-col text-right hover:bg-slate-100 p-1 rounded transition-colors group"
                     >
                       {u.email ? (
-                        <span className={`text-sm group-hover:text-luxury-blue ${u.phone === '0556603336' ? 'text-[#D4AF37]/80' : 'text-slate-600'}`}>{u.email}</span>
+                        <span className="text-sm group-hover:text-luxury-blue text-slate-600">{u.email}</span>
                       ) : (
                         <span style={{ color: 'red' }}>חסר</span>
                       )}
@@ -2119,7 +2117,7 @@ export default function AdminManagement() {
                       className="flex items-center gap-2 hover:bg-slate-100 p-1 rounded transition-colors group"
                     >
                       {u.phone ? (
-                        <span className={`text-sm group-hover:text-luxury-blue ${u.phone === '0556603336' ? 'text-[#D4AF37]/80' : 'text-slate-600'}`}>{u.phone}</span>
+                        <span className="text-sm group-hover:text-luxury-blue text-slate-600">{u.phone}</span>
                       ) : (
                         <span style={{ color: 'red' }}>חסר</span>
                       )}
@@ -2174,13 +2172,13 @@ export default function AdminManagement() {
                     <div className="flex flex-col gap-1">
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
                         u.role === 'super_admin' ? 'bg-yellow-400 text-black border border-yellow-600 shadow-md font-black' :
-                        (u.role === 'super_observer' || u.phone === '0556603336') ? 'bg-[#D4AF37] text-white border-yellow-800 shadow-md' :
+                        u.role === 'super_observer' ? 'bg-[#D4AF37] text-white border-yellow-800 shadow-md' :
                         u.role === 'team_leader' ? 'bg-indigo-100 text-indigo-700' :
                         u.role === 'viewer' ? 'bg-slate-100 text-slate-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
-                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : ((u.role === 'super_observer' || u.phone === '0556603336') ? <Shield size={14} /> : <Shield size={14} />)}
-                        {(u.role === 'super_observer' || u.phone === '0556603336') ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : 
+                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />}
+                        {u.role === 'super_observer' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : 
                          u.role === 'team_leader' ? 'ראש צוות' :
                          u.role === 'viewer' ? 'צופה' : 'מנהל'}
                       </span>
@@ -2235,7 +2233,7 @@ export default function AdminManagement() {
                       <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
                         <Edit2 size={16} />
                       </button>
-                      {u.id !== currentUser?.id && u.username !== 'god' && u.phone !== '0556603336' && (
+                      {u.id !== currentUser?.id && u.email !== 'hiealbokris@gmail.com' && (
                         <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
                           <Trash2 size={16} />
                         </button>
@@ -2403,14 +2401,6 @@ export default function AdminManagement() {
           <h2 className="text-2xl font-extrabold text-text-main">ניהול קבוצות וואטסאפ</h2>
           <div className="flex gap-2">
             <button 
-              onClick={fetchWhapiGroups}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
-              disabled={isFetchingWhapi}
-            >
-              {isFetchingWhapi ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-              סנכרון קבוצות מוואטסאפ
-            </button>
-            <button 
               onClick={() => setShowWhatsAppModal(true)}
               className="bg-luxury-blue text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
             >
@@ -2494,7 +2484,17 @@ export default function AdminManagement() {
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           >
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-              <h3 className="text-xl font-bold mb-4">הוספת קבוצת וואטסאפ</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold">הגדרות קבוצות וואטסאפ</h3>
+                <button 
+                  onClick={fetchWhapiGroups}
+                  className="bg-green-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-green-700 transition-colors"
+                  disabled={isFetchingWhapi}
+                >
+                  {isFetchingWhapi ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  סנכרון קבוצות
+                </button>
+              </div>
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 await dataService.createWhatsAppGroup({

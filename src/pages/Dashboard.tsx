@@ -165,16 +165,26 @@ export default function Dashboard() {
   const [loadingNotes, setLoadingNotes] = useState(false);
 
   const adminsInSameGroups = allUsers.filter(u => {
-    if (activeUser?.role === 'super_admin') return true;
-    if (activeUser?.role === 'team_leader') {
-      return u.affiliation_group === activeUser.affiliation_group;
-    }
-    if (!activeUser?.category && !activeUser?.secondary_category) return u.id === activeUser?.id;
+    if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer') return true;
     
-    const myCategories = [activeUser.category, activeUser.secondary_category].filter(Boolean);
+    const isShaham = (group: string | null | undefined) => group?.includes('שח"ם');
+    const myGroup = activeUser?.affiliation_group;
+    const userGroup = u.affiliation_group;
+
+    if (myGroup) {
+      if (isShaham(myGroup) && isShaham(userGroup)) return true;
+      return userGroup === myGroup;
+    }
+    
+    // Fallback to category if no affiliation group
+    const myCategories = [activeUser?.category, activeUser?.secondary_category].filter(Boolean);
     const userCategories = [u.category, u.secondary_category].filter(Boolean);
     
-    return userCategories.some(cat => myCategories.includes(cat));
+    if (myCategories.length > 0) {
+      return userCategories.some(cat => myCategories.includes(cat)) || u.id === activeUser?.id;
+    }
+
+    return u.id === activeUser?.id;
   });
 
   const fetchTeamData = async () => {
@@ -182,8 +192,11 @@ export default function Dashboard() {
     setLoadingTeamData(true);
     try {
       // Get admins in the same affiliation group
+      const isShaham = (group: string | null | undefined) => group?.includes('שח"ם');
       const teamAdmins = allUsers.filter(u => {
-        return u.affiliation_group === activeUser.affiliation_group && u.id !== activeUser.id;
+        if (u.id === activeUser.id) return false;
+        if (isShaham(activeUser.affiliation_group) && isShaham(u.affiliation_group)) return true;
+        return u.affiliation_group === activeUser.affiliation_group;
       });
       
       setTeamAdminsData(teamAdmins);

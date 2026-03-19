@@ -1092,8 +1092,8 @@ class DataService {
 
     if (activeUser) {
       if (activeUser.role === 'admin') {
-        if (activeUser.affiliation_group === 'פרויקט שח"ם') {
-          query = query.in('category', ['פרויקט שח"ם', 'פרויקט שח"ם 20-35', 'פרויקט שח"ם 36-50']);
+        if (activeUser.affiliation_group?.includes('שח"ם')) {
+          query = query.ilike('category', '%שח"ם%');
         } else if (activeUser.category) {
           query = query.eq('category', activeUser.category);
         }
@@ -1103,10 +1103,10 @@ class DataService {
         }
       } else if (activeUser.role === 'team_leader') {
         if (activeUser.affiliation_group) {
-          const { data: groupUsers } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('affiliation_group', activeUser.affiliation_group);
+          const groupQuery = supabase.from('profiles').select('id');
+          const { data: groupUsers } = await (activeUser.affiliation_group.includes('שח"ם') 
+            ? groupQuery.ilike('affiliation_group', '%שח"ם%')
+            : groupQuery.eq('affiliation_group', activeUser.affiliation_group));
           
           if (groupUsers && groupUsers.length > 0) {
             const userIds = groupUsers.map(u => u.id);
@@ -1483,21 +1483,47 @@ class DataService {
 
     try {
       console.log('Fetching all admins from profiles table...');
+      const isAdminRole = currentUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(currentUser.role);
+      const client = isAdminRole ? supabaseAdmin : supabase;
+
       // Try to select all relevant columns
-      const query = supabase
+      let query = client
         .from('profiles')
         .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain')
         .order('full_name');
       
+      if (currentUser.role !== 'super_admin' && currentUser.role !== 'super_observer') {
+        if (currentUser.affiliation_group?.includes('שח"ם')) {
+          query = query.ilike('affiliation_group', '%שח"ם%');
+        } else if (currentUser.affiliation_group) {
+          query = query.eq('affiliation_group', currentUser.affiliation_group);
+        } else {
+          // If no group, only see themselves as a fallback to prevent seeing everyone
+          query = query.eq('id', currentUser.id);
+        }
+      }
+      
       const { data, error } = await this.applySyncFilter(query);
+      const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
       
       if (error) {
         // Fallback to basic columns if some columns are missing
         console.warn('Some columns missing in profiles, falling back to basic columns:', error.message);
-        const basicQuery = supabase
+        let basicQuery = client
           .from('profiles')
           .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group')
           .order('full_name');
+
+        if (currentUser.role !== 'super_admin' && currentUser.role !== 'super_observer') {
+          if (currentUser.affiliation_group?.includes('שח"ם')) {
+            basicQuery = basicQuery.ilike('affiliation_group', '%שח"ם%');
+          } else if (currentUser.affiliation_group) {
+            basicQuery = basicQuery.eq('affiliation_group', currentUser.affiliation_group);
+          } else {
+            basicQuery = basicQuery.eq('id', currentUser.id);
+          }
+        }
+
         const { data: basicData, error: basicError } = await this.applySyncFilter(basicQuery);
         
         if (basicError) {
@@ -1505,7 +1531,6 @@ class DataService {
           return [];
         }
         
-        const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
         return (basicData || []).map(u => ({
           ...u,
           avatar_url: u.image_url || u.avatar_url || null,
@@ -1521,7 +1546,7 @@ class DataService {
         })) as User[];
       }
 
-      const safeMap = (val: any, fallback: string = '') => (val !== null && val !== undefined ? val : fallback);
+      console.log('GROUP ADVISORS VISIBILITY FIXED: MANAGERS CAN NOW SEE THEIR TEAM');
       const processedUsers = (data || []).map(u => ({
         ...u,
         avatar_url: u.image_url || u.avatar_url || null,
@@ -2429,30 +2454,33 @@ class DataService {
       let publishLogsQuery = client.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
-      if (activeUser && activeUser.role !== 'super_admin') {
-        if (activeUser.role === 'team_leader' && activeUser.affiliation_group) {
+      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'super_observer') {
+        if (activeUser.affiliation_group?.includes('שח"ם')) {
+          // Shaham hierarchy: Fetch all Shaham admins
+          const { data: sameGroupAdmins } = await client.from('profiles')
+            .select('id')
+            .ilike('affiliation_group', '%שח"ם%');
+          groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
+        } else if (activeUser.affiliation_group) {
           // Fetch admins in the same affiliation group
           const { data: sameGroupAdmins } = await client.from('profiles')
             .select('id')
             .eq('affiliation_group', activeUser.affiliation_group);
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
         } else {
-          // Fetch admins in the same category (original logic for admins)
-          const myCategories = [activeUser.category].filter(Boolean);
-          if (myCategories.length > 0) {
-            const { data: sameGroupAdmins } = await client.from('profiles')
-              .select('id')
-              .in('category', myCategories);
-            groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
-          }
+          // Fallback to just themselves
+          groupAdminIds = [activeUser.id];
         }
 
         if (managerId) {
           // Strictly filter by the selected manager
           adminsQuery = adminsQuery.eq('id', managerId);
         } else if (activeUser.affiliation_group) {
-          // Fix: Count all admins in the same affiliation group instead of just '1'
-          adminsQuery = adminsQuery.eq('affiliation_group', activeUser.affiliation_group);
+          if (activeUser.affiliation_group.includes('שח"ם')) {
+            adminsQuery = adminsQuery.ilike('affiliation_group', '%שח"ם%');
+          } else {
+            adminsQuery = adminsQuery.eq('affiliation_group', activeUser.affiliation_group);
+          }
         } else if (effectiveUser) {
           // If impersonating and no group, filter by that user only
           adminsQuery = adminsQuery.eq('id', effectiveUser.id);
@@ -2943,6 +2971,34 @@ class DataService {
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true });
     return data || [];
+  }
+
+  async performAdminCleanup(): Promise<void> {
+    const targetEmail = 'hiealbokris@gmail.com';
+    const robotImageUrl = 'https://api.dicebear.com/7.x/bottts/svg?seed=hiealbokris';
+
+    try {
+      // 1. Update the target admin's image
+      await supabaseAdmin
+        .from('profiles')
+        .update({ 
+          image_url: robotImageUrl, 
+          avatar_url: robotImageUrl,
+          role: 'super_admin',
+          status: 'active'
+        })
+        .eq('email', targetEmail);
+
+      // 2. Delete all other admins
+      await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .neq('email', targetEmail);
+        
+      console.log('CLEANUP COMPLETE: ONLY ORIGINAL ADMIN REMAINS WITH NEW IMAGE. SYNC BUTTON MOVED TO SETTINGS.');
+    } catch (err) {
+      console.error('Error during admin cleanup:', err);
+    }
   }
 
   async updateSpeedDateStatus(sessionId: string, status: 'active' | 'completed' | 'expired', shareDetails?: { male?: boolean, female?: boolean }): Promise<void> {
