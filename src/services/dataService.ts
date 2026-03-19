@@ -2985,28 +2985,9 @@ class DataService {
   }
 
   async performAdminCleanup(): Promise<void> {
-    const targetEmail = 'hiealbokris@gmail.com';
-    const robotImageUrl = 'https://api.dicebear.com/7.x/bottts/svg?seed=hiealbokris';
-
     try {
-      // 1. Update the target admin's image
-      await supabaseAdmin
-        .from('profiles')
-        .update({ 
-          image_url: robotImageUrl, 
-          avatar_url: robotImageUrl,
-          role: 'super_admin',
-          status: 'active'
-        })
-        .eq('email', targetEmail);
-
-      // 2. Delete all other admins
-      await supabaseAdmin
-        .from('profiles')
-        .delete()
-        .neq('email', targetEmail);
-        
-      console.log('CLEANUP COMPLETE: ONLY ORIGINAL ADMIN REMAINS WITH NEW IMAGE. SYNC BUTTON MOVED TO SETTINGS.');
+      // Cleanup logic removed.
+      console.log('CLEANUP: EMAIL-BASED ADMIN LOGIC REMOVED.');
     } catch (err) {
       console.error('Error during admin cleanup:', err);
     }

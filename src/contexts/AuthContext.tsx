@@ -13,6 +13,7 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   setImpersonation: (user: User | null) => void;
   isReadOnly: boolean;
+  selectRole: (role: 'admin' | 'team_leader') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,6 +22,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [effectiveUser, setEffectiveUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showRolePicker, setShowRolePicker] = useState(false);
+  const [pendingUser, setPendingUser] = useState<User | null>(null);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -169,7 +172,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   const login = (userData: User) => {
-    setUser(userData);
+    if (userData.role === 'admin' && userData.is_team_leader) {
+      setPendingUser(userData);
+      setShowRolePicker(true);
+    } else {
+      setUser(userData);
+      setEffectiveUser(userData);
+      localStorage.setItem('current_user', JSON.stringify(userData));
+      sessionStorage.setItem('current_user', JSON.stringify(userData));
+    }
+  };
+
+  const selectRole = (role: 'admin' | 'team_leader') => {
+    if (!pendingUser) return;
+    
+    const effective = { ...pendingUser };
+    if (role === 'team_leader') {
+      effective.role = 'team_leader';
+    } else {
+      effective.role = 'admin';
+    }
+    
+    setUser(pendingUser);
+    setEffectiveUser(effective);
+    localStorage.setItem('current_user', JSON.stringify(pendingUser));
+    sessionStorage.setItem('current_user', JSON.stringify(pendingUser));
+    sessionStorage.setItem('effective_user', JSON.stringify(effective));
+    setShowRolePicker(false);
+    setPendingUser(null);
   };
 
   const setImpersonation = (impersonatedUser: User | null) => {
@@ -192,8 +222,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isReadOnly = user?.role === 'super_observer' || effectiveUser?.role === 'super_observer';
 
   return (
-    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation, isReadOnly }}>
+    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation, isReadOnly, selectRole }}>
       {children}
+      {showRolePicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-xl">
+            <h2 className="text-xl font-bold mb-4">בחר זהות לכניסה</h2>
+            <div className="flex gap-4">
+              <button onClick={() => selectRole('admin')} className="bg-luxury-blue text-white px-4 py-2 rounded-lg">מנהל קבוצה</button>
+              <button onClick={() => selectRole('team_leader')} className="bg-luxury-blue text-white px-4 py-2 rounded-lg">ראש צוות</button>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };

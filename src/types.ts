@@ -30,6 +30,7 @@ export interface User {
   last_seen?: string;
   is_online?: boolean;
   last_login?: string | null;
+  is_team_leader?: boolean;
 }
 
 export interface GameScore {

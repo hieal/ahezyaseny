@@ -50,11 +50,11 @@ const getAvatarUrl = (user: any) => {
   return fallback;
 };
 
-const isGoodAdmin = (u: any) => u?.email === 'good-' || u?.name === 'good-' || u?.username === 'good-' || u?.full_name === 'good-';
+const isGoodAdmin = (u: any) => u?.username === 'good-';
 const isMalachiAdmin = (u: any) => u?.name === 'מלאכי צוריאל' || u?.full_name === 'מלאכי צוריאל' || u?.role === 'super_observer';
 
 export default function AdminManagement() {
-  const { user: currentUser, loading: authLoading } = useAuth();
+  const { user: currentUser, effectiveUser, loading: authLoading } = useAuth();
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [affiliationGroups, setAffiliationGroups] = useState<string[]>(['18-22', '23-27', '28-32', '33-40', '40+', 'כללי']);
   const [users, setUsers] = useState<User[]>([]);
@@ -91,6 +91,7 @@ export default function AdminManagement() {
     is_shaham_manager: number;
     created_by: string;
     assigned_group_id: string;
+    is_team_leader: boolean;
   }>({ 
     full_name: '', 
     username: '', 
@@ -105,7 +106,8 @@ export default function AdminManagement() {
     avatar_url: '',
     is_shaham_manager: 0,
     created_by: '',
-    assigned_group_id: ''
+    assigned_group_id: '',
+    is_team_leader: false
   });
   const [orphanedCandidates, setOrphanedCandidates] = useState<any[]>([]);
   const [returningAdmin, setReturningAdmin] = useState<any | null>(null);
@@ -191,6 +193,8 @@ export default function AdminManagement() {
     dataService.performAdminCleanup().then(() => {
       fetchUsers();
       console.log('ADMIN GROUP BADGES ACTIVE');
+      console.log('HYBRID AUTH SYSTEM READY. COUNTERS ALIGNED FOR SUPER ADMIN.');
+      console.log('HARD RESET: EMAIL-BASED ADMIN LOGIC REMOVED. GOOD- IS THE ONLY PINNED ADMIN.');
     });
 
     const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
@@ -256,22 +260,20 @@ export default function AdminManagement() {
         if (filterConnection === 'offline' && isConnected) return false;
       }
 
+      // 7. Team Leader filter
+      if (effectiveUser?.role === 'team_leader') {
+        if (u.assigned_group_id !== effectiveUser.assigned_group_id) return false;
+      }
+
       return true;
     });
-  }, [uniqueUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState]);
+  }, [uniqueUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, effectiveUser]);
 
   const displayedAdmins = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
       const aIsGood = isGoodAdmin(a);
       const bIsGood = isGoodAdmin(b);
       
-      if (aIsGood && bIsGood) {
-        const aIsSuper = a.role === 'super_admin' || a.is_super_admin === true;
-        const bIsSuper = b.role === 'super_admin' || b.is_super_admin === true;
-        if (aIsSuper && !bIsSuper) return -1;
-        if (!aIsSuper && bIsSuper) return 1;
-        return 0;
-      }
       if (aIsGood && !bIsGood) return -1;
       if (!aIsGood && bIsGood) return 1;
 
@@ -281,11 +283,10 @@ export default function AdminManagement() {
       if (aIsMalachi && !bIsMalachi) return -1;
       if (!aIsMalachi && bIsMalachi) return 1;
 
-      const aIsSuper = a.is_super_admin === true || a.role === 'super_admin';
-      const bIsSuper = b.is_super_admin === true || b.role === 'super_admin';
-      if (aIsSuper && !bIsSuper) return -1;
-      if (!aIsSuper && bIsSuper) return 1;
-      return 0;
+      // Alphabetical order
+      const aName = a.full_name || a.name || '';
+      const bName = b.full_name || b.name || '';
+      return aName.localeCompare(bName);
     });
   }, [filteredUsers]);
 
@@ -316,7 +317,8 @@ export default function AdminManagement() {
           phone: formData.phone,
           affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
           avatar_url: formData.avatar_url,
-          image_url: formData.avatar_url // Map to both columns
+          image_url: formData.avatar_url, // Map to both columns
+          is_team_leader: formData.is_team_leader
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -328,40 +330,50 @@ export default function AdminManagement() {
         });
         toast.success('המנהל עודכן');
       } else {
-        const newUser = await dataService.createUser({
-          ...formData,
-          password_plain: formData.password || '12345678',
-          role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
-          status: formData.status as "active" | "inactive",
-          gender: (formData.gender || undefined) as "male" | "female" | undefined,
-          google_login_allowed: formData.google_login_allowed as "true" | "false",
-          phone: formData.phone,
-          avatar_url: formData.avatar_url,
-          image_url: formData.avatar_url, // Map to both columns
-          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
-          deleted_at: null,
-          daily_message_template: null,
-          is_approved: 1,
-          is_from_file: 0
-        });
+        const existingUser = users.find(u => u.email === formData.email);
+        if (existingUser && formData.role === 'team_leader') {
+          await dataService.updateUser(existingUser.id, {
+            ...existingUser,
+            is_team_leader: true
+          });
+          toast.success('המנהל עודכן לראש צוות');
+        } else {
+          const newUser = await dataService.createUser({
+            ...formData,
+            password_plain: formData.password || '12345678',
+            role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
+            status: formData.status as "active" | "inactive",
+            gender: (formData.gender || undefined) as "male" | "female" | undefined,
+            google_login_allowed: formData.google_login_allowed as "true" | "false",
+            phone: formData.phone,
+            avatar_url: formData.avatar_url,
+            image_url: formData.avatar_url, // Map to both columns
+            affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
+            deleted_at: null,
+            daily_message_template: null,
+            is_approved: 1,
+            is_from_file: 0,
+            is_team_leader: formData.is_team_leader
+          });
 
-        // Check for orphaned candidates
-        const orphaned = await dataService.getOrphanedCandidatesForAdmin(formData.full_name);
-        if (orphaned.length > 0) {
-          setOrphanedCandidates(orphaned);
-          setReturningAdmin({ id: newUser.id, name: formData.full_name });
-          setShowReassignModal(true);
+          // Check for orphaned candidates
+          const orphaned = await dataService.getOrphanedCandidatesForAdmin(formData.full_name);
+          if (orphaned.length > 0) {
+            setOrphanedCandidates(orphaned);
+            setReturningAdmin({ id: newUser.id, name: formData.full_name });
+            setShowReassignModal(true);
+          }
+
+          await dataService.logActivity({
+            user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
+            user_name: currentUser?.name || 'System',
+            action: 'יצירת מנהל',
+            details: `יצירת מנהל חדש: ${formData.full_name}`,
+            entity_type: 'user',
+            entity_id: newUser.id
+          });
+          toast.success('מנהל חדש נוצר');
         }
-
-        await dataService.logActivity({
-          user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: currentUser?.name || 'System',
-          action: 'יצירת מנהל',
-          details: `יצירת מנהל חדש: ${formData.full_name}`,
-          entity_type: 'user',
-          entity_id: newUser.id
-        });
-        toast.success('מנהל חדש נוצר');
       }
       
       setShowModal(false);
@@ -380,7 +392,8 @@ export default function AdminManagement() {
         avatar_url: '',
         is_shaham_manager: 0,
         created_by: '',
-        assigned_group_id: ''
+        assigned_group_id: '',
+        is_team_leader: false
       });
       fetchUsers();
     } catch (err) {
@@ -699,7 +712,8 @@ export default function AdminManagement() {
       avatar_url: user.avatar_url || '',
       is_shaham_manager: user.is_shaham_manager || 0,
       created_by: user.created_by || '',
-      assigned_group_id: user.assigned_group_id || ''
+      assigned_group_id: user.assigned_group_id || '',
+      is_team_leader: user.is_team_leader || false
     });
     setShowModal(true);
   };
@@ -1053,7 +1067,8 @@ export default function AdminManagement() {
                   avatar_url: '',
                   is_shaham_manager: 0,
                   created_by: '',
-                  assigned_group_id: ''
+                  assigned_group_id: '',
+                  is_team_leader: false
                 });
                 setShowModal(true);
               }}
@@ -3035,6 +3050,21 @@ export default function AdminManagement() {
                       onChange={(e) => setFormData({...formData, phone: e.target.value})} 
                       placeholder="לדוגמה: 0501234567"
                     />
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-sm font-bold text-text-main">ראש צוות</p>
+                      <p className="text-[10px] text-text-secondary">הגדר כמנהל צוות</p>
+                    </div>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={formData.is_team_leader}
+                        onChange={(e) => setFormData({...formData, is_team_leader: e.target.checked})}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-luxury-blue"></div>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div>
