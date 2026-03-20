@@ -642,10 +642,14 @@ export default function AdminManagement() {
   const handleEmailUpdate = async () => {
     if (!editingEmailUser) return;
     try {
-      const updatedUser = await dataService.updateUser(editingEmailUser?.id, { email: tempEmail });
-      setUsers(prev => prev.map(u => u.id === editingEmailUser?.id ? updatedUser : u));
+      const { error } = await dataService.updateUser(editingEmailUser?.id, { email: tempEmail });
+      if (error) {
+        alert(`שגיאה בעדכון האימייל: ${error.message}`);
+        return;
+      }
       toast.success('האימייל עודכן בהצלחה');
       setEditingEmailUser(null);
+      await fetchUsers();
     } catch (error) {
       toast.error('שגיאה בעדכון האימייל');
     }
@@ -658,19 +662,15 @@ export default function AdminManagement() {
       return;
     }
     try {
-      try {
-        await dataService.deleteUser(userToDelete.id);
-      } catch (error: any) {
+      const { error } = await dataService.deleteUser(userToDelete.id);
+      if (error) {
         if (error.message && error.message.includes('409')) {
           toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
-          return;
+        } else {
+          alert(`שגיאה במחיקה: ${error.message}`);
         }
-        throw error;
+        return;
       }
-      
-      // Update local state
-      setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
-      setSelectedUserIds(prev => prev.filter(id => id !== userToDelete.id));
       
       await dataService.logActivity({
         user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -681,7 +681,7 @@ export default function AdminManagement() {
         entity_id: userToDelete.id
       });
       toast.success('המנהל נמחק');
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       toast.error('שגיאה במחיקה - בדוק קונסול');
     } finally {
@@ -693,14 +693,18 @@ export default function AdminManagement() {
   const handleUpdateAvatar = async () => {
     if (!avatarModalUser) return;
     try {
-      const updatedUser = await dataService.updateUser(avatarModalUser.id, { 
+      const { error } = await dataService.updateUser(avatarModalUser.id, { 
         avatar_url: tempAvatarUrl,
         image_url: tempAvatarUrl // Map to both columns
       });
-      setUsers(prev => prev.map(u => u.id === avatarModalUser.id ? updatedUser : u));
+      if (error) {
+        alert(`שגיאה בעדכון התמונה: ${error.message}`);
+        return;
+      }
       toast.success('תמונת פרופיל עודכנה');
       setShowAvatarModal(false);
       setAvatarModalUser(null);
+      await fetchUsers();
     } catch (e) {
       toast.error('שגיאה בעדכון התמונה');
     }
@@ -775,9 +779,17 @@ export default function AdminManagement() {
   const handleDelete = async () => {
     if (!userToDelete) return;
     try {
-      await dataService.deleteUser(userToDelete.id);
-      await fetchUsers();
+      const { error } = await dataService.deleteUser(userToDelete.id);
+      if (error) {
+        if (error.message && error.message.includes('409')) {
+          toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
+        } else {
+          alert(`שגיאה במחיקה: ${error.message}`);
+        }
+        return;
+      }
       toast.success('המנהל נמחק בהצלחה');
+      await fetchUsers();
     } catch (err) {
       toast.error('שגיאה במחיקת המנהל');
     } finally {
@@ -788,14 +800,15 @@ export default function AdminManagement() {
 
   const handleStatusChange = async (user: User) => {
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
-    // Optimistic update
-    setUsers(users.map(u => u.id === user.id ? { ...u, status: newStatus } : u));
     try {
-      await dataService.updateUser(user.id, { status: newStatus } as any);
-      toast.success('הסטטוס עודכן');
+      const { error } = await dataService.updateUser(user.id, { status: newStatus } as any);
+      if (error) {
+        alert(`שגיאה בעדכון הסטטוס: ${error.message}`);
+        return;
+      }
+      toast.success('הסטטוס עודכן בהצלחה');
+      await fetchUsers();
     } catch (err) {
-      // Rollback
-      setUsers(users.map(u => u.id === user.id ? { ...u, status: user.status } : u));
       toast.error('שגיאה בעדכון הסטטוס');
     }
   };
@@ -919,9 +932,14 @@ export default function AdminManagement() {
     setUsers(prev => prev.map(u => u.id === user.id ? { ...u, gender } : u));
     
     try {
-      const updatedUser = await dataService.updateUser(user.id, { gender });
+      const { data, error } = await dataService.updateUser(user.id, { gender });
+      if (error) {
+        toast.error('שגיאה בעדכון המין');
+        fetchUsers();
+        return;
+      }
       // Update with the actual data returned from the server
-      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+      setUsers(prev => prev.map(u => u.id === user.id ? (data as User) : u));
       toast.success('מין עודכן בהצלחה');
       setGenderModalUser(null);
     } catch (e: any) {
@@ -938,11 +956,16 @@ export default function AdminManagement() {
     setUsers(prev => prev.map(u => u.id === phoneModalUser?.id ? { ...u, phone: String(tempPhone), username: String(tempPhone) } : u));
 
     try {
-      const updatedUser = await dataService.updateUser(phoneModalUser?.id, { 
+      const { data, error } = await dataService.updateUser(phoneModalUser?.id, { 
         phone: String(tempPhone), // Ensure string
         username: String(tempPhone)
       });
-      setUsers(prev => prev.map(u => u.id === phoneModalUser?.id ? updatedUser : u));
+      if (error) {
+        toast.error('שגיאה בעדכון הטלפון');
+        fetchUsers();
+        return;
+      }
+      setUsers(prev => prev.map(u => u.id === phoneModalUser?.id ? (data as User) : u));
       toast.success('מספר טלפון ושם משתמש עודכנו');
       setPhoneModalUser(null);
     } catch (e: any) {

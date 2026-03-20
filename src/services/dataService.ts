@@ -1656,18 +1656,23 @@ class DataService {
       .eq('previous_admin_name', adminName);
   }
 
-  async updateUser(id: string, updates: Partial<User>): Promise<User> {
+  async updateUser(id: string, updates: Partial<User>): Promise<{ data: User | null; error: any }> {
     if (updates.password_plain) {
       updates.password_updated_at = new Date().toISOString();
     }
     const sanitized = this.sanitizeAdmin(updates);
     const withSync = this.applySyncStatus(sanitized);
     console.log('Updating Supabase (profiles):', withSync);
-    const data = await this.handleSupabase(supabase.from('profiles').update(withSync).eq('id', id).select().single());
-    return data as User;
+    
+    try {
+      const { data, error } = await supabase.from('profiles').update(withSync).eq('id', id).select().single();
+      return { data: data as User, error };
+    } catch (error) {
+      return { data: null, error };
+    }
   }
 
-  async deleteUser(idOrIds: string | string[]): Promise<void> {
+  async deleteUser(idOrIds: string | string[]): Promise<{ error: any }> {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
     const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
     const malachiPhone = '0556603336';
@@ -1681,39 +1686,45 @@ class DataService {
     const malachiId = usersToCheck?.find(u => u.phone === malachiPhone)?.id;
     const filteredIds = ids.filter(id => id !== godId && id !== malachiId);
     
-    if (filteredIds.length === 0) return;
+    if (filteredIds.length === 0) return { error: null };
 
-    // 1. Fetch user info for previous_admin_data
-    const { data: usersToDelete } = await supabase
-      .from('profiles')
-      .select('id, full_name, affiliation_group')
-      .in('id', filteredIds);
+    try {
+      // 1. Fetch user info for previous_admin_data
+      const { data: usersToDelete } = await supabase
+        .from('profiles')
+        .select('id, full_name, affiliation_group')
+        .in('id', filteredIds);
 
-    if (usersToDelete) {
-      for (const user of usersToDelete) {
-        const adminName = user.full_name;
-        
-        // 2. Update candidates: set managed_by to null and store previous data
-        // This prevents Foreign Key violation (23503)
-        await supabase
-          .from('candidates')
-          .update({
-            managed_by: null,
-            target_admin_id: null,
-            previous_admin_name: adminName,
-            last_known_group: user.affiliation_group,
-            transfer_status: 'orphaned',
-            is_approved: 0
-          })
-          .or(`managed_by.eq.${user.id},target_admin_id.eq.${user.id}`);
+      if (usersToDelete) {
+        for (const user of usersToDelete) {
+          const adminName = user.full_name;
+          
+          // 2. Update candidates: set managed_by to null and store previous data
+          // This prevents Foreign Key violation (23503)
+          await supabase
+            .from('candidates')
+            .update({
+              managed_by: null,
+              target_admin_id: null,
+              previous_admin_name: adminName,
+              last_known_group: user.affiliation_group,
+              transfer_status: 'orphaned',
+              is_approved: 0
+            })
+            .or(`managed_by.eq.${user.id},target_admin_id.eq.${user.id}`);
+        }
       }
-    }
 
-    // 3. Mark as deleted instead of actual delete
-    await this.handleSupabase(supabase.from('profiles').update({ 
-      is_approved: 0, 
-      role: 'deleted'
-    }).in('id', filteredIds));
+      // 3. Mark as deleted instead of actual delete
+      const { error } = await supabase.from('profiles').update({ 
+        is_approved: 0, 
+        role: 'deleted'
+      }).in('id', filteredIds);
+      
+      return { error };
+    } catch (error) {
+      return { error };
+    }
   }
 
   async transferCandidates(candidateIds: string[], targetAdminId: string): Promise<void> {

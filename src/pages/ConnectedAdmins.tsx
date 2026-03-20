@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useChat } from '../contexts/ChatContext';
 import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
+import { Avatar } from '../components/Avatar';
 import { CATEGORIES } from '../constants';
 import { supabase } from '../services/supabase';
 
