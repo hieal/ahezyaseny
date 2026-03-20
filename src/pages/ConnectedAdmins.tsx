@@ -29,11 +29,10 @@ export default function ConnectedAdmins() {
     const fetchAdmins = async () => {
       setLoading(true);
       try {
-        // Use supabase directly as requested
+        // Fetch all profiles
         const { data: users, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone, role, last_seen, avatar_url, affiliation_group')
-          .in('role', ['admin', 'super_admin']);
+          .select('*');
         
         if (error) throw error;
         
@@ -49,24 +48,33 @@ export default function ConnectedAdmins() {
   }, []);
 
   const filteredAdmins = allAdmins.filter(admin => {
-    // Current user is always online
-    const isCurrentUser = admin.id === user?.id;
-    const isOnline = isCurrentUser || !!presenceState[admin.id] || (admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000);
+    // 1. Calculate online status (Exclusive)
+    const isOnline = admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000;
+    
+    // 2. Role/Name filtering (Category independent)
+    const role = admin.role?.toLowerCase() || '';
+    const isTargetRole = ['admin', 'super_admin', 'manager', 'owner'].includes(role);
+    const isMalachi = admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל');
     
     const matchesSearch = (admin.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           admin.phone?.includes(searchTerm));
     const matchesRole = roleFilter === 'all' || 
-                        (roleFilter === 'admin' && (admin.role === 'admin' || admin.role === 'super_admin')) || 
-                        admin.role === roleFilter;
-    const matchesGroup = groupFilter === 'all' || admin.affiliation_group === groupFilter;
+                        (roleFilter === 'admin' && (role === 'admin' || role === 'super_admin' || role === 'manager' || role === 'owner')) || 
+                        role === roleFilter.toLowerCase();
     
-    let matchesFilter = true;
-    if (filter === 'online') matchesFilter = isOnline;
-    if (filter === 'offline') matchesFilter = !isOnline;
+    // 3. Status filtering (Exclusive)
+    let matchesStatus = true;
+    if (filter === 'online') matchesStatus = isOnline;
+    if (filter === 'offline') matchesStatus = !isOnline;
     
-    // Always include current user
-    return (isCurrentUser || (matchesSearch && matchesRole && matchesGroup && matchesFilter));
+    // Include if it's a target role OR it's Malachi, AND matches search/status
+    // Removed matchesGroup dependency
+    return (isTargetRole || isMalachi) && matchesSearch && matchesRole && matchesStatus;
   });
+
+  const onlineAdminsCount = allAdmins.filter(admin => {
+    return admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000;
+  }).length;
 
   const carouselItems = filteredAdmins.slice(carouselIndex, carouselIndex + 3);
 
@@ -89,7 +97,7 @@ export default function ConnectedAdmins() {
         <div>
           <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
             <Users className="text-luxury-blue" size={32} />
-            מנהלים מחוברים ({filteredAdmins.length})
+            מנהלים ({filteredAdmins.length})
           </h1>
           <p className="text-slate-500 mt-2 font-medium">צפה בכל המנהלים במערכת וצור איתם קשר</p>
         </div>
@@ -231,12 +239,24 @@ export default function ConnectedAdmins() {
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${
-                              admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
-                              admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
-                            </span>
+                            <div className="flex flex-col gap-1 items-start">
+                              {(admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל')) ? (
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-black bg-purple-100 text-purple-700">
+                                  מנהל העמותה
+                                </span>
+                              ) : (
+                                <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${
+                                  admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                                  (!!admin.is_team_leader || admin.role === 'team_leader') ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {(!!admin.is_team_leader || admin.role === 'team_leader') ? 'ראש צוות' : 
+                                   admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
+                                </span>
+                              )}
+                              {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'owner', 'manager'].includes(admin.role || '') && (
+                                <span className="text-[10px] text-slate-400 cursor-help" title="משמש גם כמנהל">+</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-sm font-bold text-slate-500">
                             {admin.affiliation_group || 'ללא קבוצה'}
@@ -312,12 +332,22 @@ export default function ConnectedAdmins() {
                         <OnlineIndicator isOnline={isOnline} className="absolute -bottom-1 -right-1 border-4 border-white w-5 h-5" />
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
-                          admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
-                          admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
-                        </span>
+                        {(admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל')) ? (
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black bg-purple-100 text-purple-700">
+                            מנהל העמותה
+                          </span>
+                        ) : (
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                            admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                            (!!admin.is_team_leader || admin.role === 'team_leader') ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {(!!admin.is_team_leader || admin.role === 'team_leader') ? 'ראש צוות' : 
+                             admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
+                          </span>
+                        )}
+                        {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'owner', 'manager'].includes(admin.role || '') && (
+                          <span className="text-[10px] text-slate-400 cursor-help" title="משמש גם כמנהל">+</span>
+                        )}
                         {isOnline ? (
                           <span className="text-[10px] font-black text-green-600">מחובר כעת</span>
                         ) : (
@@ -398,12 +428,22 @@ export default function ConnectedAdmins() {
 
                           <h3 className="text-2xl font-black text-slate-900 mb-2">{admin.full_name}</h3>
                           <div className="flex flex-col items-center gap-2 mb-6">
-                            <span className={`px-4 py-1.5 rounded-full text-xs font-black ${
-                              admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
-                              admin.role === 'team_leader' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {admin.role === 'super_admin' ? 'מנהל ראשי' : admin.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
-                            </span>
+                            {(admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל')) ? (
+                              <span className="px-4 py-1.5 rounded-full text-xs font-black bg-purple-100 text-purple-700">
+                                מנהל העמותה
+                              </span>
+                            ) : (
+                              <span className={`px-4 py-1.5 rounded-full text-xs font-black ${
+                                admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                                (!!admin.is_team_leader || admin.role === 'team_leader') ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {(!!admin.is_team_leader || admin.role === 'team_leader') ? 'ראש צוות' : 
+                                 admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
+                              </span>
+                            )}
+                            {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'owner', 'manager'].includes(admin.role || '') && (
+                              <span className="text-xs text-slate-400 cursor-help" title="משמש גם כמנהל">+</span>
+                            )}
                             <span className="text-sm font-bold text-slate-400">{admin.affiliation_group || 'ללא קבוצה'}</span>
                           </div>
 
