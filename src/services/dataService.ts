@@ -518,13 +518,19 @@ class DataService {
       const user = JSON.parse(userJson);
       // Don't update for the fallback "מנהל ראשי"
       if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
-        const query = supabase.from('profiles').update({ 
-          last_login: new Date().toISOString(),
-          last_seen: new Date().toISOString(),
-          is_online: true
-        }).eq('id', user.id);
+        // Use upsert to update last_seen
+        const { error } = await supabase
+          .from('profiles')
+          .upsert({ 
+            id: user.id,
+            last_login: new Date().toISOString(),
+            last_seen: new Date().toISOString()
+          });
         
-        await this.safeQuery(query, null);
+        if (error) {
+          console.error('Heartbeat error:', error);
+          return false;
+        }
       }
       return true;
     } catch (err) {

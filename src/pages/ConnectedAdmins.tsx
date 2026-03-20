@@ -10,6 +10,7 @@ import { useChat } from '../contexts/ChatContext';
 import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
 import { CATEGORIES } from '../constants';
+import { supabase } from '../services/supabase';
 
 export default function ConnectedAdmins() {
   const { user } = useAuth();
@@ -20,6 +21,7 @@ export default function ConnectedAdmins() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'team_leader' | 'viewer'>('all');
   const [groupFilter, setGroupFilter] = useState('all');
+  const [filter, setFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'carousel'>('cards');
   const [carouselIndex, setCarouselIndex] = useState(0);
 
@@ -27,10 +29,18 @@ export default function ConnectedAdmins() {
     const fetchAdmins = async () => {
       setLoading(true);
       try {
-        const admins = await dataService.getUsers();
-        setAllAdmins(admins);
+        // Use supabase directly as requested
+        const { data: users, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, phone, role, last_seen, avatar_url, affiliation_group')
+          .in('role', ['admin', 'super_admin']);
+        
+        if (error) throw error;
+        
+        setAllAdmins(users || []);
       } catch (err) {
-        toast.error('שגיאה בטעינת מנהלים');
+        console.error('Error fetching admins:', err);
+        toast.error('שגיאה בטעינת מנהלים. אנא נסה שוב מאוחר יותר.');
       } finally {
         setLoading(false);
       }
@@ -39,6 +49,10 @@ export default function ConnectedAdmins() {
   }, []);
 
   const filteredAdmins = allAdmins.filter(admin => {
+    // Current user is always online
+    const isCurrentUser = admin.id === user?.id;
+    const isOnline = isCurrentUser || !!presenceState[admin.id] || (admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000);
+    
     const matchesSearch = (admin.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           admin.phone?.includes(searchTerm));
     const matchesRole = roleFilter === 'all' || 
@@ -46,7 +60,12 @@ export default function ConnectedAdmins() {
                         admin.role === roleFilter;
     const matchesGroup = groupFilter === 'all' || admin.affiliation_group === groupFilter;
     
-    return matchesSearch && matchesRole && matchesGroup;
+    let matchesFilter = true;
+    if (filter === 'online') matchesFilter = isOnline;
+    if (filter === 'offline') matchesFilter = !isOnline;
+    
+    // Always include current user
+    return (isCurrentUser || (matchesSearch && matchesRole && matchesGroup && matchesFilter));
   });
 
   const carouselItems = filteredAdmins.slice(carouselIndex, carouselIndex + 3);
@@ -70,9 +89,27 @@ export default function ConnectedAdmins() {
         <div>
           <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
             <Users className="text-luxury-blue" size={32} />
-            מנהלים מחוברים ({allAdmins.length})
+            מנהלים מחוברים ({filteredAdmins.length})
           </h1>
           <p className="text-slate-500 mt-2 font-medium">צפה בכל המנהלים במערכת וצור איתם קשר</p>
+        </div>
+
+        <div className="flex gap-2 bg-slate-100 p-1 rounded-full">
+          {(['all', 'online', 'offline'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
+                filter === f 
+                  ? f === 'all' ? 'bg-[#1d4ed8] text-white shadow-md' 
+                  : f === 'online' ? 'bg-[#16a34a] text-white shadow-md'
+                  : 'bg-[#4b5563] text-white shadow-md'
+                  : 'bg-[#f3f4f6] text-slate-500 hover:bg-slate-200'
+              }`}
+            >
+              {f === 'all' ? 'הכל' : f === 'online' ? 'מחוברים' : 'לא מחוברים'}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
@@ -222,19 +259,21 @@ export default function ConnectedAdmins() {
                             <div className="flex items-center justify-center gap-2">
                               <button 
                                 onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
-                                className="p-2 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" 
+                                className="w-10 h-10 flex items-center justify-center bg-white text-blue-600 shadow-md rounded-full transition-colors hover:bg-blue-50" 
                                 title="שלח הודעת צ'אט"
                               >
                                 <MessageSquare size={20} />
                               </button>
                               {admin.phone && (
-                                <button 
-                                  onClick={() => window.open(`https://wa.me/${admin.phone?.replace(/\D/g, '')}`)} 
-                                  className="p-2 text-green-600 hover:bg-green-100 rounded-xl transition-colors" 
+                                <a 
+                                  href={`https://wa.me/${admin.phone?.replace(/\D/g, '')}`} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="w-10 h-10 flex items-center justify-center bg-white text-green-600 shadow-md rounded-full transition-colors hover:bg-green-50" 
                                   title="שלח וואטסאפ"
                                 >
                                   <Phone size={20} />
-                                </button>
+                                </a>
                               )}
                             </div>
                           </td>
@@ -294,18 +333,19 @@ export default function ConnectedAdmins() {
                       <div className="flex gap-2">
                         <button 
                           onClick={() => openChat({ id: admin.id, name: admin.full_name || 'מנהל' })} 
-                          className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-luxury-blue text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                          className="w-10 h-10 flex items-center justify-center bg-white text-blue-600 shadow-md rounded-full hover:bg-blue-50 transition-all"
                         >
                           <MessageSquare size={18} />
-                          צ'אט
                         </button>
                         {admin.phone && (
-                          <button 
-                            onClick={() => window.open(`https://wa.me/${admin.phone?.replace(/\D/g, '')}`)} 
-                            className="p-2.5 bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-all border border-green-100"
+                          <a 
+                            href={`https://wa.me/${admin.phone?.replace(/\D/g, '')}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="w-10 h-10 flex items-center justify-center bg-white text-green-600 shadow-md rounded-full hover:bg-green-50 transition-all"
                           >
                             <Phone size={18} />
-                          </button>
+                          </a>
                         )}
                       </div>
                     </div>
