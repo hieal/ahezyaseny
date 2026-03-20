@@ -40,7 +40,7 @@ const getGroupColor = (group: string | null | undefined) => {
 import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
 
-const getAvatarUrl = (user: any) => {
+const getAdminAvatarUrl = (user: any) => {
   if (user.avatar_url) return user.avatar_url;
   if (user.image_url) return user.image_url;
   return null;
@@ -188,8 +188,22 @@ export default function AdminManagement() {
         throw error;
       }
       
-      const validUsers = usersData || [];
-      setUsers(validUsers);
+      const rawUsers = (usersData as User[]) || [];
+      const uniqueUsers = Array.from(new Map(rawUsers.map(u => {
+        const key = u.phone || u.id;
+        return [key, u];
+      })).values());
+
+      const godUsers = uniqueUsers.filter(u => u.username === 'god' || u.email === 'god');
+      let filteredUsers = uniqueUsers;
+      if (godUsers.length > 1) {
+        const superAdminGod = godUsers.find(u => u.role === 'super_admin');
+        const duplicateGod = godUsers.find(u => u.id !== superAdminGod?.id);
+        if (duplicateGod) {
+          filteredUsers = uniqueUsers.filter(u => u.id !== duplicateGod.id);
+        }
+      }
+      setUsers(filteredUsers);
       
     } catch (err: any) {
       toast.error('שגיאה בטעינת נתונים');
@@ -226,7 +240,8 @@ export default function AdminManagement() {
   })).values());
 
   const mainAdmin = users.find(u => u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b');
-  const finalUsers = mainAdmin ? [mainAdmin, ...uniqueUsers] : uniqueUsers;
+  const finalUsers = mainAdmin && !uniqueUsers.find(u => u.id === mainAdmin.id) ? [mainAdmin, ...uniqueUsers] : uniqueUsers;
+  const admins = finalUsers;
 
   const filteredUsers = useMemo(() => {
     return finalUsers.filter(u => {
@@ -612,12 +627,8 @@ export default function AdminManagement() {
   };
 
   const confirmDelete = (user: User) => {
-    if (user.full_name === 'מנהל ראשי' || user.email === 'god') {
+    if (user.username === 'god' && user.role === 'super_admin') {
       toast.error('לא ניתן למחוק את המנהל הראשי');
-      return;
-    }
-    if (user.full_name === 'מלאכי צוריאל') {
-      toast.error('לא ניתן למחוק מנהל זה');
       return;
     }
     if (user.id === currentUser?.id) {
@@ -642,7 +653,7 @@ export default function AdminManagement() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
-    if (userToDelete.role === 'super_admin' || userToDelete.role === 'super_observer' || userToDelete.id === 'b72418a0-7164-4424-9467-f495101a9763' || userToDelete.full_name === 'מלאכי צוריאל') {
+    if (userToDelete.username === 'god' && userToDelete.role === 'super_admin') {
       toast.error('לא ניתן למחוק מנהל זה');
       return;
     }
@@ -1001,7 +1012,7 @@ export default function AdminManagement() {
   const displayUsers = displayedAdmins;
 
   const stats = {
-    total: uniqueUsers.length,
+    total: admins.length,
     super_admin: uniqueUsers.filter(u => u.role === 'super_admin').length,
     team_leader: uniqueUsers.filter(u => u.role === 'team_leader').length,
     admin: uniqueUsers.filter(u => u.role === 'admin').length,
@@ -1600,7 +1611,7 @@ export default function AdminManagement() {
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <Avatar name={u.full_name || u.name} url={getAvatarUrl(u)} size="md" className="w-10 h-10" />
+                      <Avatar name={u.full_name || u.name} url={getAdminAvatarUrl(u)} size="md" className="w-10 h-10" />
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
@@ -1862,7 +1873,7 @@ export default function AdminManagement() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-white relative shadow-lg group-hover/card:scale-105 transition-transform duration-500">
-                                  <Avatar name={u.full_name || u.name} url={getAvatarUrl(u)} size="md" className="w-full h-full" />
+                                  <Avatar name={u.full_name || u.name} url={getAdminAvatarUrl(u)} size="md" className="w-full h-full" />
                                   <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
                                   
                                   {/* Affiliation Badge - Upgraded */}
@@ -1902,7 +1913,7 @@ export default function AdminManagement() {
                               <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
                                 <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
                                 <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
-                                {u.full_name !== 'מנהל ראשי' && u.email !== 'god' && u.full_name !== 'מלאכי צוריאל' && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                                {!(u.username === 'god' && u.role === 'super_admin') && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
                               </div>
                             </div>
                             
@@ -2278,7 +2289,7 @@ export default function AdminManagement() {
                       <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
                         <Edit2 size={16} />
                       </button>
-                      {u.full_name !== 'מנהל ראשי' && u.email !== 'god' && u.full_name !== 'מלאכי צוריאל' && (
+                      {!(u.username === 'god' && u.role === 'super_admin') && (
                         <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
                           <Trash2 size={16} />
                         </button>
