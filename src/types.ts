@@ -1,3 +1,14 @@
+export interface ScannedAdmin {
+  full_name: string;
+  email: string;
+  phone: string;
+  missing_fields: string[];
+  role?: string;
+  group?: string;
+  isSelected?: boolean;
+  existingUser?: User;
+}
+
 export interface User {
   id: string;
   name?: string;

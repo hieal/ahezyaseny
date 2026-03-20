@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { User, WhatsAppGroup } from '../types';
+import { User, WhatsAppGroup, ScannedAdmin } from '../types';
+import { ComparisonModal } from '../components/ComparisonModal';
 import { toast } from 'react-hot-toast';
 import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check, Eye, ToggleLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -126,7 +127,7 @@ export default function AdminManagement() {
   const [csvCategory, setCsvCategory] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
-  const [scannedAdmins, setScannedAdmins] = useState<any[]>([]);
+  const [scannedAdmins, setScannedAdmins] = useState<ScannedAdmin[]>([]);
   const [csvRole, setCsvRole] = useState('admin');
   const [importing, setImporting] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
@@ -164,6 +165,7 @@ export default function AdminManagement() {
   const [selectedWhapiGroupIds, setSelectedWhapiGroupIds] = useState<string[]>([]);
   const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
   const [isFetchingWhapi, setIsFetchingWhapi] = useState(false);
+  const [comparisonAdmin, setComparisonAdmin] = useState<ScannedAdmin | null>(null);
 
   useEffect(() => {
     // Initialization
@@ -538,8 +540,20 @@ export default function AdminManagement() {
             continue;
           }
 
-          if (!admin.username && admin.phone) admin.username = admin.phone;
-          admins.push(admin);
+          // Check for existing user
+          const existingUser = users.find(u => u.email === admin.email || u.phone === admin.phone);
+          const scannedAdmin: ScannedAdmin = {
+            full_name: admin.full_name || '',
+            email: admin.email || '',
+            phone: admin.phone || '',
+            missing_fields: admin.missing_fields || [],
+            role: csvRole,
+            group: csvCategory,
+            isSelected: true,
+            existingUser: existingUser
+          };
+
+          admins.push(scannedAdmin);
 
           // Simulate scan progress
           if (i % 5 === 0 || i === totalLines) {
@@ -574,10 +588,8 @@ export default function AdminManagement() {
           full_name: admin.full_name,
           email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
           phone: admin.phone || null,
-          affiliation_group: admin.selected_group || admin.affiliation_group || null,
+          affiliation_group: admin.group || null,
           role: admin.role || 'viewer',
-          image_url: admin.image_url || admin.avatar_url || null,
-          avatar_url: admin.avatar_url || admin.image_url || null,
           is_from_file: 1
         };
         
@@ -2665,24 +2677,56 @@ export default function AdminManagement() {
                     <table className="w-full text-xs">
                       <thead className="bg-slate-100">
                         <tr>
+                          <th className="p-2"><input type="checkbox" checked={scannedAdmins.every(a => a.isSelected)} onChange={(e) => setScannedAdmins(scannedAdmins.map(a => ({...a, isSelected: e.target.checked})))} /></th>
                           <th className="text-right p-2">שם</th>
                           <th className="text-right p-2">אימייל</th>
-                          <th className="text-right p-2">טלפון</th>
-                          <th className="text-right p-2">שדות חסרים</th>
+                          <th className="text-right p-2">תפקיד</th>
+                          <th className="text-right p-2">קבוצה</th>
+                          <th className="text-right p-2">סטטוס</th>
                         </tr>
                       </thead>
                       <tbody>
                         {scannedAdmins?.map((admin, idx) => (
-                          <tr key={idx} className={admin?.missing_fields?.length > 0 ? 'bg-red-50' : ''}>
-                            <td className="p-2">{admin?.full_name || <span style={{ color: 'red' }}>חסר</span>}</td>
-                            <td className="p-2">{admin?.email || <span style={{ color: 'red' }}>חסר</span>}</td>
-                            <td className="p-2">{admin?.phone || <span style={{ color: 'red' }}>חסר</span>}</td>
-                            <td className="p-2 text-red-600 font-bold">{admin?.missing_fields?.join(', ') || '---'}</td>
+                          <tr key={idx} className={admin.existingUser ? 'bg-amber-50' : ''}>
+                            <td className="p-2"><input type="checkbox" checked={admin.isSelected} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isSelected: e.target.checked} : a))} /></td>
+                            <td className="p-2">{admin.full_name} {admin.existingUser && <span className="text-amber-600 font-bold ml-1">(קיים)</span>}</td>
+                            <td className="p-2">{admin.email}</td>
+                            <td className="p-2">
+                              <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-transparent border-none">
+                                <option value="admin">מנהל</option>
+                                <option value="team_leader">ראש צוות</option>
+                                <option value="viewer">צופה</option>
+                              </select>
+                            </td>
+                            <td className="p-2">
+                              <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-transparent border-none">
+                                <option value="">ללא</option>
+                                {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                              </select>
+                            </td>
+                            <td className="p-2">
+                              {admin.existingUser ? (
+                                <button className="text-blue-600 underline font-bold" onClick={() => setComparisonAdmin(admin)}>הצג השוואה</button>
+                              ) : (
+                                <span className="text-red-600 font-bold">לא קיים במערכת</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                )}
+
+                {comparisonAdmin && (
+                  <ComparisonModal 
+                    admin={comparisonAdmin} 
+                    onClose={() => setComparisonAdmin(null)}
+                    onUpdate={(action) => {
+                      // Handle update action
+                      setComparisonAdmin(null);
+                    }}
+                  />
                 )}
 
                 <div className="flex justify-end gap-3 pt-4">
