@@ -21,12 +21,13 @@ import { usePresence } from '../contexts/PresenceContext';
 import { OnlineIndicator } from '../components/OnlineIndicator';
 
 export default function Dashboard() {
-  const { user, effectiveUser, refreshUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user, refreshUser } = useAuth();
+  const activeUser = user;
   const { presenceState } = usePresence();
   const { type } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [adminCount, setAdminCount] = useState<number>(0);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -164,6 +165,11 @@ export default function Dashboard() {
   const adminsInSameGroups = allUsers.filter(u => {
     if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer') return true;
     
+    // New logic for assigned_group_id
+    if (activeUser?.assigned_group_id) {
+        return u.assigned_group_id === activeUser.assigned_group_id;
+    }
+
     const isShaham = (group: string | null | undefined) => group?.includes('שח"ם');
     const myGroup = activeUser?.affiliation_group;
     const userGroup = u.affiliation_group;
@@ -779,6 +785,10 @@ export default function Dashboard() {
       ]);
       
       setStats(statsData);
+      if (activeUser?.role === 'super_admin') {
+        const count = await dataService.getAdminCount();
+        setAdminCount(count);
+      }
       setTemplate(settingsData.whatsapp_template || '');
       setInitialMessage(settingsData.whatsapp_initial_message || '');
       setWhatsappGroups(groupsData);
@@ -1732,6 +1742,21 @@ export default function Dashboard() {
                           return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                         })}
                         onMatchClick={(m) => setViewingMatch(m)}
+                        onDelete={(id) => {
+                          handleDelete(id);
+                          confirmDelete();
+                        }}
+                        onEdit={(id) => {
+                          // Need to implement edit modal logic
+                          toast.error('עריכה טרם מומשה');
+                        }}
+                        onChat={(m) => {
+                          // Need to implement chat modal logic
+                          toast.error("צ'אט טרם מומש");
+                        }}
+                        onSuggest={(m) => {
+                          handleSuggest(m);
+                        }}
                         rows={rowsPerPage}
                         cols={cardsPerRow}
                         minimal={showMinimal}
@@ -2119,7 +2144,7 @@ export default function Dashboard() {
               <StatCard 
                 icon={<Users className="text-purple-600" />} 
                 label="מנהלים בקבוצות שלי" 
-                value={adminsInSameGroups.length} 
+                value={activeUser?.role === 'super_admin' ? adminCount : adminsInSameGroups.length} 
                 color="border-purple-100 bg-purple-50/30"
               />
             </div>
@@ -2479,6 +2504,21 @@ export default function Dashboard() {
           <MatchCarousel 
             matches={filteredMatches}
             onMatchClick={(m) => setViewingMatch(m)}
+            onDelete={(id) => {
+              handleDelete(id);
+              confirmDelete();
+            }}
+            onEdit={(id) => {
+              // Need to implement edit modal logic
+              toast.error('עריכה טרם מומשה');
+            }}
+            onChat={(m) => {
+              // Need to implement chat modal logic
+              toast.error("צ'אט טרם מומש");
+            }}
+            onSuggest={(m) => {
+              handleSuggest(m);
+            }}
             rows={rowsPerPage}
             cols={cardsPerRow}
             minimal={showMinimal}

@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useActionDisabled } from '../hooks/useActionDisabled';
 import { dataService } from '../services/dataService';
 import { toast } from 'react-hot-toast';
-import { CATEGORIES } from '../constants';
+import { MatchCardActionRow } from './MatchCardActionRow';
 
 interface MatchCardProps {
    match: Match;
@@ -19,6 +19,7 @@ interface MatchCardProps {
    onImageClick?: (match: Match) => void;
    onQuickUpdate?: (id: string, updates: Partial<Match>) => void;
    onSuggest?: (match: Match) => void;
+   onChat?: (match: Match) => void;
    onNotes?: (match: Match) => void;
    onDesignedCard?: (match: Match) => void;
    onNext?: () => void;
@@ -32,7 +33,7 @@ interface MatchCardProps {
    viewMode?: 'standard' | 'whatsapp' | 'designed';
  }
 
-export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium', viewMode: viewModeProp = 'standard' }: MatchCardProps) {
+export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, onView, onEdit, onDelete, onHistory, onImageClick, onQuickUpdate, onSuggest, onChat, onNotes, onDesignedCard, onNext, onPrev, showCreator, minimal, selected, onSelect, isViewer: isViewerProp, size = 'medium', viewMode: viewModeProp = 'standard' }: MatchCardProps) {
   const { user } = useAuth();
   const isActionDisabled = useActionDisabled();
   const isViewer = isViewerProp !== undefined ? isViewerProp : user?.role === 'viewer';
@@ -1002,6 +1003,9 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       </div>
 
       {/* Manual Publish Modal */}
+      {onDelete && onEdit && onChat && onSuggest && (
+        <MatchCardActionRow match={match} onDelete={onDelete} onEdit={onEdit} onChat={onChat} onSuggest={onSuggest} />
+      )}
       <AnimatePresence>
         {showManualPublishModal && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

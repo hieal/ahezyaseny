@@ -8,8 +8,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import MatchCard from '../components/MatchCard';
 
 export default function MatchesHistoryPage() {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

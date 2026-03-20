@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Match, User } from '../types';
 import { dataService } from '../services/dataService';
 import { toast } from 'react-hot-toast';
-import { Phone, Lock, MessageSquare, Save, User as UserIcon, Users, X } from 'lucide-react';
+import { Phone, Lock, MessageSquare, Save, User as UserIcon, Users, X, Trash2, Edit2 } from 'lucide-react';
 
 export default function MatchesManagement() {
   const [matches, setMatches] = useState<Match[]>([]);
@@ -11,6 +11,8 @@ export default function MatchesManagement() {
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [selectedChatUser, setSelectedChatUser] = useState<Match | null>(null);
 
   useEffect(() => {
     fetchMatches();
@@ -48,6 +50,28 @@ export default function MatchesManagement() {
       console.error('Failed to update match:', err);
       toast.error('שגיאה בעדכון');
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק משודך זה?')) return;
+    try {
+      await dataService.deleteMatch(id);
+      setMatches(matches.filter(m => m.id !== id));
+      toast.success('נמחק בהצלחה');
+    } catch (err) {
+      console.error('Failed to delete match:', err);
+      toast.error('שגיאה במחיקה');
+    }
+  };
+
+  const openChat = (match: Match) => {
+    setSelectedChatUser(match);
+    setIsChatOpen(true);
+  };
+
+  const handleEdit = (match: Match) => {
+    // Placeholder for edit functionality
+    toast('עריכה תתאפשר בקרוב');
   };
 
   const handleSuggestMatch = async () => {
@@ -127,8 +151,30 @@ export default function MatchesManagement() {
                   <button 
                     onClick={() => sendWhatsApp(match.phone)}
                     className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                    title="שלח וואטסאפ"
                   >
                     <MessageSquare size={20} />
+                  </button>
+                  <button 
+                    onClick={() => openChat(match)}
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                    title="שלח הודעה"
+                  >
+                    <MessageSquare size={20} />
+                  </button>
+                  <button 
+                    onClick={() => handleEdit(match)}
+                    className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg"
+                    title="ערוך משודך"
+                  >
+                    <Edit2 size={20} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(match.id)}
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                    title="מחק משודך"
+                  >
+                    <Trash2 size={20} />
                   </button>
                   <button 
                     onClick={() => {
@@ -146,6 +192,7 @@ export default function MatchesManagement() {
           </tbody>
         </table>
       </div>
+
 
       {showSuggestModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">

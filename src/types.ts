@@ -14,11 +14,11 @@ export interface User {
   google_login_allowed?: 'true' | 'false';
   avatar_url: string | null;
   image_url?: string | null;
+  local_image_url?: string | null;
   deleted_at?: string | null;
   daily_message_template?: string | null;
   is_from_file?: number;
   is_approved?: number;
-  pending_delete?: number;
   is_shaham_manager?: number;
   password_updated_at?: string;
   password_plain?: string;
@@ -96,7 +96,6 @@ export interface WhatsAppGroup {
   last_initial_sent: string | null;
   last_initial_sent_method?: 'auto' | 'manual' | null;
   is_approved?: number;
-  pending_delete?: number;
 }
 
 export interface ImagePosition {

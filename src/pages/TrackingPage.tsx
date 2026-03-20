@@ -7,8 +7,8 @@ import { History, Search, Filter, Calendar, RefreshCw, User as UserIcon, Info, S
 import { motion } from 'motion/react';
 
 export default function TrackingPage() {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [publishLogs, setPublishLogs] = useState<PublishLog[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);

@@ -13,8 +13,8 @@ interface TransferModalProps {
 }
 
 export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose }) => {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [activeTab, setActiveTab] = useState<'send' | 'receive'>('send');
   const [myMatches, setMyMatches] = useState<Match[]>([]);
   const [allAdmins, setAllAdmins] = useState<UserType[]>([]);

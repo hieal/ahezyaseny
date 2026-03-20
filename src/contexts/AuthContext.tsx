@@ -6,12 +6,10 @@ import { isVercel } from '../utils/env';
 
 interface AuthContextType {
   user: User | null;
-  effectiveUser: User | null;
   loading: boolean;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  setImpersonation: (user: User | null) => void;
   isReadOnly: boolean;
   selectRole: (role: 'admin' | 'team_leader') => void;
 }
@@ -20,7 +18,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [effectiveUser, setEffectiveUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
@@ -30,16 +27,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Ensure loading is true at the start of initialization
       setLoading(true);
       try {
-        // Check for effective user in sessionStorage
-        const effectiveUserJson = sessionStorage.getItem('effective_user');
-        if (effectiveUserJson) {
-          try {
-            setEffectiveUser(JSON.parse(effectiveUserJson));
-          } catch (e) {
-            sessionStorage.removeItem('effective_user');
-          }
-        }
-
         // 1. Check Supabase session first (as requested)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
@@ -53,41 +40,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 await supabase.auth.signOut();
                 setUser(null);
                 localStorage.removeItem('current_user');
-                sessionStorage.removeItem('current_user');
                 return;
               }
               setUser(adminProfile);
               localStorage.setItem('current_user', JSON.stringify(adminProfile));
             }
           } catch (err) {
-            console.error('Error fetching admin profile:', err);
             // Don't throw, just log and continue to allow local storage fallback
           }
         } else {
-          // 2. Fallback to sessionStorage (for impersonation) then localStorage
-          const sessionUserJson = sessionStorage.getItem('current_user');
+          // 2. Fallback to localStorage ONLY (removed sessionStorage for impersonation)
           const localUserJson = localStorage.getItem('current_user');
-          const userJson = sessionUserJson || localUserJson;
           
-          if (userJson) {
+          if (localUserJson) {
             try {
-              const localUser = JSON.parse(userJson);
+              const localUser = JSON.parse(localUserJson);
               // Block unapproved users on Vercel
               if (isVercel() && localUser.is_approved === 0) {
                 setUser(null);
                 localStorage.removeItem('current_user');
-                sessionStorage.removeItem('current_user');
                 return;
               }
               setUser(localUser);
             } catch (e) {
-              sessionStorage.removeItem('current_user');
               localStorage.removeItem('current_user');
             }
           }
         }
       } catch (err) {
-        console.error('Auth initialization error:', err);
+        // Auth initialization error
       } finally {
         // Only set loading to false after all async auth checks are complete
         setLoading(false);
@@ -177,9 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setShowRolePicker(true);
     } else {
       setUser(userData);
-      setEffectiveUser(userData);
       localStorage.setItem('current_user', JSON.stringify(userData));
-      sessionStorage.setItem('current_user', JSON.stringify(userData));
     }
   };
 
@@ -193,36 +172,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       effective.role = 'admin';
     }
     
-    setUser(pendingUser);
-    setEffectiveUser(effective);
-    localStorage.setItem('current_user', JSON.stringify(pendingUser));
-    sessionStorage.setItem('current_user', JSON.stringify(pendingUser));
-    sessionStorage.setItem('effective_user', JSON.stringify(effective));
+    setUser(effective);
+    localStorage.setItem('current_user', JSON.stringify(effective));
     setShowRolePicker(false);
     setPendingUser(null);
-  };
-
-  const setImpersonation = (impersonatedUser: User | null) => {
-    setEffectiveUser(impersonatedUser);
-    if (impersonatedUser) {
-      sessionStorage.setItem('effective_user', JSON.stringify(impersonatedUser));
-    } else {
-      sessionStorage.removeItem('effective_user');
-    }
   };
 
   const logout = async () => {
     await dataService.logout();
     await supabase.auth.signOut();
     setUser(null);
-    setEffectiveUser(null);
-    sessionStorage.removeItem('effective_user');
+    localStorage.removeItem('current_user');
   };
 
-  const isReadOnly = user?.role === 'super_observer' || effectiveUser?.role === 'super_observer';
+  const isReadOnly = user?.role === 'super_observer';
 
   return (
-    <AuthContext.Provider value={{ user, effectiveUser, loading, login, logout, refreshUser, setImpersonation, isReadOnly, selectRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, isReadOnly, selectRole }}>
       {children}
       {showRolePicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

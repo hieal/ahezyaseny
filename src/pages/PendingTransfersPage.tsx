@@ -9,8 +9,8 @@ import { toast } from 'react-hot-toast';
 import { getGenderedText } from '../utils/gender';
 
 const PendingTransfersPage: React.FC = () => {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [pending, setPending] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 

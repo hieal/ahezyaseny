@@ -9,8 +9,8 @@ import { toast } from 'react-hot-toast';
 import { getGenderedText } from '../utils/gender';
 
 const OrphanedCandidatesPage: React.FC = () => {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [candidates, setCandidates] = useState<Match[]>([]);
   const [admins, setAdmins] = useState<UserType[]>([]);
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);

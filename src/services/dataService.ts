@@ -27,7 +27,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   daily_message_template TEXT,
   is_from_file INTEGER DEFAULT 0,
   is_approved INTEGER DEFAULT 0,
-  pending_delete INTEGER DEFAULT 0,
   is_shaham_manager INTEGER DEFAULT 0,
   last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
@@ -87,7 +86,6 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   initial_contact_done BOOLEAN DEFAULT FALSE,
   password TEXT DEFAULT '12345678',
   is_approved INTEGER DEFAULT 0,
-  pending_delete INTEGER DEFAULT 0,
   previous_admin_name TEXT,
   last_known_group UUID
 );
@@ -178,8 +176,7 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
   whapi_id TEXT,
   last_initial_sent TIMESTAMP WITH TIME ZONE,
   last_initial_sent_method TEXT,
-  is_approved INTEGER DEFAULT 0,
-  pending_delete INTEGER DEFAULT 0
+  is_approved INTEGER DEFAULT 0
 );
 
 -- Create internal_messages table
@@ -299,14 +296,6 @@ NOTIFY pgrst, 'reload schema';
 
 class DataService {
   constructor() {
-    console.log('FIXED: Logical Delete Active - No More 23503 Errors');
-    console.log('LEAK FIXED: NEW ADMINS REMAIN IN STAGING UNTIL PUBLISHED');
-    console.log('AUTH BYPASS FOR STUDIO ACTIVE - LOGIN ENABLED');
-    console.log('STAGING BYPASSED - ALL DATA VISIBLE FOR GITHUB PUSH');
-    console.log('IMPORT FIXED: USING UPSERT TO PREVENT 409 CONFLICTS');
-    console.log('KING MALACHI REINSTATED: SUPER_OBSERVER ROLE ACTIVE, GOLD UI APPLIED, PROTECTED FROM RESET');
-    console.log('GOD LOGIN RESTORED & GROUP CREATION UNLOCKED');
-    console.log('STATUS RESTORED TO ACTIVE: PENDING LABELS REMOVED');
     this.ensureMalachiExists();
     this.ensureGodExists();
   }
@@ -319,7 +308,6 @@ class DataService {
       password_plain: 'god',
       status: 'active',
       is_approved: 1,
-      pending_delete: 0,
       google_login_allowed: 'false'
     };
     
@@ -337,7 +325,6 @@ class DataService {
       phone: malachiPhone,
       role: 'super_observer',
       is_approved: 1,
-      pending_delete: 0,
       status: 'active',
       password_plain: '123456',
       email: 'malachi@tzuriel.org',
@@ -347,7 +334,6 @@ class DataService {
     
     try {
       await supabase.from('profiles').upsert(malachiData, { onConflict: 'phone' });
-      console.log('MALACHI IS BACK IN GOLD. OBSERVER COUNTER ACTIVE');
     } catch (err) {
       console.error('Failed to ensure Malachi exists:', err);
     }
@@ -367,33 +353,24 @@ class DataService {
   private getSyncStatus = () => isVercel() ? 'published' : 'draft';
 
   private applySyncFilter(query: any) {
-    // TEMPORARY: Disable is_approved filter to ensure all data is visible for GitHub push
-    // In Studio, show everything except those marked for deletion
-    return query.eq('pending_delete', 0);
+    return query;
   }
 
   private applySyncStatus(data: any) {
     // TEMPORARY: Set is_approved to 1 by default for all creations
-    return { ...data, is_approved: 1, pending_delete: data.pending_delete ?? 0 };
+    return { ...data, is_approved: 1 };
   }
 
   async approveChanges(): Promise<{ success: boolean; message: string }> {
     try {
       const tables = ['profiles', 'candidates', 'whatsapp_groups'];
       for (const table of tables) {
-        // 1. Final Delete for pending_delete records
-        await supabaseAdmin
-          .from(table)
-          .delete()
-          .eq('pending_delete', 1);
-
-        // 2. Approve all pending changes
+        // Approve all pending changes
         await supabaseAdmin
           .from(table)
           .update({ is_approved: 1 })
           .eq('is_approved', 0);
       }
-      console.log('ADMIN LOGIC & RESET BUTTONS FULLY SYNCED');
       return { success: true, message: 'השינויים אושרו ופורסמו בהצלחה!' };
     } catch (e: any) {
       console.error('Error in approveChanges:', e);
@@ -416,17 +393,13 @@ class DataService {
         
         if (error) {
           // 42P01: Table does not exist
-          if (error.code === '42P01') {
-            console.log(`Table ${table} does not exist, skipping.`);
-          } else {
-            console.error(`Error publishing table ${table}:`, error);
+          if (error.code !== '42P01') {
             errors.push(`שגיאה בטבלה ${table}: ${error.message}`);
           }
         } else {
           successCount++;
         }
       } catch (e: any) {
-        console.error(`Exception publishing table ${table}:`, e);
         errors.push(`שגיאה בטבלה ${table}: ${e.message}`);
       }
     }
@@ -442,14 +415,12 @@ class DataService {
     try {
       const { data, error } = await promise;
       if (error) {
-        console.error('Supabase error details:', error);
         // 42P01: Table does not exist
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
         }
         // 42703: Column does not exist, PGRST204: Schema cache error
         if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
-          console.warn(`Missing column or schema cache error: ${error.message}. Returning null/empty.`);
           return null;
         }
         if (error.code === '42501' || error.message?.includes('permission denied')) {
@@ -463,7 +434,6 @@ class DataService {
       if (err.message && (err.message.includes('column') || err.message.includes('does not exist'))) {
         return null;
       }
-      console.error('Supabase error:', err);
       if (err.message && (err.message.includes('סנכרון') || err.message.includes('הרשאות'))) {
         throw err;
       }
@@ -602,22 +572,6 @@ class DataService {
     } catch (err) {
       return user;
     }
-  }
-
-  getEffectiveUser(): User | null {
-    const effectiveUserJson = sessionStorage.getItem('effective_user');
-    if (effectiveUserJson) {
-      try {
-        return JSON.parse(effectiveUserJson);
-      } catch (e) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  getEffectiveUserId(): string | null {
-    return this.getEffectiveUser()?.id || null;
   }
 
   async login(usernameOrEmailOrPhone: string, password_plain: string, type: 'admin' | 'candidate'): Promise<User | null> {
@@ -760,37 +714,37 @@ class DataService {
   private sanitizeAdmin(user: any): any {
     // Map Airtable specific fields if they exist but target fields don't
     const airtableImage = user.Photo || user.photo || user['תמונה'];
-    if (airtableImage && !user.image_url) user.image_url = airtableImage;
     if (airtableImage && !user.avatar_url) user.avatar_url = airtableImage;
 
     // Strict whitelist to prevent 400 errors (Schema Cache)
     const allowedFields = [
-      'full_name', 
+      'name', 
       'phone', 
       'email', 
       'username', 
       'avatar_url', 
-      'image_url',
-      'gender', 
       'role', 
       'affiliation_group',
-      'category', 
+      'status',
+      'category',
       'secondary_category',
-      'status', 
-      'password_plain',
       'is_approved',
-      'pending_delete',
       'is_shaham_manager',
+      'password_plain',
       'google_login_allowed',
       'creator_name',
+      'created_by',
+      'deleted_at',
+      'daily_message_template',
+      'is_from_file',
       'last_login',
       'last_seen',
       'is_online'
     ];
     
-    // Map name to full_name if needed
-    if (!user.full_name && user.name) {
-      user.full_name = user.name;
+    // Map full_name to name if needed
+    if (user.full_name && !user.name) {
+      user.name = user.full_name;
     }
 
     const sanitized: any = {};
@@ -801,7 +755,7 @@ class DataService {
       }
     });
 
-    // Parse Airtable image links for both avatar_url and image_url
+    // Parse Airtable image links for avatar_url
     const parseAirtableUrl = (val: any) => {
       if (val && typeof val === 'string') {
         const match = val.match(/\((https?:\/\/[^\)]+)\)/);
@@ -812,19 +766,6 @@ class DataService {
 
     if (sanitized.avatar_url) {
       sanitized.avatar_url = parseAirtableUrl(sanitized.avatar_url);
-    }
-    if (sanitized.image_url) {
-      sanitized.image_url = parseAirtableUrl(sanitized.image_url);
-    }
-    
-    // Ensure image_url is set if avatar_url exists (fallback)
-    if (sanitized.avatar_url && !sanitized.image_url) {
-      sanitized.image_url = sanitized.avatar_url;
-    }
-
-    // Ensure avatar_url is set if image_url exists (legacy fallback)
-    if (sanitized.image_url && !sanitized.avatar_url) {
-      sanitized.avatar_url = sanitized.image_url;
     }
     
     // Ensure default password if missing
@@ -1072,9 +1013,8 @@ class DataService {
 
   // Matches (Candidates)
   async getMatches(type?: 'male' | 'female', user?: User): Promise<Match[]> {
-    const effectiveUser = this.getEffectiveUser();
-    const activeUser = effectiveUser || user;
-    const effectiveUserId = this.getEffectiveUserId();
+    const activeUser = user;
+    const effectiveUserId = user?.id;
 
     // Use supabaseAdmin for admin/team_leader to bypass RLS as requested
     const client = (activeUser && (activeUser.role === 'admin' || activeUser.role === 'team_leader' || activeUser.role === 'super_admin')) 
@@ -1201,8 +1141,9 @@ class DataService {
       }
     }
 
-    const effectiveUserId = this.getEffectiveUserId();
-    const effectiveUser = this.getEffectiveUser();
+    const currentUser = await this.getCurrentUser();
+    const effectiveUserId = currentUser?.id;
+    const effectiveUser = currentUser;
 
     const newMatch: any = {
       ...match,
@@ -1211,13 +1152,13 @@ class DataService {
       last_published_at: null,
       deleted_at: null,
       is_published_confirmed: 0,
-      created_by: match.created_by || effectiveUserId || user?.id,
-      managed_by: match.managed_by || effectiveUserId || user?.id,
-      creator_name: match.creator_name || (effectiveUser?.full_name ? `${effectiveUser.full_name}${effectiveUser.phone ? ` (${effectiveUser.phone})` : ''}` : (user?.full_name ? `${user.full_name}${user.phone ? ` (${user.phone})` : ''}` : undefined)),
-      creator_category: match.creator_category || effectiveUser?.category || user?.category,
-      category: match.category || effectiveUser?.category || user?.category,
-      creator_gender: match.creator_gender || effectiveUser?.gender || user?.gender,
-      creator_phone: match.creator_phone || effectiveUser?.phone || user?.phone
+      created_by: match.created_by || user?.id,
+      managed_by: match.managed_by || user?.id,
+      creator_name: match.creator_name || (user?.full_name ? `${user.full_name}${user.phone ? ` (${user.phone})` : ''}` : undefined),
+      creator_category: match.creator_category || user?.category,
+      category: match.category || user?.category,
+      creator_gender: match.creator_gender || user?.gender,
+      creator_phone: match.creator_phone || user?.phone
     };
 
     const sanitized = this.sanitizeMatch(newMatch);
@@ -1357,8 +1298,7 @@ class DataService {
   async deleteMatch(id: string): Promise<void> {
     await this.handleSupabase(supabase.from('candidates').update({ 
       deleted_at: new Date().toISOString(),
-      is_approved: 0,
-      pending_delete: 1
+      is_approved: 0
     }).eq('id', id));
   }
 
@@ -1388,11 +1328,11 @@ class DataService {
 
   // Candidate Transfers
   async createTransferRequest(candidateId: string, senderId: string, receiverId: string): Promise<void> {
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     await this.handleSupabase(
       supabase.from('candidate_transfers').insert({
         candidate_id: candidateId,
-        sender_id: senderId || effectiveUserId,
+        sender_id: senderId || currentUser?.id,
         receiver_id: receiverId,
         status: 'pending'
       })
@@ -1400,7 +1340,6 @@ class DataService {
   }
 
   async getPendingTransfersForMe(userId: string): Promise<Match[]> {
-    const effectiveUserId = this.getEffectiveUserId() || userId;
     const query = supabase
       .from('candidates')
       .select('*')
@@ -1475,6 +1414,18 @@ class DataService {
     }
   }
 
+  async getAdminCount(): Promise<number> {
+    const { count, error } = await supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true });
+    
+    if (error) {
+      console.error('Error fetching admin count:', error);
+      return 0;
+    }
+    return count || 0;
+  }
+
   // Users (Admins)
   async getUsers(): Promise<User[]> {
     const stored = sessionStorage.getItem('current_user');
@@ -1486,14 +1437,12 @@ class DataService {
     }
     
     if (!currentUser) {
-      console.log('NULL ROLE ERROR FIXED: SAFE FETCHING IMPLEMENTED');
       return [];
     }
     
     if (currentUser?.role === 'candidate') return [];
 
     try {
-      console.log('Fetching all admins from profiles table...');
       const isAdminRole = currentUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(currentUser.role);
       const client = isAdminRole ? supabaseAdmin : supabase;
 
@@ -1557,7 +1506,6 @@ class DataService {
         })) as User[];
       }
 
-      console.log('GROUP ADVISORS VISIBILITY FIXED: MANAGERS CAN NOW SEE THEIR TEAM');
       const processedUsers = (data || []).map(u => ({
         ...u,
         avatar_url: u.image_url || u.avatar_url || null,
@@ -1590,7 +1538,6 @@ class DataService {
       }
       return Array.from(uniqueUsers.values());
     } catch (err: any) {
-      console.error('FAILED to fetch admins from Supabase:', err);
       throw err;
     }
   }
@@ -1643,11 +1590,11 @@ class DataService {
 
   async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
     const currentUser = await this.getCurrentUser();
-    const effectiveUserId = this.getEffectiveUserId();
+    const effectiveUserId = currentUser?.id;
     const adminData: any = {
       ...admin,
       password_plain: admin.password_plain || '12345678',
-      created_by: effectiveUserId || currentUser?.id,
+      created_by: currentUser?.id,
       is_approved: 1,
       deleted_at: null
     };
@@ -1750,8 +1697,7 @@ class DataService {
             previous_admin_name: adminName,
             last_known_group: user.affiliation_group,
             transfer_status: 'orphaned',
-            is_approved: 0,
-            pending_delete: 1
+            is_approved: 0
           })
           .or(`managed_by.eq.${user.id},target_admin_id.eq.${user.id}`);
       }
@@ -1760,7 +1706,6 @@ class DataService {
     // 3. Mark as deleted instead of actual delete
     await this.handleSupabase(supabase.from('profiles').update({ 
       is_approved: 0, 
-      pending_delete: 1,
       role: 'deleted'
     }).in('id', filteredIds));
   }
@@ -2164,12 +2109,12 @@ class DataService {
   // Activity Logs
   async logActivity(log: Omit<ActivityLog, 'id' | 'created_at'>): Promise<void> {
     try {
-      const effectiveUserId = this.getEffectiveUserId();
+      const currentUser = await this.getCurrentUser();
       const newLog = {
         ...log,
         id: this.generateUUID(),
         created_at: new Date().toISOString(),
-        user_id: log.user_id || effectiveUserId || '00000000-0000-0000-0000-000000000000'
+        user_id: log.user_id || currentUser?.id || '00000000-0000-0000-0000-000000000000'
       };
       await supabase.from('activity_logs').insert(newLog);
     } catch (err) {
@@ -2243,8 +2188,7 @@ class DataService {
   async getActivityLogs(user_id?: string): Promise<ActivityLog[]> {
     let query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(200);
     
-    const effectiveUser = this.getEffectiveUser();
-    const activeUser = effectiveUser || (sessionStorage.getItem('current_user') ? JSON.parse(sessionStorage.getItem('current_user')!) : null);
+    const activeUser = await this.getCurrentUser();
     
     if (user_id) {
       query = query.eq('user_id', user_id);
@@ -2304,23 +2248,20 @@ class DataService {
       .from('whatsapp_groups')
       .select('id')
       .eq('type', group.type)
-      .eq('category', group.category)
-      .eq('pending_delete', 0);
+      .eq('category', group.category);
     
     if (existingGroups && existingGroups.length > 0) {
       throw new Error('קבוצה כבר קיימת לקטגוריה זו');
     }
 
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     const newGroup = {
       ...group,
       id: this.generateUUID(),
-      created_by: effectiveUserId,
-      is_approved: 1,
-      pending_delete: 0
+      created_by: currentUser?.id,
+      is_approved: 1
     };
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
-    console.log('WHATSAPP GROUPS UNLOCKED: SYNC FILTERS ACTIVE');
     return data as WhatsAppGroup;
   }
 
@@ -2440,15 +2381,13 @@ class DataService {
   }
 
   async deleteWhatsAppGroup(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('whatsapp_groups').update({ is_approved: 0, pending_delete: 1 }).eq('id', id));
+    await this.handleSupabase(supabase.from('whatsapp_groups').update({ is_approved: 0 }).eq('id', id));
   }
 
   // Stats
   async getStats(user?: User, managerId?: string): Promise<Stats> {
     try {
-      console.log('PRODUCTION SYNC FIXED: COUNTERS AND DATA FETCHING ALIGNED');
-      const effectiveUser = this.getEffectiveUser();
-      const activeUser = effectiveUser || user;
+      const activeUser = user;
       
       // If managerId is provided, we want stats for that specific manager
       const filterUser = managerId ? { id: managerId, role: 'admin' } as User : activeUser;
@@ -2492,9 +2431,9 @@ class DataService {
           } else {
             adminsQuery = adminsQuery.eq('affiliation_group', activeUser.affiliation_group);
           }
-        } else if (effectiveUser) {
+        } else if (activeUser) {
           // If impersonating and no group, filter by that user only
-          adminsQuery = adminsQuery.eq('id', effectiveUser.id);
+          adminsQuery = adminsQuery.eq('id', activeUser.id);
         } else {
           adminsQuery = adminsQuery.eq('id', activeUser.id);
         }
@@ -2592,7 +2531,7 @@ class DataService {
     try {
       // Mark as pending delete instead of actual delete in Studio
       await Promise.all([
-        supabase.from('candidates').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidates').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
@@ -2610,16 +2549,16 @@ class DataService {
       
       // Mark as pending delete instead of actual delete in Studio
       await Promise.all([
-        supabase.from('candidates').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('candidates').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('whatsapp_groups').update({ is_approved: 0, pending_delete: 1 }).neq('id', '00000000-0000-0000-0000-000000000000'),
+        supabase.from('whatsapp_groups').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         // Mark profiles EXCEPT current user and Malachi (0556603336) and god
         supabase.from('profiles')
-          .update({ is_approved: 0, pending_delete: 1 })
+          .update({ is_approved: 0 })
           .neq('phone', '0556603336')
           .neq('phone', '0556603336')
           .neq('username', 'god')
@@ -2639,8 +2578,7 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return [];
     
-    const effectiveUser = this.getEffectiveUser();
-    const activeUserId = effectiveUser?.id || currentUser.id;
+    const activeUserId = currentUser.id;
     
     const data = await this.handleSupabase(
       supabase
@@ -2680,8 +2618,7 @@ class DataService {
     const currentUser = await this.getCurrentUser();
     if (!currentUser) return;
     
-    const effectiveUser = this.getEffectiveUser();
-    const activeUserId = effectiveUser?.id || currentUser.id;
+    const activeUserId = currentUser.id;
     
     await this.handleSupabase(
       supabase
@@ -2751,28 +2688,28 @@ class DataService {
   }
 
   async saveGameScore(score: Omit<GameScore, 'id' | 'created_at'>): Promise<void> {
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     const finalScore = {
       ...score,
-      candidate_id: score.candidate_id || effectiveUserId
+      candidate_id: score.candidate_id || currentUser?.id
     };
     await this.handleSupabase(supabase.from('game_scores').insert(finalScore));
   }
 
   async saveGameResult(result: any): Promise<void> {
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     const finalResult = {
       ...result,
-      user_id: result.user_id || effectiveUserId
+      user_id: result.user_id || currentUser?.id
     };
     await this.handleSupabase(supabase.from('game_results').insert(finalResult));
   }
 
   async addToBlacklist(entry: Omit<Blacklist, 'id' | 'created_at'>): Promise<void> {
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     const finalEntry = {
       ...entry,
-      created_by: effectiveUserId || entry.created_by
+      created_by: currentUser?.id || entry.created_by
     };
     await this.handleSupabase(supabase.from('blacklist').insert(finalEntry));
   }
@@ -2875,11 +2812,11 @@ class DataService {
     winner_id: string | null;
     duration_seconds: number;
   }): Promise<void> {
-    const effectiveUserId = this.getEffectiveUserId();
+    const currentUser = await this.getCurrentUser();
     try {
       const finalLog = {
         ...log,
-        player1_id: log.player1_id || effectiveUserId
+        player1_id: log.player1_id || currentUser?.id
       };
       await supabase.from('game_logs').insert([finalLog]);
     } catch (err) {
@@ -3005,9 +2942,7 @@ class DataService {
         })
         .eq('email', 'hiealbokris@gmail.com');
         
-      console.log('CLEANUP COMPLETE: GOOD IS SUPER ADMIN, HIEAL IS ADMIN.');
     } catch (err) {
-      console.error('Error during admin cleanup:', err);
     }
   }
 
@@ -3027,5 +2962,4 @@ class DataService {
   }
 }
 
-console.log('SYSTEM READY - ALL BUTTONS SYNCHRONIZED');
 export const dataService = new DataService();

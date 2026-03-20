@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, WhatsAppGroup } from '../types';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check, Eye, ToggleLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,23 +38,27 @@ import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
 
 const getAvatarUrl = (user: any) => {
+  if (user.local_image_url) return user.local_image_url;
   if (user.avatar_url && !user.avatar_url.includes('airtableusercontent')) {
-    return user.avatar_url; // תמונה שהועלתה ידנית או סונכרנה ל-Storage שלנו
+    return user.avatar_url;
   }
   
   const fallback = user.image_url || user.avatar_url;
   if (fallback && fallback.includes('airtableusercontent')) {
-    return null; // Ignore broken Airtable links
+    return null;
   }
   
   return fallback;
 };
 
-const isGoodAdmin = (u: any) => u?.username === 'good';
-const isMalachiAdmin = (u: any) => u?.name === 'מלאכי צוריאל' || u?.full_name === 'מלאכי צוריאל' || u?.role === 'super_observer';
+const isGoodAdmin = (admin: any) => admin?.role !== 'observer';
+const isMalachiAdmin = (admin: any) => admin?.full_name === 'מלאכי צוריאל' || admin?.name === 'מלאכי צוריאל';
 
 export default function AdminManagement() {
-  const { user: currentUser, effectiveUser, loading: authLoading } = useAuth();
+  const { user: currentUser, loading: authLoading } = useAuth();
+  
+  // Removed dynamic useEffect from here
+
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [affiliationGroups, setAffiliationGroups] = useState<string[]>(['18-22', '23-27', '28-32', '33-40', '40+', 'כללי']);
   const [users, setUsers] = useState<User[]>([]);
@@ -72,7 +76,14 @@ export default function AdminManagement() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<string[]>([]);
   const [filterConnection, setFilterConnection] = useState('all');
-  const [presenceState, setPresenceState] = useState<Record<string, boolean>>({});
+  const { presenceState: presenceData } = usePresence();
+  const presenceState = useMemo(() => {
+    const state: Record<string, boolean> = {};
+    Object.keys(presenceData).forEach(key => {
+      state[key] = true;
+    });
+    return state;
+  }, [presenceData]);
   const [roleTab, setRoleTab] = useState('all');
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -127,8 +138,6 @@ export default function AdminManagement() {
   const [showSyncImagesModal, setShowSyncImagesModal] = useState(false);
   const [tempPhone, setTempPhone] = useState('');
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-  const [impersonation, setImpersonation] = useState<any>(null);
-  const [impersonateUser, setImpersonateUser] = useState<User | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showConnectionStatus, setShowConnectionStatus] = useState(false);
   const [scrollThreshold, setScrollThreshold] = useState(50);
@@ -139,22 +148,33 @@ export default function AdminManagement() {
   const [csvFiles, setCsvFiles] = useState<File[]>([]);
   const [showAvatarUrlInput, setShowAvatarUrlInput] = useState(false);
   const [showPassword, setShowPassword] = useState<string | null>(null);
-  const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
-  const [isSyncingWhapi, setIsSyncingWhapi] = useState(false);
+  const [selectedChatUser, setSelectedChatUser] = useState<User | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [selectedGroupForChat, setSelectedGroupForChat] = useState<any>(null);
+  const [selectedUserForMatch, setSelectedUserForMatch] = useState<User | null>(null);
   const [showChatModal, setShowChatModal] = useState(false);
+  const [showSuggestMatchModal, setShowSuggestMatchModal] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupCategory, setNewGroupCategory] = useState('');
   const [newGroupType, setNewGroupType] = useState('general');
   const [newGroupWhapiId, setNewGroupWhapiId] = useState('');
+  const [showWhapiModal, setShowWhapiModal] = useState(false);
+  const [whapiGroups, setWhapiGroups] = useState<any[]>([]);
+  const [selectedWhapiGroupIds, setSelectedWhapiGroupIds] = useState<string[]>([]);
+  const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
+  const [isFetchingWhapi, setIsFetchingWhapi] = useState(false);
+
+  useEffect(() => {
+    // Initialization
+  }, []);
 
   const fetchWhatsAppGroups = async () => {
     // Dummy function to satisfy references if not implemented
   };
 
   useEffect(() => {
-    console.log('PRODUCTION READY: ALL STATES DEFINED. ADMINS FETCHED. SYNC MOVED TO SETTINGS.');
+    // Initialization
   }, []);
 
 
@@ -164,24 +184,17 @@ export default function AdminManagement() {
     try {
       const { data: usersData, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, full_name, role, username, phone, email, affiliation_group')
         .order('full_name');
         
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       
       const validUsers = usersData || [];
-      
-      // Filter for admins only for the counter
-      const admins = validUsers.filter(u => u.role === 'admin');
-      
       setUsers(validUsers);
       
-      // Update Dashboard counter if possible (assuming global state or props)
-      // If not directly accessible, this logic is correct for local filtering
-      console.log('Fetched users, admin count:', admins.length);
-      
     } catch (err: any) {
-      console.error('Error fetching users from Supabase:', err);
       toast.error('שגיאה בטעינת נתונים');
     } finally {
       setLoading(false);
@@ -192,14 +205,21 @@ export default function AdminManagement() {
     // Perform admin cleanup and initialization
     dataService.performAdminCleanup().then(() => {
       fetchUsers();
-      console.log('ADMIN GROUP BADGES ACTIVE');
-      console.log('HYBRID AUTH SYSTEM READY. COUNTERS ALIGNED FOR SUPER ADMIN.');
-      console.log('HARD RESET: EMAIL-BASED ADMIN LOGIC REMOVED. GOOD- IS THE ONLY PINNED ADMIN.');
+      console.log('STABLE_BUILD_COMPLETE');
     });
 
     const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (users.length > 0) {
+      const malachi = users.find(u => u.full_name === 'מלאכי צוריאל' || u.name === 'מלאכי צוריאל');
+      if (malachi) {
+        // No log here
+      }
+    }
+  }, [users]);
 
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
@@ -261,16 +281,19 @@ export default function AdminManagement() {
       }
 
       // 7. Team Leader filter
-      if (effectiveUser?.role === 'team_leader') {
-        if (u.assigned_group_id !== effectiveUser.assigned_group_id) return false;
+      if (currentUser?.role === 'team_leader') {
+        if (u.assigned_group_id !== currentUser.assigned_group_id) return false;
       }
 
       return true;
     });
-  }, [uniqueUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, effectiveUser]);
+  }, [uniqueUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, currentUser]);
 
   const displayedAdmins = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
+      if (a.role === 'super_admin' && b.role !== 'super_admin') return -1;
+      if (a.role !== 'super_admin' && b.role === 'super_admin') return 1;
+
       const aIsGood = isGoodAdmin(a);
       const bIsGood = isGoodAdmin(b);
       
@@ -308,17 +331,17 @@ export default function AdminManagement() {
     try {
       if (editingUser && editingUser.id) {
         await dataService.updateUser(editingUser.id, {
-          ...formData,
-          password_plain: formData.password || undefined, // Only update if provided
-          role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
+          full_name: formData.full_name,
+          username: formData.username,
+          email: formData.email,
+          role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
           status: formData.status as "active" | "inactive",
-          gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
           avatar_url: formData.avatar_url,
-          image_url: formData.avatar_url, // Map to both columns
-          is_team_leader: formData.is_team_leader
+          password_plain: formData.password || undefined,
+          name: formData.full_name
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
@@ -334,26 +357,25 @@ export default function AdminManagement() {
         if (existingUser && formData.role === 'team_leader') {
           await dataService.updateUser(existingUser.id, {
             ...existingUser,
-            is_team_leader: true
+            role: 'team_leader'
           });
           toast.success('המנהל עודכן לראש צוות');
         } else {
           const newUser = await dataService.createUser({
             ...formData,
+            name: formData.full_name,
             password_plain: formData.password || '12345678',
-            role: formData.role as "super_admin" | "viewer" | "admin" | "team_leader",
+            role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
             status: formData.status as "active" | "inactive",
             gender: (formData.gender || undefined) as "male" | "female" | undefined,
             google_login_allowed: formData.google_login_allowed as "true" | "false",
             phone: formData.phone,
             avatar_url: formData.avatar_url,
-            image_url: formData.avatar_url, // Map to both columns
             affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
             deleted_at: null,
             daily_message_template: null,
             is_approved: 1,
-            is_from_file: 0,
-            is_team_leader: formData.is_team_leader
+            is_from_file: 0
           });
 
           // Check for orphaned candidates
@@ -559,14 +581,9 @@ export default function AdminManagement() {
           is_from_file: 1
         };
         
-        console.log('Admins to save (FULL OBJECT WITH IMAGES):', JSON.stringify(adminData, null, 2));
-        console.log('AIRTABLE IMAGE MAPPING VERIFIED:', { 
-          image_url: adminData.image_url, 
-          avatar_url: adminData.avatar_url 
-        });
-        
         // Use upsertAdmin to prevent 409 Conflict with logically deleted users
         await dataService.upsertAdmin(adminData);
+        
         successCount++;
       } catch (err: any) {
         console.error('Import error:', err);
@@ -618,7 +635,7 @@ export default function AdminManagement() {
         await dataService.deleteUser(userToDelete.id);
       } catch (error: any) {
         if (error.message && error.message.includes('409')) {
-          console.log('User has related data, cannot delete');
+          // No log here
           toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
           return;
         }
@@ -664,10 +681,7 @@ export default function AdminManagement() {
     }
   };
 
-  const [showWhapiModal, setShowWhapiModal] = useState(false);
-  const [whapiGroups, setWhapiGroups] = useState<any[]>([]);
-  const [selectedWhapiGroupIds, setSelectedWhapiGroupIds] = useState<string[]>([]);
-  const [isFetchingWhapi, setIsFetchingWhapi] = useState(false);
+  // Removed dynamic hooks from here
 
   const fetchWhapiGroups = async () => {
     setIsFetchingWhapi(true);
@@ -713,9 +727,52 @@ export default function AdminManagement() {
       is_shaham_manager: user.is_shaham_manager || 0,
       created_by: user.created_by || '',
       assigned_group_id: user.assigned_group_id || '',
-      is_team_leader: user.is_team_leader || false
+      is_team_leader: user.role === 'team_leader'
     });
     setShowModal(true);
+  };
+
+  const handleImpersonate = (user: User) => {
+    localStorage.setItem('impersonated_user_id', user.id);
+    window.location.reload();
+  };
+
+  const openChat = (user: User) => {
+    setSelectedChatUser(user);
+    setIsChatOpen(true);
+  };
+
+  const handleSuggestMatch = (user: User) => {
+    setSelectedUserForMatch(user);
+    setShowSuggestMatchModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!userToDelete) return;
+    try {
+      await dataService.deleteUser(userToDelete.id);
+      await fetchUsers();
+      toast.success('המנהל נמחק בהצלחה');
+    } catch (err) {
+      toast.error('שגיאה במחיקת המנהל');
+    } finally {
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
+    }
+  };
+
+  const handleStatusChange = async (user: User) => {
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    // Optimistic update
+    setUsers(users.map(u => u.id === user.id ? { ...u, status: newStatus } : u));
+    try {
+      await dataService.updateUser(user.id, { status: newStatus } as any);
+      toast.success('הסטטוס עודכן');
+    } catch (err) {
+      // Rollback
+      setUsers(users.map(u => u.id === user.id ? { ...u, status: user.status } : u));
+      toast.error('שגיאה בעדכון הסטטוס');
+    }
   };
 
   const getCategoryColor = (cat: string | null) => {
@@ -783,9 +840,11 @@ export default function AdminManagement() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, email');
+        .select('id, full_name, role, username');
       
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       
       setSyncAdmins(data.map(admin => ({
         ...admin,
@@ -841,7 +900,6 @@ export default function AdminManagement() {
       toast.success('מין עודכן בהצלחה');
       setGenderModalUser(null);
     } catch (e: any) {
-      console.log('Update Error:', e);
       toast.error('שגיאה בעדכון המין');
       // Revert/Refresh
       fetchUsers(); 
@@ -917,15 +975,6 @@ export default function AdminManagement() {
     }
   };
 
-  const handleImpersonate = (user: User) => {
-    if (user.id === currentUser?.id) {
-      toast.error('אתה כבר מחובר כמשתמש זה');
-      return;
-    }
-    setImpersonation(user);
-    toast.success(`אתה מחובר כעת כ-${user.full_name || user.name}`);
-  };
-
   const toggleSelectUser = (id: string) => {
     const user = users.find(u => u.id === id);
     if (isGoodAdmin(user)) return;
@@ -963,14 +1012,7 @@ export default function AdminManagement() {
     return colors[cat] || 'bg-slate-400 border-slate-500';
   };
 
-  console.log('DEBUG - Users in State:', users.length, 'Filtered Admins:', displayedAdmins.length);
-  console.log('FORCE RENDER ACTIVE: FILTER BYPASS IMPLEMENTED');
-  console.log('FINAL TABLE CONNECTED TO filteredUsers. UI SHOULD RENDER 30 ROWS.');
-  console.log('VISUAL BYPASS ACTIVE: TABLE BORDERED RED FOR DEBUGGING. Z-INDEX CHECKED.');
-
-  const effectiveScrollThreshold = Math.max(scrollThreshold || 50, 50);
-
-  console.log('HIERARCHY RESET: SINGLE SUPER ADMIN (GOOD-) PINNED. HIEL IS REGULAR ADMIN. ASSOCIATION MANAGER IS #2.');
+  const effectiveScrollThreshold = Math.max(scrollThreshold || 3, 3);
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
@@ -1418,87 +1460,16 @@ export default function AdminManagement() {
         )}
       </AnimatePresence>
 
-      {/* Impersonation Modal */}
+      {/* Modals */}
       <AnimatePresence>
-        {impersonateUser && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
-            >
-              <div className="text-center space-y-2">
-                <div className="w-20 h-20 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 border-4 border-white shadow-lg relative">
-                  {impersonateUser.avatar_url ? (
-                    <>
-                      <img 
-                        src={dataService.getPublicImageUrl(impersonateUser.avatar_url)} 
-                        alt={impersonateUser.full_name} 
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full rounded-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                      <UserIcon size={40} className="text-slate-400 hidden" />
-                    </>
-                  ) : (
-                    <UserIcon size={40} className="text-slate-400" />
-                  )}
-                  <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-2 rounded-full border-4 border-white shadow-sm">
-                    <ExternalLink size={16} />
-                  </div>
-                </div>
-                <h3 className="text-2xl font-black text-slate-900">כניסה כמנהל</h3>
-                <p className="text-slate-500 font-medium">אתה עומד להיכנס למערכת בשם <span className="font-bold text-slate-900">{impersonateUser.full_name}</span></p>
-              </div>
-
-              <div className="bg-slate-50 rounded-2xl p-4 space-y-3 border border-slate-100">
-                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase">שם משתמש</span>
-                  <span className="font-mono font-bold text-slate-700">{impersonateUser.username}</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase">טלפון</span>
-                  <span className="font-mono font-bold text-slate-700">{impersonateUser.phone || '---'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-400 uppercase">דרכי כניסה</span>
-                  <div className="flex gap-2">
-                    {impersonateUser.google_login_allowed === 'true' && (
-                      <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-600 shadow-sm">Google</span>
-                    )}
-                    <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-600 shadow-sm">סיסמא</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setImpersonateUser(null)}
-                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
-                >
-                  ביטול
-                </button>
-                <button 
-                  onClick={() => {
-                    setImpersonation(impersonateUser);
-                    setImpersonateUser(null);
-                    toast.success(`מבצע פעולות בשם: ${impersonateUser.full_name || impersonateUser.name}`);
-                  }}
-                  className="flex-1 py-3 bg-luxury-blue text-white rounded-xl font-bold shadow-lg hover:bg-opacity-90 transition-all flex items-center justify-center gap-2"
-                >
-                  <ExternalLink size={18} />
-                  הכנס למערכת
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-6">
+        <div className="bg-yellow-100 p-4 rounded-2xl border border-yellow-200 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-yellow-800 uppercase tracking-wider mb-1">מנהל ראשי</span>
+          <span className="text-sm font-black text-yellow-900">
+            {uniqueUsers.find(u => u.role === 'super_admin')?.full_name || 'לא נמצא'}
+          </span>
+        </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">סה"כ מנהלים</span>
           <span className="text-2xl font-black text-luxury-blue">{stats.total}</span>
@@ -1606,29 +1577,16 @@ export default function AdminManagement() {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-6"
           >
-            <div className="flex gap-4">
-              <button 
-                onClick={() => setConnectionView('online')}
-                className={`flex-1 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 border-2 ${
-                  connectionView === 'online' 
-                    ? 'bg-green-50 border-green-500 text-green-700 shadow-md' 
-                    : 'bg-white border-slate-100 text-slate-400 hover:border-green-200'
-                }`}
+            <div className="flex gap-4 mb-4">
+              <select
+                value={filterConnection}
+                onChange={(e) => setFilterConnection(e.target.value)}
+                className="flex-1 py-2 rounded-xl font-bold text-center bg-slate-100 text-slate-600 border-none focus:ring-0"
               >
-                <div className={`w-3 h-3 rounded-full ${connectionView === 'online' ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                מנהלים מחוברים ({Object.keys(presenceState).length})
-              </button>
-              <button 
-                onClick={() => setConnectionView('offline')}
-                className={`flex-1 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 border-2 ${
-                  connectionView === 'offline' 
-                    ? 'bg-slate-100 border-slate-500 text-slate-700 shadow-md' 
-                    : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                }`}
-              >
-                <div className={`w-3 h-3 rounded-full ${connectionView === 'offline' ? 'bg-slate-500' : 'bg-slate-300'}`}></div>
-                מנהלים לא מחוברים ({users.length - Object.keys(presenceState).length})
-              </button>
+                <option value="all">הצג הכל</option>
+                <option value="online">מחוברים בלבד</option>
+                <option value="offline">לא מחוברים</option>
+              </select>
             </div>
 
             <motion.div 
@@ -1637,9 +1595,13 @@ export default function AdminManagement() {
               animate={{ opacity: 1, y: 0 }}
               className="grid grid-cols-1 md:grid-cols-3 gap-4"
             >
-              {users.filter(u => connectionView === 'online' ? !!presenceState[u.id] : !presenceState[u.id]).map(u => (
+              {users.filter(u => {
+                if (filterConnection === 'online') return !!presenceState[u.id];
+                if (filterConnection === 'offline') return !presenceState[u.id];
+                return true;
+              }).map(u => (
                 <div key={u.id} className={`flex items-center justify-between p-4 rounded-2xl border ${
-                  connectionView === 'online' ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
+                  !!presenceState[u.id] ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
@@ -1676,9 +1638,11 @@ export default function AdminManagement() {
                   </div>
                   <div className="flex gap-1">
                     <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg" title="שלח וואטסאפ">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
+                      <Phone size={16} />
                     </button>
-                    {/* Chat button removed */}
+                    <button onClick={() => openChat(u)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="צ'אט פנימי">
+                      <MessageSquare size={16} />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1979,15 +1943,6 @@ export default function AdminManagement() {
                                 </div>
                               </div>
                               <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                                {currentUser?.role === 'super_admin' && u.id !== currentUser.id && (
-                                  <button 
-                                    onClick={() => setImpersonateUser(u)} 
-                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
-                                    title="התחבר כמנהל זה"
-                                  >
-                                    <ExternalLink size={16} />
-                                  </button>
-                                )}
                                 <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
                                 <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
                                 {!isGoodAdmin(u) && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
@@ -2180,7 +2135,7 @@ export default function AdminManagement() {
                       >
                         <div className="w-full h-full relative">
                           <img 
-                            src={dataService.getPublicImageUrl(getAvatarUrl(u) || '')} 
+                            src={getAvatarUrl(u) ? dataService.getPublicImageUrl(getAvatarUrl(u)!) : undefined} 
                             alt={u.full_name || u.name || '?'} 
                             referrerPolicy="no-referrer"
                             className={`w-full h-full object-cover ${getAvatarUrl(u) ? '' : 'hidden'}`}
@@ -2331,26 +2286,30 @@ export default function AdminManagement() {
                     </td>
                   )}
                   <td className="px-3 py-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-green-100 text-green-700`}>
-                      <CheckCircle size={12} />
-                      פעיל
-                    </span>
+                    <button 
+                      onClick={() => handleStatusChange(u)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
+                        u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}
+                    >
+                      {u.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
+                    </button>
                   </td>
                   <td className="px-3 py-4 text-left min-w-[200px]">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
                       </button>
-                      <button onClick={() => toast('הצעת משודך - בביצוע')} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
+                      <button onClick={() => openChat(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעה">
+                        <MessageSquare size={16} />
+                      </button>
+                      <button onClick={() => handleSuggestMatch(u)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
                         <Heart size={16} />
                       </button>
-                      {currentUser?.role === 'super_observer' && u.id !== currentUser.id && (
-                        <button 
-                          onClick={() => setImpersonateUser(u)} 
-                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                          title="התחבר כמנהל זה"
-                        >
-                          <ExternalLink size={16} />
+                      {currentUser?.role === 'super_admin' && (
+                        <button onClick={() => handleImpersonate(u)} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg" title="התחזה למנהל">
+                          <ShieldAlert size={16} />
                         </button>
                       )}
                       <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
@@ -2373,79 +2332,6 @@ export default function AdminManagement() {
 
       {/* WhatsApp Chat Modal removed */}
       <AnimatePresence>
-      </AnimatePresence>
-
-      {/* Impersonation Confirmation Modal */}
-      <AnimatePresence>
-        {impersonateUser && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6"
-            >
-              <div className="text-center space-y-4">
-                <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-100 border-4 border-emerald-100 mx-auto relative">
-                  {impersonateUser.avatar_url ? (
-                    <>
-                      <img 
-                        src={dataService.getPublicImageUrl(impersonateUser.avatar_url)} 
-                        alt="" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                      <div className="w-full h-full flex items-center justify-center text-slate-300 hidden">
-                        <UserIcon size={40} />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <UserIcon size={40} />
-                    </div>
-                  )}
-                  <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${presenceState[impersonateUser.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
-                </div>
-                
-                <div>
-                  <h3 className="text-2xl font-black text-slate-900">כניסה כמנהל</h3>
-                  <p className="text-slate-500 font-medium mt-1">האם אתה בטוח שברצונך להיכנס למערכת כ-</p>
-                  <p className="text-xl font-bold text-emerald-600 mt-1">{impersonateUser.full_name || impersonateUser.name}?</p>
-                </div>
-
-                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-right">
-                  <p className="text-xs text-emerald-800 font-bold leading-relaxed">
-                    * תוכל לראות ולבצע פעולות בשם המנהל הזה.
-                    <br />
-                    * כדי לחזור למשתמש שלך, לחץ על "צא מהתחזות" בסרגל העליון.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setImpersonateUser(null)}
-                  className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
-                >
-                  ביטול
-                </button>
-                <button 
-                  onClick={() => {
-                    handleImpersonate(impersonateUser);
-                    setImpersonateUser(null);
-                  }}
-                  className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
-                >
-                  <ExternalLink size={18} />
-                  היכנס כמנהל
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
 
       {/* Bulk Delete Confirmation Modal */}

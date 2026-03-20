@@ -6,7 +6,6 @@ import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import ControlCenter from './pages/ControlCenter';
-import IdentitySelector from './pages/IdentitySelector';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import DailySuggestionsPage from './pages/DailySuggestionsPage';
@@ -45,7 +44,7 @@ import { ActiveManagersWidget } from './components/ActiveManagersWidget';
 import { TransferModal } from './components/TransferModal';
 
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
-  const { user, effectiveUser, loading } = useAuth();
+  const { user, loading } = useAuth();
   
   // Check localStorage for super_observer to prevent redirect during loading
   const localUserStr = localStorage.getItem('current_user');
@@ -60,18 +59,6 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 
   // If user is not logged in and not super_observer, redirect to login
   if (!user && !isSuperObserver) return <Navigate to="/login" />;
-  
-  // If loading and isSuperObserver, show loading
-  if (loading && isSuperObserver) return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-gray">
-      <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  );
-  
-  // If user is super_observer but not effectiveUser, redirect to identity-selector
-  if (user?.role === 'super_observer' && !effectiveUser && window.location.pathname !== '/identity-selector') {
-    return <Navigate to="/identity-selector" />;
-  }
   
   // If user is candidate, restrict access
   if (user?.role === 'candidate') {
@@ -89,8 +76,9 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
 }
 
 function Sidebar() {
-  const { user, effectiveUser, logout, refreshUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user, logout, refreshUser } = useAuth();
+  const activeUser = user;
+  const effectiveUser = user;
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -110,16 +98,7 @@ function Sidebar() {
   });
 
   React.useEffect(() => {
-    console.log('SYSTEM CLEANED AND UI UPDATED SUCCESSFULLY');
-    console.log('WIDGET MODES ENABLED: MODAL AND CAROUSEL OPTIONS ACTIVE');
-    console.log('MATCHES & ADMINS PHOTO SYSTEM FULLY SYNCED AND TESTED');
-    console.log('FINAL SYNC: DATABASE COLUMNS ALIGNED, UPSERT FIXED, PHOTO DISPLAY VERIFIED');
-    console.log('STORAGE UPLOAD STABILIZED: ASYNC HANDSHAKE FIXED, AVATAR_URL MAPPED');
-    console.log('ADMIN DELETE SYNCHRONIZED: REMOVED INVALID FIELDS FROM SELECT QUERY');
-    console.log('DB ALIGNED & AVATAR_URL MAPPING ACTIVE');
-    console.log('PROFILES COLUMN SYNCED - ERRORS CLEARED');
-    console.log('AIRTABLE PHOTO SYNC ACTIVE: URL MAPPING AND DB COLUMNS VERIFIED');
-    console.log('FINAL PHOTO SYNC: AIRTABLE URLS MAPPED TO IMAGE_URL');
+    // STABLE_BUILD_COMPLETE
   }, []);
 
   React.useEffect(() => {
@@ -361,13 +340,13 @@ function Sidebar() {
       <Link
         to={item.path}
         onClick={(e) => {
-          if (effectiveUser?.role === 'super_observer') {
+          if (user?.role === 'super_observer') {
             e.preventDefault();
           } else {
             setIsOpen(false);
           }
         }}
-        title={effectiveUser?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
+        title={user?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
         className={`sidebar-item flex-1 ${
           location.pathname === item.path ? 'sidebar-item-active' : ''
         } ${
@@ -382,7 +361,7 @@ function Sidebar() {
           item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
         } ${
           item.isGold ? '!bg-[#D4AF37]/10 !text-[#D4AF37] border border-[#D4AF37]/20 font-bold hover:!bg-[#D4AF37]/20' : ''
-        } ${effectiveUser?.role === 'super_observer' && !item.isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
+        } ${user?.role === 'super_observer' && !item.isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         {item.icon}
         <span className={`font-medium flex-1 ${item.isGold ? 'text-[#D4AF37]' : ''}`}>{item.label}</span>
@@ -450,7 +429,7 @@ function Sidebar() {
             className={`fixed lg:sticky top-0 right-0 h-screen w-72 bg-white border-l border-slate-100 z-50 flex flex-col shadow-xl lg:shadow-none ${!isOpen && 'hidden lg:flex'}`}
           >
             <div className="p-8 border-b border-slate-50 hidden lg:block">
-              {effectiveUser?.role === 'super_observer' && (
+              {user?.role === 'super_observer' && (
                 <div className="mb-4 px-3 py-1.5 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-lg text-[10px] font-bold text-center">
                   מצב צופה פעיל - הרשאות קריאה בלבד
                 </div>
@@ -594,12 +573,10 @@ function Sidebar() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-bold truncate ${isMalachi ? 'text-[#D4AF37]' : 'text-text-main'}`}>
-                    {isMalachi ? 'מלאכי צוריאל - מנהל העמותה' : (effectiveUser ? (effectiveUser.full_name || effectiveUser.name) : user?.full_name)}
+                    {isMalachi ? 'מלאכי צוריאל - מנהל העמותה' : user?.full_name}
                   </p>
                   <p className={`text-xs font-medium truncate ${isMalachi ? 'text-[#D4AF37]/80' : 'text-text-secondary'}`}>
                     {isMalachi ? 'מנהל העמותה' : (
-                      effectiveUser ? 
-                        (effectiveUser.role === 'super_admin' ? 'מנהל ראשי' : effectiveUser.role === 'team_leader' ? getGenderedText(effectiveUser.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל') :
                         (user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
                     )}
                   </p>
@@ -774,10 +751,9 @@ function Header() {
 }
 
 function MainLayout({ children }: { children: React.ReactNode }) {
-  const { user, effectiveUser, setImpersonation, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isImpersonating, setIsImpersonating] = useState(false);
   const [activeChats, setActiveChats] = useState<{id: string, name: string, initialMessage?: string}[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [multiChatMode, setMultiChatMode] = useState(() => {
@@ -790,17 +766,6 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const [showMoveLimitModal, setShowMoveLimitModal] = useState(false);
   const [chatResetKeys, setChatResetKeys] = useState<Record<string, number>>({});
   const [showConnectedAdmins, setShowConnectedAdmins] = useState(false);
-
-  const originalAdmin = React.useMemo(() => {
-    const stored = localStorage.getItem('original_admin_user');
-    return stored ? JSON.parse(stored) : null;
-  }, [user]);
-
-  const handleReturnToAdmin = () => {
-    setImpersonation(null);
-    toast.success('חזרת לניהול הראשי בהצלחה');
-    navigate('/admins');
-  };
 
   const handleResetChat = (chatId: string) => {
     setChatResetKeys(prev => ({
@@ -938,59 +903,6 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
-  React.useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const impersonateId = params.get('impersonate');
-
-    if (impersonateId) {
-      setIsImpersonating(true);
-      const handleImpersonation = async () => {
-        try {
-          // Wait a bit for data service to be ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const userToImpersonate = await dataService.getUserById(impersonateId);
-          if (userToImpersonate) {
-            sessionStorage.setItem('current_user', JSON.stringify(userToImpersonate));
-            await refreshUser();
-            toast.success(`התחברת בהצלחה כ-${userToImpersonate.full_name}`);
-            // Remove query param
-            navigate(location.pathname, { replace: true });
-          } else {
-            // If not found, try to force refresh users first
-            await dataService.getUsers();
-            const retryUser = await dataService.getUserById(impersonateId);
-            if (retryUser) {
-              sessionStorage.setItem('current_user', JSON.stringify(retryUser));
-              await refreshUser();
-              toast.success(`התחברת בהצלחה כ-${retryUser.full_name}`);
-              navigate(location.pathname, { replace: true });
-            } else {
-              toast.error('מנהל לא נמצא - נסה שוב');
-            }
-          }
-        } catch (err) {
-          console.error('Impersonation error:', err);
-          toast.error('שגיאה בהתחברות כמנהל');
-        } finally {
-          setIsImpersonating(false);
-        }
-      };
-      handleImpersonation();
-    }
-  }, [location.search, refreshUser, navigate]);
-
-  if (isImpersonating) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-bg-gray">
-        <div className="text-center space-y-4">
-          <div className="w-12 h-12 border-4 border-luxury-blue border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-lg font-bold text-luxury-blue">מתחבר למערכת...</p>
-        </div>
-      </div>
-    );
-  }
-
   if (!user) return <>{children}</>;
 
   return (
@@ -998,30 +910,6 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col lg:flex-row min-h-screen bg-bg-gray">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          {effectiveUser && (
-            <div className={`border-b px-6 py-2 flex items-center justify-between sticky top-0 z-[40] ${effectiveUser.role === 'super_observer' ? 'bg-red-600 text-white' : 'bg-amber-50 border-amber-100'}`}>
-              <div className="flex items-center gap-3 font-bold text-sm">
-                {effectiveUser.role === 'super_observer' ? (
-                  <>
-                    <ShieldAlert size={18} className="text-white" />
-                    <span>מלאכי צוריאל - מנהל עמותת החצי השני</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldAlert size={18} className="text-amber-500" />
-                    <span>מבצע פעולות בשם: {effectiveUser.full_name || effectiveUser.name} - מצב צפייה בנתוני מנהל - מסונן</span>
-                  </>
-                )}
-              </div>
-              <button 
-                onClick={effectiveUser.role === 'super_observer' ? () => navigate('/identity-selector') : handleReturnToAdmin}
-                className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all shadow-sm flex items-center gap-2 ${effectiveUser.role === 'super_observer' ? 'bg-white text-red-600 hover:bg-red-50' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
-              >
-                <ArrowLeftRight size={14} />
-                {effectiveUser.role === 'super_observer' ? 'החלף זהות צפייה' : 'חזור לניהול שלי'}
-              </button>
-            </div>
-          )}
           <Header />
           <main className="flex-1 overflow-y-auto">
             {children}
@@ -1152,7 +1040,6 @@ export default function App() {
             <MainLayout>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/identity-selector" element={<ProtectedRoute><IdentitySelector /></ProtectedRoute>} />
               <Route path="/admin-dashboard" element={<ProtectedRoute superAdminOnly><ControlCenter /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />

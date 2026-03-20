@@ -5,8 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 
 export default function PendingContactPage() {
-  const { user, effectiveUser } = useAuth();
-  const activeUser = effectiveUser || user;
+  const { user } = useAuth();
+  const activeUser = user;
   const [candidates, setCandidates] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 

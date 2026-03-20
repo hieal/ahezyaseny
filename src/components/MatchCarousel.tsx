@@ -7,6 +7,10 @@ import { motion, AnimatePresence } from 'motion/react';
 interface MatchCarouselProps {
   matches: Match[];
   onMatchClick: (match: Match) => void;
+  onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
+  onChat: (match: Match) => void;
+  onSuggest: (match: Match) => void;
   rows?: number;
   cols?: number;
   minimal?: boolean;
@@ -17,6 +21,10 @@ interface MatchCarouselProps {
 export const MatchCarousel: React.FC<MatchCarouselProps> = ({ 
   matches, 
   onMatchClick,
+  onDelete,
+  onEdit,
+  onChat,
+  onSuggest,
   rows: initialRows = 1,
   cols: initialCols = 3,
   minimal = false,
@@ -52,7 +60,7 @@ export const MatchCarousel: React.FC<MatchCarouselProps> = ({
         >
           {displayedMatches.map((match) => (
             <div key={match.id} onClick={() => onMatchClick(match)} className="cursor-pointer w-full">
-              <MatchCard match={match} minimal={minimal} onNext={next} onPrev={prev} isViewer={isViewer} />
+              <MatchCard match={match} minimal={minimal} onNext={next} onPrev={prev} isViewer={isViewer} onDelete={onDelete} onEdit={onEdit} onChat={onChat} onSuggest={onSuggest} />
             </div>
           ))}
         </motion.div>
