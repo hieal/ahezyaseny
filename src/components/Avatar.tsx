@@ -1,16 +1,13 @@
 import React from 'react';
+import { getAvatarUrl, getAvatarFallback } from '../utils/image';
 
 interface AvatarProps {
   name?: string;
   url?: string | null;
+  userId?: string;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
-
-const getInitials = (name?: string) => {
-  if (!name) return '?';
-  return name.charAt(0);
-};
 
 const getColor = (name?: string) => {
   if (!name) return 'bg-slate-500';
@@ -26,30 +23,30 @@ const getColor = (name?: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-export const Avatar: React.FC<AvatarProps> = ({ name, url, size = 'md', className = '' }) => {
+export const Avatar: React.FC<AvatarProps> = ({ name, url, userId, size = 'md', className = '' }) => {
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
     md: 'w-10 h-10 text-sm',
     lg: 'w-16 h-16 text-2xl'
   };
 
-  if (url) {
+  const processedUrl = getAvatarUrl(url, userId);
+
+  if (processedUrl) {
     return (
       <img
-        src={url}
+        key={userId}
+        src={processedUrl}
         alt={name || ''}
         className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-        }}
+        referrerPolicy="no-referrer"
       />
     );
   }
 
   return (
-    <div className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-white ${getColor(name)} ${className}`}>
-      {getInitials(name)}
+    <div key={userId} className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-white ${getColor(name)} ${className}`}>
+      {getAvatarFallback(name || '')}
     </div>
   );
 };

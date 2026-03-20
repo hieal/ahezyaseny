@@ -6,6 +6,7 @@ export interface ScannedAdmin {
   role?: string;
   group?: string;
   isSelected?: boolean;
+  isManager?: boolean;
   existingUser?: User;
 }
 

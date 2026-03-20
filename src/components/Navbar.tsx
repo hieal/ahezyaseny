@@ -1,11 +1,13 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, UserCircle } from 'lucide-react';
-import { Logo } from './Logo';
+import { LogOut } from 'lucide-react';
 import { Avatar } from './Avatar';
+import { getGenderedText } from '../utils/gender';
 
 export const Navbar: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, activeRole, setActiveRole } = useAuth();
+
+  const isDualRole = user?.role === 'admin' && user?.is_team_leader;
 
   return (
     <>
@@ -15,15 +17,24 @@ export const Navbar: React.FC = () => {
             <Avatar name={user?.full_name || user?.username} url={user?.avatar_url} size="md" />
             <div>
               <h1 className="font-bold text-slate-900">
-                {user?.role === 'super_observer' ? (
-                  <span className="text-[#D4AF37]">מנהל העמותה</span>
-                ) : (
-                  user?.role === 'candidate' ? 'משודך' : 'מנהל'
-                )}
+                {getGenderedText(user?.gender, 'ברוך הבא', 'ברוכה הבאה')} {user?.full_name}
               </h1>
-              <p className="text-xs text-slate-500 font-medium">
-                {user?.role === 'super_observer' ? 'מנהל העמותה' : user?.full_name}
-              </p>
+              {isDualRole && (
+                <div className="flex gap-1 mt-1">
+                  <button 
+                    onClick={() => setActiveRole('admin')}
+                    className={`px-2 py-0.5 text-[10px] rounded ${activeRole === 'admin' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    מנהל
+                  </button>
+                  <button 
+                    onClick={() => setActiveRole('team_leader')}
+                    className={`px-2 py-0.5 text-[10px] rounded ${activeRole === 'team_leader' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    ראש צוות
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">

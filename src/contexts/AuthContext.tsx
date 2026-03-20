@@ -6,11 +6,13 @@ import { isVercel } from '../utils/env';
 
 interface AuthContextType {
   user: User | null;
+  activeRole: 'admin' | 'team_leader' | null;
   loading: boolean;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isReadOnly: boolean;
+  setActiveRole: (role: 'admin' | 'team_leader') => void;
   selectRole: (role: 'admin' | 'team_leader') => void;
 }
 
@@ -18,6 +20,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
@@ -158,6 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setShowRolePicker(true);
     } else {
       setUser(userData);
+      setActiveRole(userData.role as 'admin' | 'team_leader');
       localStorage.setItem('current_user', JSON.stringify(userData));
     }
   };
@@ -165,15 +169,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const selectRole = (role: 'admin' | 'team_leader') => {
     if (!pendingUser) return;
     
-    const effective = { ...pendingUser };
-    if (role === 'team_leader') {
-      effective.role = 'team_leader';
-    } else {
-      effective.role = 'admin';
-    }
-    
-    setUser(effective);
-    localStorage.setItem('current_user', JSON.stringify(effective));
+    setUser(pendingUser);
+    setActiveRole(role);
+    localStorage.setItem('current_user', JSON.stringify(pendingUser));
     setShowRolePicker(false);
     setPendingUser(null);
   };
@@ -188,7 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isReadOnly = user?.role === 'super_observer';
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, isReadOnly, selectRole }}>
+    <AuthContext.Provider value={{ user, activeRole, loading, login, logout, refreshUser, isReadOnly, setActiveRole: (role) => setActiveRole(role), selectRole }}>
       {children}
       {showRolePicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

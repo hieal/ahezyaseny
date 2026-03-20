@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { dataService } from '../services/dataService';
 import { User } from '../types';
+import { getAvatarUrl, getAvatarFallback } from '../utils/image';
 import { getGenderedText } from '../utils/gender';
 import { Users, Phone, MessageSquare, User as UserIcon, Search, CheckCircle, Filter, ChevronDown, UserCheck, LayoutGrid, Table as TableIcon, Layers, ChevronRight, ChevronLeft } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -68,8 +69,12 @@ export default function ConnectedAdmins() {
     if (filter === 'offline') matchesStatus = !isOnline;
     
     // Include if it's a target role OR it's Malachi, AND matches search/status
-    // Removed matchesGroup dependency
-    return (isTargetRole || isMalachi) && matchesSearch && matchesRole && matchesStatus;
+    // Ensure we don't show the main admin (god) multiple times if possible, 
+    // though the current logic seems to rely on profiles table.
+    // The main admin ID is b724069c-2a51-4c99-9dcb-178e488d6b4b
+    const isMainAdmin = admin.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+    
+    return !isMainAdmin && (isTargetRole || isMalachi) && matchesSearch && matchesRole && matchesStatus;
   });
 
   const onlineAdminsCount = allAdmins.filter(admin => {
@@ -225,11 +230,13 @@ export default function ConnectedAdmins() {
                             <div className="flex items-center gap-3">
                               <div className="relative">
                                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border border-slate-200">
-                                  {admin.avatar_url ? (
-                                    <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                  ) : (
-                                    <UserIcon size={20} />
-                                  )}
+                                  <Avatar 
+                                    name={admin.full_name || ''}
+                                    url={getAvatarUrl(admin.avatar_url, admin.id)}
+                                    userId={admin.id}
+                                    size="md"
+                                    className="w-full h-full object-cover"
+                                  />
                                 </div>
                                 <OnlineIndicator isOnline={isOnline} className="absolute bottom-0 right-0 border-2 border-white" />
                               </div>
@@ -323,11 +330,13 @@ export default function ConnectedAdmins() {
                     <div className="flex items-start justify-between mb-4 relative z-10">
                       <div className="relative">
                         <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-2 border-white shadow-md">
-                          {admin.avatar_url ? (
-                            <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <UserIcon size={40} />
-                          )}
+                          <Avatar 
+                            name={admin.full_name || ''}
+                            url={getAvatarUrl(admin.avatar_url, admin.id)}
+                            userId={admin.id}
+                            size="lg"
+                            className="w-full h-full object-cover"
+                          />
                         </div>
                         <OnlineIndicator isOnline={isOnline} className="absolute -bottom-1 -right-1 border-4 border-white w-5 h-5" />
                       </div>
@@ -417,11 +426,13 @@ export default function ConnectedAdmins() {
                         >
                           <div className="relative mb-6">
                             <div className="w-32 h-32 rounded-[32px] bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-4 border-white shadow-xl rotate-3 group-hover:rotate-0 transition-transform">
-                              {admin.avatar_url ? (
-                                <img src={dataService.getPublicImageUrl(admin.avatar_url)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <UserIcon size={64} />
-                              )}
+                              <Avatar 
+                                name={admin.full_name || ''}
+                                url={getAvatarUrl(admin.avatar_url, admin.id)}
+                                userId={admin.id}
+                                size="lg"
+                                className="w-full h-full object-cover"
+                              />
                             </div>
                             <OnlineIndicator isOnline={isOnline} className="absolute bottom-2 right-2 border-4 border-white w-8 h-8" />
                           </div>

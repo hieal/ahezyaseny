@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { getAvatarUrl, getAvatarFallback } from '../utils/image';
+import { Avatar } from '../components/Avatar';
 import { User, WhatsAppGroup, ScannedAdmin } from '../types';
 import { ComparisonModal } from '../components/ComparisonModal';
 import { toast } from 'react-hot-toast';
@@ -39,17 +41,9 @@ import { dataService } from '../services/dataService';
 import { supabase } from '../services/supabase';
 
 const getAvatarUrl = (user: any) => {
-  if (user.local_image_url) return user.local_image_url;
-  if (user.avatar_url && !user.avatar_url.includes('airtableusercontent')) {
-    return user.avatar_url;
-  }
-  
-  const fallback = user.image_url || user.avatar_url;
-  if (fallback && fallback.includes('airtableusercontent')) {
-    return null;
-  }
-  
-  return fallback;
+  if (user.avatar_url) return user.avatar_url;
+  if (user.image_url) return user.image_url;
+  return null;
 };
 
 const isGoodAdmin = (admin: any) => admin?.role !== 'observer';
@@ -166,6 +160,7 @@ export default function AdminManagement() {
   const [isAirtableSyncEnabled, setIsAirtableSyncEnabled] = useState(false);
   const [isFetchingWhapi, setIsFetchingWhapi] = useState(false);
   const [comparisonAdmin, setComparisonAdmin] = useState<ScannedAdmin | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'carousel'>('table');
 
   useEffect(() => {
     // Initialization
@@ -186,7 +181,7 @@ export default function AdminManagement() {
     try {
       const { data: usersData, error } = await supabase
         .from('profiles')
-        .select('id, full_name, role, username, phone, email, affiliation_group')
+        .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url')
         .order('full_name');
         
       if (error) {
@@ -225,15 +220,19 @@ export default function AdminManagement() {
 
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
-  const uniqueUsers = Array.from(new Map(users.filter(u => !!u).map(u => {
+  const uniqueUsers = Array.from(new Map(users.filter(u => !!u && u.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b').map(u => {
     const key = u.phone || u.id;
     return [key, u];
   })).values());
 
+  const mainAdmin = users.find(u => u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b');
+  const finalUsers = mainAdmin ? [mainAdmin, ...uniqueUsers] : uniqueUsers;
+
   const filteredUsers = useMemo(() => {
-    return uniqueUsers.filter(u => {
+    return finalUsers.filter(u => {
       // 1. Role filter (must be some kind of admin or super_observer)
-      const isManager = u.role === 'admin' || u.role === 'super_admin' || u.role === 'team_leader' || u.role === 'viewer' || u.role === 'super_observer';
+      const isMainAdmin = u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+      const isManager = isMainAdmin || u.role === 'admin' || u.role === 'super_admin' || u.role === 'team_leader' || u.role === 'viewer' || u.role === 'super_observer';
       if (!isManager) return false;
 
       // 2. Search filter
@@ -246,7 +245,7 @@ export default function AdminManagement() {
       }
 
       // 3. Category filter
-      if (filterCategory.length > 0) {
+      if (!isMainAdmin && filterCategory.length > 0) {
         const userCat = u.category?.trim();
         const userAffil = u.affiliation_group?.trim();
         const userSecCat = u.secondary_category?.trim();
@@ -330,6 +329,7 @@ export default function AdminManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     try {
       if (editingUser && editingUser.id) {
         await dataService.updateUser(editingUser.id, {
@@ -338,6 +338,7 @@ export default function AdminManagement() {
           email: formData.email,
           role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
           status: formData.status as "active" | "inactive",
+          gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
@@ -355,49 +356,41 @@ export default function AdminManagement() {
         });
         toast.success('המנהל עודכן');
       } else {
-        const existingUser = users.find(u => u.email === formData.email);
-        if (existingUser && formData.role === 'team_leader') {
-          await dataService.updateUser(existingUser.id, {
-            ...existingUser,
-            role: 'team_leader'
-          });
-          toast.success('המנהל עודכן לראש צוות');
-        } else {
-          const newUser = await dataService.createUser({
-            ...formData,
-            name: formData.full_name,
-            password_plain: formData.password || '12345678',
-            role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
-            status: formData.status as "active" | "inactive",
-            gender: (formData.gender || undefined) as "male" | "female" | undefined,
-            google_login_allowed: formData.google_login_allowed as "true" | "false",
-            phone: formData.phone,
-            avatar_url: formData.avatar_url,
-            affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
-            deleted_at: null,
-            daily_message_template: null,
-            is_approved: 1,
-            is_from_file: 0
-          });
+        // Create new user
+        const newUser = await dataService.createUser({
+          ...formData,
+          name: formData.full_name,
+          password_plain: formData.password || '12345678',
+          role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
+          status: formData.status as "active" | "inactive",
+          gender: (formData.gender || undefined) as "male" | "female" | undefined,
+          google_login_allowed: formData.google_login_allowed as "true" | "false",
+          phone: formData.phone,
+          avatar_url: formData.avatar_url,
+          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
+          deleted_at: null,
+          daily_message_template: null,
+          is_approved: 1,
+          is_from_file: 0
+        });
 
-          // Check for orphaned candidates
-          const orphaned = await dataService.getOrphanedCandidatesForAdmin(formData.full_name);
-          if (orphaned.length > 0) {
-            setOrphanedCandidates(orphaned);
-            setReturningAdmin({ id: newUser.id, name: formData.full_name });
-            setShowReassignModal(true);
-          }
-
-          await dataService.logActivity({
-            user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-            user_name: currentUser?.name || 'System',
-            action: 'יצירת מנהל',
-            details: `יצירת מנהל חדש: ${formData.full_name}`,
-            entity_type: 'user',
-            entity_id: newUser.id
-          });
-          toast.success('מנהל חדש נוצר');
+        // Check for orphaned candidates
+        const orphaned = await dataService.getOrphanedCandidatesForAdmin(formData.full_name);
+        if (orphaned.length > 0) {
+          setOrphanedCandidates(orphaned);
+          setReturningAdmin({ id: newUser.id, name: formData.full_name });
+          setShowReassignModal(true);
         }
+
+        await dataService.logActivity({
+          user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: currentUser?.name || 'System',
+          action: 'יצירת מנהל',
+          details: `יצירת מנהל חדש: ${formData.full_name}`,
+          entity_type: 'user',
+          entity_id: newUser.id
+        });
+        toast.success('מנהל חדש נוצר');
       }
       
       setShowModal(false);
@@ -419,7 +412,7 @@ export default function AdminManagement() {
         assigned_group_id: '',
         is_team_leader: false
       });
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       toast.error('שגיאה בשמירה');
     }
@@ -541,7 +534,13 @@ export default function AdminManagement() {
           }
 
           // Check for existing user
-          const existingUser = users.find(u => u.email === admin.email || u.phone === admin.phone);
+          const cleanPhone = (p: string) => p.replace(/[^0-9]/g, '');
+          const cleanEmail = (e: string) => e.toLowerCase().trim();
+          
+          const existingUser = users.find(u => 
+            (u.email && cleanEmail(u.email) === cleanEmail(admin.email || '')) || 
+            (u.phone && cleanPhone(u.phone) === cleanPhone(admin.phone || ''))
+          );
           const scannedAdmin: ScannedAdmin = {
             full_name: admin.full_name || '',
             email: admin.email || '',
@@ -550,6 +549,7 @@ export default function AdminManagement() {
             role: csvRole,
             group: csvCategory,
             isSelected: true,
+            isManager: false,
             existingUser: existingUser
           };
 
@@ -612,8 +612,12 @@ export default function AdminManagement() {
   };
 
   const confirmDelete = (user: User) => {
-    if (isGoodAdmin(user)) {
-      toast.error('לא ניתן למחוק את מנהל העל הראשי');
+    if (user.full_name === 'מנהל ראשי' || user.email === 'god') {
+      toast.error('לא ניתן למחוק את המנהל הראשי');
+      return;
+    }
+    if (user.full_name === 'מלאכי צוריאל') {
+      toast.error('לא ניתן למחוק מנהל זה');
       return;
     }
     if (user.id === currentUser?.id) {
@@ -638,7 +642,7 @@ export default function AdminManagement() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
-    if (userToDelete.role === 'super_admin' || userToDelete.role === 'super_observer') {
+    if (userToDelete.role === 'super_admin' || userToDelete.role === 'super_observer' || userToDelete.id === 'b72418a0-7164-4424-9467-f495101a9763' || userToDelete.full_name === 'מלאכי צוריאל') {
       toast.error('לא ניתן למחוק מנהל זה');
       return;
     }
@@ -647,7 +651,6 @@ export default function AdminManagement() {
         await dataService.deleteUser(userToDelete.id);
       } catch (error: any) {
         if (error.message && error.message.includes('409')) {
-          // No log here
           toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
           return;
         }
@@ -669,7 +672,6 @@ export default function AdminManagement() {
       toast.success('המנהל נמחק');
       fetchUsers();
     } catch (err) {
-      console.error('שגיאה במחיקה:', err);
       toast.error('שגיאה במחיקה - בדוק קונסול');
     } finally {
       setShowDeleteConfirm(false);
@@ -1371,26 +1373,7 @@ export default function AdminManagement() {
               <div className="p-6 space-y-4">
                 <div className="flex justify-center mb-4">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50">
-                    {tempAvatarUrl ? (
-                      <>
-                        <img 
-                          src={dataService.getPublicImageUrl(tempAvatarUrl)} 
-                          className="w-full h-full object-cover" 
-                          referrerPolicy="no-referrer" 
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                        <div className="w-full h-full flex items-center justify-center text-slate-300 hidden">
-                          <UserIcon size={40} />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-300">
-                        <UserIcon size={40} />
-                      </div>
-                    )}
+                    <Avatar name={avatarModalUser?.full_name || avatarModalUser?.name} url={tempAvatarUrl} size="lg" className="w-24 h-24" />
                   </div>
                 </div>
                 
@@ -1617,26 +1600,7 @@ export default function AdminManagement() {
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      {getAvatarUrl(u) ? (
-                        <>
-                          <img 
-                            src={dataService.getPublicImageUrl(getAvatarUrl(u))} 
-                            className="w-10 h-10 rounded-full object-cover" 
-                            referrerPolicy="no-referrer" 
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                            }}
-                          />
-                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 hidden">
-                            <UserIcon size={20} className="text-slate-400" />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
-                          <UserIcon size={20} className="text-slate-400" />
-                        </div>
-                      )}
+                      <Avatar name={u.full_name || u.name} url={getAvatarUrl(u)} size="md" className="w-10 h-10" />
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
@@ -1898,26 +1862,7 @@ export default function AdminManagement() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-white relative shadow-lg group-hover/card:scale-105 transition-transform duration-500">
-                                  {getAvatarUrl(u) ? (
-                                    <>
-                                      <img 
-                                        src={dataService.getPublicImageUrl(getAvatarUrl(u))} 
-                                        className="w-full h-full object-cover" 
-                                        referrerPolicy="no-referrer" 
-                                        onError={(e) => {
-                                          (e.target as HTMLImageElement).style.display = 'none';
-                                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                                        }}
-                                      />
-                                      <div className="w-full h-full flex items-center justify-center text-slate-400 hidden">
-                                        <UserIcon size={24} className="text-slate-400" />
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                      <UserIcon size={24} className="text-slate-400" />
-                                    </div>
-                                  )}
+                                  <Avatar name={u.full_name || u.name} url={getAvatarUrl(u)} size="md" className="w-full h-full" />
                                   <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
                                   
                                   {/* Affiliation Badge - Upgraded */}
@@ -1957,7 +1902,7 @@ export default function AdminManagement() {
                               <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
                                 <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
                                 <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
-                                {!isGoodAdmin(u) && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                                {u.full_name !== 'מנהל ראשי' && u.email !== 'god' && u.full_name !== 'מלאכי צוריאל' && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
                               </div>
                             </div>
                             
@@ -2145,20 +2090,26 @@ export default function AdminManagement() {
                           setShowAvatarModal(true);
                         }}
                       >
-                        <div className="w-full h-full relative">
-                          <img 
-                            src={getAvatarUrl(u) ? dataService.getPublicImageUrl(getAvatarUrl(u)!) : undefined} 
-                            alt={u.full_name || u.name || '?'} 
-                            referrerPolicy="no-referrer"
-                            className={`w-full h-full object-cover ${getAvatarUrl(u) ? '' : 'hidden'}`}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                            }}
-                          />
-                          <div className={`w-full h-full flex items-center justify-center bg-slate-200 text-slate-400 ${getAvatarUrl(u) ? 'hidden' : ''}`}>
-                            <UserIcon size={20} />
-                          </div>
+                        <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                          {u.full_name === 'חיאל בוקריס' && u.avatar_url ? (
+                            <img 
+                              src={u.avatar_url} 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                              alt={u.full_name || u.name || 'מנהל'}
+                            />
+                          ) : u.avatar_url && !u.avatar_url.includes('airtable') ? (
+                            <img 
+                              src={u.avatar_url} 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                              alt={u.full_name || u.name || 'מנהל'}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-luxury-blue text-white font-bold">
+                              {getAvatarFallback(u.full_name || u.name || '?')}
+                            </div>
+                          )}
                         </div>
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                           <Edit2 size={16} className="text-white" />
@@ -2327,7 +2278,7 @@ export default function AdminManagement() {
                       <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
                         <Edit2 size={16} />
                       </button>
-                      {u.id !== currentUser?.id && !isGoodAdmin(u) && (
+                      {u.full_name !== 'מנהל ראשי' && u.email !== 'god' && u.full_name !== 'מלאכי צוריאל' && (
                         <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
                           <Trash2 size={16} />
                         </button>
@@ -2651,11 +2602,20 @@ export default function AdminManagement() {
                 )}
 
                 {(isScanning || scannedAdmins.length > 0) && (
-                  <div className="space-y-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex gap-2">
+                      <button onClick={() => setViewMode('table')} className={`px-3 py-1 text-xs rounded-lg ${viewMode === 'table' ? 'bg-luxury-blue text-white' : 'bg-slate-100'}`}>טבלה</button>
+                      <button onClick={() => setViewMode('carousel')} className={`px-3 py-1 text-xs rounded-lg ${viewMode === 'carousel' ? 'bg-luxury-blue text-white' : 'bg-slate-100'}`}>קרוסלה</button>
+                    </div>
                     <div className="flex justify-between text-xs font-bold text-text-secondary uppercase tracking-wider">
                       <span>{isScanning ? 'סורק קבצים...' : 'סריקה הושלמה'}</span>
-                      <span>{isScanning ? `${scanProgress}%` : `${scannedAdmins.length} מנהלים נמצאו סה"כ`}</span>
+                      <span className="mr-2">{isScanning ? `${scanProgress}%` : `${scannedAdmins.length} מנהלים נמצאו סה"כ`}</span>
                     </div>
+                  </div>
+                )}
+
+                {(isScanning || scannedAdmins.length > 0) && (
+                  <div className="space-y-3 mb-4">
                     <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                       <motion.div 
                         initial={{ width: 0 }}
@@ -2666,56 +2626,94 @@ export default function AdminManagement() {
                   </div>
                 )}
 
-                <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                  <p className="text-xs text-amber-700 font-bold leading-relaxed">
-                    * סיסמת ברירת המחדל לכל המנהלים תהיה: <span className="underline">12345678</span>
-                  </p>
-                </div>
-
                 {scannedAdmins?.length > 0 && (
-                  <div className="mt-4 max-h-60 overflow-y-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-xs">
-                      <thead className="bg-slate-100">
-                        <tr>
-                          <th className="p-2"><input type="checkbox" checked={scannedAdmins.every(a => a.isSelected)} onChange={(e) => setScannedAdmins(scannedAdmins.map(a => ({...a, isSelected: e.target.checked})))} /></th>
-                          <th className="text-right p-2">שם</th>
-                          <th className="text-right p-2">אימייל</th>
-                          <th className="text-right p-2">תפקיד</th>
-                          <th className="text-right p-2">קבוצה</th>
-                          <th className="text-right p-2">סטטוס</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scannedAdmins?.map((admin, idx) => (
-                          <tr key={idx} className={admin.existingUser ? 'bg-amber-50' : ''}>
-                            <td className="p-2"><input type="checkbox" checked={admin.isSelected} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isSelected: e.target.checked} : a))} /></td>
-                            <td className="p-2">{admin.full_name} {admin.existingUser && <span className="text-amber-600 font-bold ml-1">(קיים)</span>}</td>
-                            <td className="p-2">{admin.email}</td>
-                            <td className="p-2">
-                              <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-transparent border-none">
-                                <option value="admin">מנהל</option>
-                                <option value="team_leader">ראש צוות</option>
-                                <option value="viewer">צופה</option>
-                              </select>
-                            </td>
-                            <td className="p-2">
-                              <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-transparent border-none">
-                                <option value="">ללא</option>
-                                {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                              </select>
-                            </td>
-                            <td className="p-2">
-                              {admin.existingUser ? (
-                                <button className="text-blue-600 underline font-bold" onClick={() => setComparisonAdmin(admin)}>הצג השוואה</button>
-                              ) : (
-                                <span className="text-red-600 font-bold">לא קיים במערכת</span>
-                              )}
-                            </td>
+                  viewMode === 'table' ? (
+                    <div className="mt-4 max-h-[400px] overflow-y-auto border border-slate-200 rounded-xl relative">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 sticky top-0 z-10">
+                          <tr>
+                            <th className="p-2"><input type="checkbox" checked={scannedAdmins.every(a => a.isSelected)} onChange={(e) => setScannedAdmins(scannedAdmins.map(a => ({...a, isSelected: e.target.checked})))} /></th>
+                            <th className="text-right p-2">שם</th>
+                            <th className="text-right p-2">אימייל</th>
+                            <th className="text-right p-2">תפקיד</th>
+                            <th className="text-right p-2">קבוצה</th>
+                            <th className="text-right p-2">סטטוס</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {scannedAdmins?.map((admin, idx) => (
+                            <tr key={idx} className={admin.existingUser ? 'bg-amber-50' : ''}>
+                              <td className="p-2"><input type="checkbox" checked={admin.isSelected} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isSelected: e.target.checked} : a))} /></td>
+                              <td className="p-2">{admin.full_name} {admin.existingUser && <span className="text-amber-600 font-bold ml-1">(קיים)</span>}</td>
+                              <td className="p-2">{admin.email}</td>
+                              <td className="p-2">
+                                <div className="flex flex-col gap-1">
+                                  <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-transparent border-none">
+                                    <option value="admin">מנהל</option>
+                                    <option value="team_leader">ראש צוות</option>
+                                    <option value="viewer">צופה</option>
+                                  </select>
+                                  {admin.role === 'team_leader' && (
+                                    <label className="flex items-center gap-1 text-[10px] text-slate-600">
+                                      <input type="checkbox" checked={admin.isManager} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isManager: e.target.checked} : a))} />
+                                      + מנהל
+                                    </label>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2">
+                                <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-transparent border-none">
+                                  <option value="">ללא</option>
+                                  {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-2">
+                                {admin.existingUser ? (
+                                  <button className="text-blue-600 underline font-bold" onClick={() => setComparisonAdmin(admin)}>הצג השוואה</button>
+                                ) : (
+                                  <span className="text-red-600 font-bold">לא קיים במערכת</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="mt-4 max-h-[400px] overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
+                      {scannedAdmins.map((admin, idx) => (
+                        <div key={idx} className={`p-4 rounded-xl border ${admin.existingUser ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'} space-y-2`}>
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={admin.isSelected} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isSelected: e.target.checked} : a))} />
+                            <h3 className="font-bold text-sm">{admin.full_name} {admin.existingUser && <span className="text-amber-600">(קיים)</span>}</h3>
+                          </div>
+                          <p className="text-xs text-slate-500">{admin.email}</p>
+                          <div className="flex flex-col gap-1">
+                            <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs">
+                              <option value="admin">מנהל</option>
+                              <option value="team_leader">ראש צוות</option>
+                              <option value="viewer">צופה</option>
+                            </select>
+                            {admin.role === 'team_leader' && (
+                              <label className="flex items-center gap-1 text-xs text-slate-600">
+                                <input type="checkbox" checked={admin.isManager} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, isManager: e.target.checked} : a))} />
+                                + מנהל
+                              </label>
+                            )}
+                          </div>
+                          <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs w-full">
+                            <option value="">ללא קבוצה</option>
+                            {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                          </select>
+                          {admin.existingUser ? (
+                            <button className="text-blue-600 underline font-bold text-xs" onClick={() => setComparisonAdmin(admin)}>הצג השוואה</button>
+                          ) : (
+                            <span className="text-red-600 font-bold text-xs">לא קיים במערכת</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
                 )}
 
                 {comparisonAdmin && (
@@ -2981,20 +2979,40 @@ export default function AdminManagement() {
                       placeholder="לדוגמה: 0501234567"
                     />
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <div>
-                      <p className="text-sm font-bold text-text-main">ראש צוות</p>
-                      <p className="text-[10px] text-text-secondary">הגדר כמנהל צוות</p>
-                    </div>
-                    <div className="relative inline-flex items-center cursor-pointer">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">תפקידים</label>
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input 
                         type="checkbox" 
-                        className="sr-only peer"
-                        checked={formData.is_team_leader}
-                        onChange={(e) => setFormData({...formData, is_team_leader: e.target.checked})}
+                        className="w-4 h-4 rounded text-luxury-blue"
+                        checked={formData.role === 'admin'}
+                        onChange={(e) => {
+                          const isTeamLeader = formData.is_team_leader;
+                          if (!e.target.checked && !isTeamLeader) {
+                            toast.error('חייב להישאר לפחות תפקיד אחד פעיל');
+                            return;
+                          }
+                          setFormData(prev => ({ ...prev, role: e.target.checked ? 'admin' : 'viewer' }));
+                        }}
                       />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-luxury-blue"></div>
-                    </div>
+                      <span className="text-sm font-bold text-text-main">מנהל (Admin)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 rounded text-luxury-blue"
+                        checked={formData.is_team_leader}
+                        onChange={(e) => {
+                          const isAdmin = formData.role === 'admin';
+                          if (!e.target.checked && !isAdmin) {
+                            toast.error('חייב להישאר לפחות תפקיד אחד פעיל');
+                            return;
+                          }
+                          setFormData(prev => ({ ...prev, is_team_leader: e.target.checked }));
+                        }}
+                      />
+                      <span className="text-sm font-bold text-text-main">ראש צוות (Team Leader)</span>
+                    </label>
                   </div>
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div>
@@ -3013,15 +3031,15 @@ export default function AdminManagement() {
                   </div>
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div>
-                      <p className="text-sm font-bold text-text-main">התחברות עם גוגל</p>
-                      <p className="text-[10px] text-text-secondary font-medium">אפשר למנהל זה להתחבר באמצעות חשבון גוגל</p>
+                      <p className="text-sm font-bold text-text-main">סטטוס מנהל</p>
+                      <p className="text-[10px] text-text-secondary">הגדר כמנהל פעיל/לא פעיל</p>
                     </div>
                     <button 
                       type="button"
-                      onClick={() => setFormData({...formData, google_login_allowed: formData.google_login_allowed === 'true' ? 'false' : 'true'})}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.google_login_allowed === 'true' ? 'bg-luxury-blue' : 'bg-slate-300'}`}
+                      onClick={() => setFormData({...formData, status: formData.status === 'active' ? 'inactive' : 'active'})}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.status === 'active' ? 'bg-luxury-blue' : 'bg-slate-300'}`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.google_login_allowed === 'true' ? '-translate-x-6' : '-translate-x-1'}`} />
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.status === 'active' ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
