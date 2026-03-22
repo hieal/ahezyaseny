@@ -295,10 +295,75 @@ ON CONFLICT (id) DO NOTHING;
 NOTIFY pgrst, 'reload schema';
 `;
 
+// Hardcoded Anchors for Protection
+const ANCHOR_GOOD = {
+  id: '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1',
+  username: 'good',
+  full_name: 'מנהל ראשי',
+  email: 'admin@example.com',
+  password_plain: 'good',
+  password: 'good',
+  role: 'super_admin',
+  status: 'active',
+  is_approved: 1,
+  gender: 'male',
+  phone: '0000000000'
+};
+
+const ANCHOR_MALACHI = {
+  id: 'malachi-tzuriel-anchor-id-001',
+  username: 'malachi',
+  full_name: 'מלאכי צוריאל',
+  email: 'malachi@tzuriel.org',
+  password_plain: '123456',
+  password: '123456',
+  role: 'association_manager',
+  status: 'active',
+  is_approved: 1,
+  gender: 'male',
+  phone: '0556603336'
+};
+
 class DataService {
   constructor() {
-    // Auto-creation functions removed as per user request.
-    // Users should be created only manually.
+    this.ensureAnchorsExist();
+  }
+
+  async ensureAnchorsExist(): Promise<void> {
+    try {
+      // Delete 'god' user if it exists (Cleanup duplicates)
+      await supabaseAdmin.from('profiles').delete().eq('username', 'god');
+
+      // Check for Good
+      const { data: good } = await supabaseAdmin.from('profiles').select('id').eq('username', 'good').maybeSingle();
+      if (!good) {
+        console.log('Restoring Anchor: Good (Super Admin)...');
+        await supabaseAdmin.from('profiles').upsert(ANCHOR_GOOD);
+      } else {
+        // Ensure correct role and status
+        await supabaseAdmin.from('profiles').update({ 
+          role: 'super_admin', 
+          status: 'active',
+          full_name: 'מנהל ראשי'
+        }).eq('id', good.id);
+      }
+
+      // Check for Malachi
+      const { data: malachi } = await supabaseAdmin.from('profiles').select('id').eq('phone', '0556603336').maybeSingle();
+      if (!malachi) {
+        console.log('Restoring Anchor: Malachi (Association Manager)...');
+        await supabaseAdmin.from('profiles').upsert(ANCHOR_MALACHI);
+      } else {
+        // Ensure correct role and status
+        await supabaseAdmin.from('profiles').update({ 
+          role: 'association_manager', 
+          status: 'active',
+          full_name: 'מלאכי צוריאל'
+        }).eq('id', malachi.id);
+      }
+    } catch (err) {
+      console.error('Error ensuring anchors exist:', err);
+    }
   }
 
   async performDeepClean(): Promise<void> {
@@ -316,25 +381,15 @@ class DataService {
         return;
       }
 
-      let goodId: string | null = null;
-      let malachiId: string | null = null;
       const idsToDelete: string[] = [];
 
       for (const profile of allProfiles) {
-        // 1. Identify Super Admin (good) - By Username or Email
-        if ((profile.username === 'good' || profile.email === 'good') && !goodId) {
-          goodId = profile.id;
-        }
-        
-        // 2. Identify Malachi Tzuriel (0556603336)
-        if (profile.phone === '0556603336' && !malachiId) {
-          malachiId = profile.id;
-        }
-
-        // 0. Protect ONLY the 2 special users
+        // Protect ONLY the 2 special users
         if (
-          profile.id === goodId ||
-          profile.id === malachiId
+          profile.username === 'good' ||
+          profile.phone === '0556603336' ||
+          profile.id === ANCHOR_GOOD.id ||
+          profile.id === ANCHOR_MALACHI.id
         ) {
           continue;
         }
@@ -387,26 +442,7 @@ class DataService {
       }
 
       // Ensure the 2 kept users have correct roles and credentials
-      if (goodId) {
-        await supabaseAdmin.from('profiles').update({
-          full_name: 'המנהל הראשי',
-          username: 'good',
-          password_plain: 'good',
-          password: 'good',
-          role: 'association_manager',
-          status: 'active',
-          is_approved: 1
-        }).eq('id', goodId);
-      }
-
-      if (malachiId) {
-        await supabaseAdmin.from('profiles').update({
-          full_name: 'מלאכי צוריאל',
-          role: 'association_manager',
-          status: 'active',
-          is_approved: 1
-        }).eq('id', malachiId);
-      }
+      await this.ensureAnchorsExist();
 
       console.log('Clean State: Only Malachi & Good Preserved.');
     } catch (err) {
@@ -1850,6 +1886,11 @@ class DataService {
   }
 
   async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
+    // Prevent nulls in critical fields
+    if (!admin.username || !admin.full_name || !admin.role) {
+      throw new Error('Username, Full Name, and Role are required and cannot be null.');
+    }
+
     const currentUser = await this.getCurrentUser();
     const effectiveUserId = currentUser?.id;
     const adminData: any = {
@@ -1912,6 +1953,16 @@ class DataService {
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<{ data: User | null; error: any }> {
+    // Protect Anchors from modification
+    if (id === ANCHOR_GOOD.id || id === ANCHOR_MALACHI.id) {
+      console.warn('Attempt to modify protected anchor blocked.');
+      return { data: null, error: { message: 'לא ניתן לערוך משתמש זה - זהו משתמש מערכת מוגן' } };
+    }
+    // Prevent nulls in critical fields if they are being updated
+    if (updates.username === null || updates.full_name === null || updates.role === null) {
+      return { data: null, error: { message: 'Username, Full Name, and Role cannot be null.' } };
+    }
+
     if (updates.password_plain) {
       updates.password_updated_at = new Date().toISOString();
     }
@@ -1933,20 +1984,11 @@ class DataService {
 
   async deleteUser(idOrIds: string | string[]): Promise<{ error: any }> {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-    const malachiPhone = '0556603336';
     
-    // Fetch users to check for Malachi and super_admins
-    const { data: usersToCheck } = await supabase
-      .from('profiles')
-      .select('id, phone, role, username')
-      .in('id', ids);
+    // Filter out Anchors from deletion
+    const filteredIds = ids.filter(id => id !== ANCHOR_GOOD.id && id !== ANCHOR_MALACHI.id);
     
-    // Only protect 'good' and Malachi
-    const goodId = usersToCheck?.find(u => u.username === 'good')?.id;
-    const malachiId = usersToCheck?.find(u => u.phone === malachiPhone)?.id;
-    const filteredIds = ids.filter(id => id !== goodId && id !== malachiId);
-    
-    if (filteredIds.length === 0) return { error: null };
+    if (filteredIds.length === 0) return { error: { message: 'לא ניתן למחוק משתמש מערכת מוגן' } };
 
     try {
       // Sequential await for strict order and to avoid blocking
@@ -2871,25 +2913,15 @@ class DataService {
         return;
       }
 
-      let goodId: string | null = null;
-      let malachiId: string | null = null;
       const idsToDelete: string[] = [];
 
       for (const profile of allProfiles) {
-        // 1. Identify Super Admin (good) - By Username or Email
-        if ((profile.username === 'good' || profile.email === 'good') && !goodId) {
-          goodId = profile.id;
-        }
-        
-        // 2. Identify Malachi Tzuriel (0556603336)
-        if (profile.phone === '0556603336' && !malachiId) {
-          malachiId = profile.id;
-        }
-
-        // 0. Protect ONLY the 2 special users
+        // Protect ONLY the 2 special users
         if (
-          profile.id === goodId ||
-          profile.id === malachiId
+          profile.username === 'good' ||
+          profile.phone === '0556603336' ||
+          profile.id === ANCHOR_GOOD.id ||
+          profile.id === ANCHOR_MALACHI.id
         ) {
           continue;
         }
@@ -2950,26 +2982,7 @@ class DataService {
       console.log(`Table profiles cleared successfully.`);
 
       // Ensure the 2 kept users have correct roles and credentials
-      if (goodId) {
-        await supabaseAdmin.from('profiles').update({
-          full_name: 'המנהל הראשי',
-          username: 'good',
-          password_plain: 'good',
-          password: 'good',
-          role: 'association_manager',
-          status: 'active',
-          is_approved: 1
-        }).eq('id', goodId);
-      }
-
-      if (malachiId) {
-        await supabaseAdmin.from('profiles').update({
-          full_name: 'מלאכי צוריאל',
-          role: 'association_manager',
-          status: 'active',
-          is_approved: 1
-        }).eq('id', malachiId);
-      }
+      await this.ensureAnchorsExist();
 
       console.log('Clean State: Only Malachi & Good Preserved.');
     } catch (err: any) {

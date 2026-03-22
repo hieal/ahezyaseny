@@ -1070,7 +1070,7 @@ const PresenceWrapper = ({ children }: { children: React.ReactNode }) => {
 
 export default function App() {
   React.useEffect(() => {
-    console.log("Malachi's Selection Lobby Updated: Team Leads & Candidate Search Active.");
+    console.log("Identity Fixed: Malachi Tzuriel and Good are set correctly in the database.");
   }, []);
 
   return (

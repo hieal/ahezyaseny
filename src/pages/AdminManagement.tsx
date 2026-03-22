@@ -46,8 +46,8 @@ const getAdminAvatarUrl = (user: any) => {
   return null;
 };
 
-const isSuperAdmin = (admin: any) => admin?.role === 'super_admin' || admin?.id?.startsWith('8ebb') || admin?.username === 'good';
-const isMalachiAdmin = (admin: any) => admin?.phone === '0556603336' || admin?.full_name?.includes('מלאכי') || admin?.role === 'association_admin' || admin?.role === 'association_manager';
+const isSuperAdmin = (admin: any) => admin?.username === 'good' || admin?.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1';
+const isMalachiAdmin = (admin: any) => admin?.phone === '0556603336' || admin?.id === 'malachi-tzuriel-anchor-id-001';
 
 export default function AdminManagement() {
   const { user: currentUser, loading: authLoading, isReadOnly } = useAuth();
@@ -689,12 +689,8 @@ export default function AdminManagement() {
   };
 
   const confirmDelete = (user: User) => {
-    if (isSuperAdmin(user)) {
-      toast.error('לא ניתן למחוק את המנהל הראשי');
-      return;
-    }
-    if (isMalachiAdmin(user)) {
-      toast.error('לא ניתן למחוק את מנהל העמותה');
+    if (isSuperAdmin(user) || isMalachiAdmin(user)) {
+      toast.error('לא ניתן למחוק משתמש מערכת מוגן');
       return;
     }
     if (user.id === currentUser?.id) {
@@ -723,12 +719,8 @@ export default function AdminManagement() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
-    if (isSuperAdmin(userToDelete)) {
-      toast.error('לא ניתן למחוק מנהל זה');
-      return;
-    }
-    if (isMalachiAdmin(userToDelete)) {
-      toast.error('לא ניתן למחוק את מנהל העמותה');
+    if (isSuperAdmin(userToDelete) || isMalachiAdmin(userToDelete)) {
+      toast.error('לא ניתן למחוק משתמש מערכת מוגן');
       return;
     }
     try {
@@ -811,6 +803,10 @@ export default function AdminManagement() {
   };
 
   const handleEdit = (user: User) => {
+    if (isSuperAdmin(user) || isMalachiAdmin(user)) {
+      toast.error('לא ניתן לערוך משתמש מערכת מוגן');
+      return;
+    }
     setEditingUser(user);
     setFormData({
       full_name: user.full_name || '',
@@ -847,6 +843,10 @@ export default function AdminManagement() {
   };
 
   const handleStatusChange = async (user: User) => {
+    if (isSuperAdmin(user) || isMalachiAdmin(user)) {
+      toast.error('לא ניתן לשנות סטטוס למשתמש מערכת מוגן');
+      return;
+    }
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
     try {
       const { error } = await dataService.updateUser(user.id, { status: newStatus } as any);
