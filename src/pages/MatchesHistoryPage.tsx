@@ -57,7 +57,7 @@ export default function MatchesHistoryPage() {
   };
 
   const filteredMatches = matches.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
+    const matchesSearch = m.full_name.toLowerCase().includes(search.toLowerCase()) || 
                          m.city?.toLowerCase().includes(search.toLowerCase());
     const matchesType = filterType === 'all' || m.type === filterType;
     
@@ -162,10 +162,10 @@ export default function MatchesHistoryPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg ${match.type === 'male' ? 'bg-blue-600' : 'bg-pink-600'}`}>
-                    {match.name[0]}
+                    {match.full_name ? match.full_name[0] : '?'}
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-text-main text-lg">{match.name}</h3>
+                    <h3 className="font-extrabold text-text-main text-lg">{match.full_name}</h3>
                     <p className="text-xs text-text-secondary font-bold">{match.city} • {match.age} שנים</p>
                   </div>
                 </div>
@@ -237,7 +237,7 @@ export default function MatchesHistoryPage() {
                     <Clock className="text-luxury-blue" size={24} />
                     היסטוריית פרסומים
                   </h2>
-                  <p className="text-text-secondary text-sm font-medium mt-1">תיעוד כל הפרסומים של {selectedMatch.name} בקבוצות</p>
+                  <p className="text-text-secondary text-sm font-medium mt-1">תיעוד כל הפרסומים של {selectedMatch.full_name} בקבוצות</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">

@@ -122,7 +122,7 @@ export default function PublishedToday() {
 
                   {log.admin?.phone && (
                     <a 
-                      href={`https://wa.me/${log.admin.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`שלום ${log.user_name}, ראיתי את הכרטיס של ${log.match?.name} שפורסם היום בקבוצת ${log.group_name} ואשמח לשמוע פרטים נוספים.`)}`}
+                      href={`https://wa.me/${log.admin.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`שלום ${log.user_name}, ראיתי את הכרטיס של ${log.match?.full_name} שפורסם היום בקבוצת ${log.group_name} ואשמח לשמוע פרטים נוספים.`)}`}
                       target="_blank"
                       rel="noreferrer"
                       className="w-full py-3 bg-[#25D366] text-white rounded-xl font-black hover:bg-[#128C7E] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-100 text-sm"

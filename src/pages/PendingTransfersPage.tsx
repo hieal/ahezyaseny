@@ -91,7 +91,7 @@ const PendingTransfersPage: React.FC = () => {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-lg font-black text-slate-900 truncate">{match.name}</h4>
+                  <h4 className="text-lg font-black text-slate-900 truncate">{match.full_name}</h4>
                   <p className="text-sm text-slate-500 font-medium">
                     {getGenderedText(match.type as any, 'משודך', 'משודכת')} • {match.age} • {match.city}
                   </p>

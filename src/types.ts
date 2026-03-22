@@ -12,11 +12,10 @@ export interface ScannedAdmin {
 
 export interface User {
   id: string;
-  name?: string;
   full_name: string;
   username?: string;
   email: string;
-  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate' | 'super_observer';
+  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate' | 'super_observer' | 'association_admin' | 'association_manager' | 'observer_manager' | 'observer';
   status: 'active' | 'inactive';
   category?: string | null;
   secondary_category?: string | null;
@@ -31,7 +30,6 @@ export interface User {
   daily_message_template?: string | null;
   is_from_file?: number;
   is_approved?: number;
-  is_shaham_manager?: number;
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
@@ -119,8 +117,7 @@ export interface ImagePosition {
 export interface Match {
   id: string;
   type: 'male' | 'female';
-  name: string;
-  full_name?: string;
+  full_name: string;
   age: number;
   height: string;
   ethnicity: string;
@@ -187,6 +184,13 @@ export interface Stats {
   totalAdmins?: number;
   adminMales?: number;
   adminFemales?: number;
+  superAdmins?: number;
+  associationManagers?: number;
+  regularManagers?: number;
+  teamLeaders?: number;
+  observers?: number;
+  activeAdmins?: number;
+  pendingAdmins?: number;
 }
 
 export interface ActivityLog {

@@ -148,7 +148,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
       if (match) {
         matchDetails = {
           match_id: match.id,
-          match_name: match.name,
+          match_name: match.full_name,
           match_type: match.type,
           match_age: match.age,
           match_city: match.city
@@ -160,7 +160,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
       receiver_id: otherUser.id,
       content: newMessage || 'שלחתי לך הצעה למשודך',
       sender_id: user?.id || 'unknown',
-      sender_name: user?.role === 'super_observer' ? 'מנהל העמותה' : (user?.name || 'מנהל')
+      sender_name: user?.role === 'super_observer' ? 'מנהל העמותה' : (user?.full_name || 'מנהל')
     };
     
     try {
@@ -262,7 +262,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
             <p className="text-sm font-black leading-tight">צ'אט עם: {otherUser.name}</p>
             {!isMinimized && (
               <p className="text-[10px] opacity-80 font-bold">
-                שיחה בין {user?.role === 'super_admin' ? 'המנהל הראשי' : 'המנהל/ת'} <span className="underline">{user?.name}</span> ל{otherUserDetails?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל/ת'} <span className="underline">{otherUser.name}</span>
+                שיחה בין {user?.role === 'super_admin' ? 'המנהל הראשי' : 'המנהל/ת'} <span className="underline">{user?.full_name}</span> ל{otherUserDetails?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל/ת'} <span className="underline">{otherUser.name}</span>
               </p>
             )}
           </div>
@@ -446,10 +446,10 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
                           className="w-full text-right p-2 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors"
                         >
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${m.type === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
-                            {m.name[0]}
+                            {m.full_name[0]}
                           </div>
                           <div>
-                            <p className="text-xs font-black">{m.name}</p>
+                            <p className="text-xs font-black">{m.full_name}</p>
                             <p className="text-[9px] text-slate-400 font-bold">{m.age} שנים • {m.city}</p>
                           </div>
                         </button>

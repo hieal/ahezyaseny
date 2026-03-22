@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Stats, Match, WhatsAppGroup, User as UserType } from '../types';
@@ -22,12 +22,17 @@ import { OnlineIndicator } from '../components/OnlineIndicator';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user?.role === 'observer_manager') {
+      navigate('/observer-dashboard');
+    }
+  }, [user, navigate]);
   const activeUser = user;
   const { presenceState } = usePresence();
   const { type } = useParams();
-  const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
-  const [adminCount, setAdminCount] = useState<number>(0);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -86,6 +91,8 @@ export default function Dashboard() {
   const [showMinimal, setShowMinimal] = useState(false);
   const [completionFilter, setCompletionFilter] = usePersistedState<'all' | 'complete' | 'incomplete'>('dashboard_completion_filter', 'all');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [manualPublishConfirmed, setManualPublishConfirmed] = useState(false);
@@ -127,7 +134,7 @@ export default function Dashboard() {
 
   const handleSuggest = (match: Match) => {
     setShowConnectedAdminsModal(true);
-    toast(`בחר מנהל להציע לו את ${match.name}`, { icon: '💬' });
+    toast(`בחר מנהל להציע לו את ${match.full_name}`, { icon: '💬' });
   };
 
   const [showTeamLeaderDashboard, setShowTeamLeaderDashboard] = useState(false);
@@ -144,6 +151,7 @@ export default function Dashboard() {
   const [viewerGenderFilter, setViewerGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [viewerCardView, setViewerCardView] = useState<'full' | 'designed'>('full');
   const [showSameGroupsAdminsModal, setShowSameGroupsAdminsModal] = useState(false);
+  const [selectedAdminRole, setSelectedAdminRole] = useState<'team_leader' | 'admin' | 'viewer' | null>(null);
   const [cardsPerRow, setCardsPerRow] = useState(3);
   const [rowsPerPage, setRowsPerPage] = useState(1);
   const [sliderViewEnabled, setSliderViewEnabled] = useState(true);
@@ -162,33 +170,42 @@ export default function Dashboard() {
   const [isNoteAvailable, setIsNoteAvailable] = useState(true);
   const [loadingNotes, setLoadingNotes] = useState(false);
 
-  const adminsInSameGroups = allUsers.filter(u => {
-    if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer') return true;
-    
-    // New logic for assigned_group_id
-    if (activeUser?.assigned_group_id) {
-        return u.assigned_group_id === activeUser.assigned_group_id;
-    }
+  const validAdmins = useMemo(() => {
+    return allUsers.filter(u => {
+      const isMainAdmin = u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+      return isMainAdmin || u.id === activeUser?.id || ['admin', 'super_admin', 'team_leader', 'viewer', 'super_observer', 'observer', 'observer_manager', 'association_admin', 'association_manager'].includes(u.role);
+    });
+  }, [allUsers]);
 
-    const isShaham = (group: string | null | undefined) => group?.includes('שח"ם');
-    const myGroup = activeUser?.affiliation_group;
-    const userGroup = u.affiliation_group;
+  const [dashboardAdmins, setDashboardAdmins] = useState<any[]>([]);
 
-    if (myGroup) {
-      if (isShaham(myGroup) && isShaham(userGroup)) return true;
-      return userGroup === myGroup;
-    }
-    
-    // Fallback to category if no affiliation group
-    const myCategories = [activeUser?.category, activeUser?.secondary_category].filter(Boolean);
-    const userCategories = [u.category, u.secondary_category].filter(Boolean);
-    
-    if (myCategories.length > 0) {
-      return userCategories.some(cat => myCategories.includes(cat)) || u.id === activeUser?.id;
-    }
+  const fetchDashboardAdmins = async () => {
+    try {
+      let query = supabase.from('profiles').select('*');
 
-    return u.id === activeUser?.id;
-  });
+      if (activeUser?.role === 'super_admin') {
+        query = query.in('role', ['admin', 'association_manager', 'super_admin', 'team_leader', 'observer']);
+      } else if (activeUser?.affiliation_group) {
+        query = query.eq('affiliation_group', activeUser.affiliation_group);
+      } else {
+        // Fallback: only show self
+        query = query.eq('id', activeUser?.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      
+      console.log('Dashboard List Data:', data);
+      setDashboardAdmins(data || []);
+    } catch (err) {
+      console.error('Error fetching dashboard admins:', err);
+      toast.error('שגיאה בטעינת רשימת המנהלים');
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardAdmins();
+  }, [activeUser]);
 
   const fetchTeamData = async () => {
     if (!activeUser || activeUser.role !== 'team_leader') return;
@@ -514,7 +531,7 @@ export default function Dashboard() {
     
     ctx.fillStyle = accentColor;
     ctx.font = 'bold 140px sans-serif';
-    ctx.fillText(match.name, 800, 1830);
+    ctx.fillText(match.full_name, 800, 1830);
 
     // Details Grid
     const details = [
@@ -630,7 +647,7 @@ export default function Dashboard() {
     
     // Decorative Box for Manager Label
     const isCreatorFemale = match.creator_gender ? match.creator_gender === 'female' : activeUser?.gender === 'female';
-    const labelText = `נשלח על ידי ${isCreatorFemale ? 'המנהלת' : 'המנהל'}: ${match.creator_name || activeUser?.name || 'מערכת'}`;
+    const labelText = `נשלח על ידי ${isCreatorFemale ? 'המנהלת' : 'המנהל'}: ${match.creator_name || activeUser?.full_name || 'מערכת'}`;
     ctx.font = 'bold 60px sans-serif';
     const textWidth = ctx.measureText(labelText).width;
     const boxWidth = textWidth + 120;
@@ -770,7 +787,7 @@ export default function Dashboard() {
       
       // Filter out trash and archived/inactive candidates for the main dashboard view
       const activeMatches = matchesData.filter(m => {
-        const isNotTrash = m.name && m.name.trim().length > 1;
+        const isNotTrash = m.full_name && m.full_name.trim().length > 1;
         const isNotDeleted = !m.is_archived && (m.status === 'active' || m.status === 'available' || !m.status);
         return isNotTrash && isNotDeleted;
       });
@@ -784,15 +801,11 @@ export default function Dashboard() {
         dataService.getUsers()
       ]);
       
-      setStats(statsData);
-      if (activeUser?.role === 'super_admin') {
-        const count = await dataService.getAdminCount();
-        setAdminCount(count);
-      }
+      if (statsData) setStats(statsData);
       setTemplate(settingsData.whatsapp_template || '');
       setInitialMessage(settingsData.whatsapp_initial_message || '');
-      setWhatsappGroups(groupsData);
-      setAllUsers(usersData);
+      if (groupsData) setWhatsappGroups(groupsData);
+      if (usersData) setAllUsers(usersData);
     } catch (err: any) {
       toast.error(err.message || 'שגיאה בטעינת נתונים');
     } finally {
@@ -810,25 +823,33 @@ export default function Dashboard() {
 
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
+    setIsDeleting(true);
     try {
       const matchToDelete = matches.find(m => m.id === deleteConfirmId);
       await dataService.deleteMatch(deleteConfirmId);
       if (matchToDelete) {
         await dataService.logActivity({
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: user?.name || 'System',
+          user_name: user?.full_name || 'System',
           action: 'מחיקת כרטיס',
-          details: `מחיקת כרטיס משודך: ${matchToDelete.name}`,
+          details: `מחיקת כרטיס משודך: ${matchToDelete.full_name}`,
           entity_type: 'match',
           entity_id: deleteConfirmId
         });
       }
-      toast.success('הכרטיס נמחק');
-      fetchData();
+      // Update local state to remove the deleted match
+      setMatches(prev => prev.filter(m => m.id !== deleteConfirmId));
+      
+      setDeleteSuccess(true);
+      setTimeout(() => {
+        setDeleteConfirmId(null);
+        setIsDeleting(false);
+        setDeleteSuccess(false);
+        toast.success('הכרטיס נמחק בהצלחה');
+      }, 2000);
     } catch (err) {
-      toast.error('שגיאה בתקשורת עם השרת');
-    } finally {
-      setDeleteConfirmId(null);
+      setIsDeleting(false);
+      toast.error('המחיקה נכשלה בשרת');
     }
   };
 
@@ -1036,9 +1057,9 @@ export default function Dashboard() {
           if (matchToDelete) {
             await dataService.logActivity({
               user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-              user_name: user?.name || 'System',
+              user_name: user?.full_name || 'System',
               action: 'מחיקת כרטיס',
-              details: `מחיקת כרטיס משודך: ${matchToDelete.name}`,
+              details: `מחיקת כרטיס משודך: ${matchToDelete.full_name}`,
               entity_type: 'match',
               entity_id: id
             });
@@ -1059,15 +1080,15 @@ export default function Dashboard() {
   const handleQuickUpdate = async (id: string, updates: Partial<Match>) => {
     try {
       await dataService.updateMatch(id, updates);
-      toast.success('הכרטיס עודכן בהצלחה');
-      fetchData();
+      // Update local state to reflect changes immediately without full refresh
+      setMatches(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
     } catch (err) {
       toast.error('שגיאה בתקשורת עם השרת');
     }
   };
 
   const filteredMatches = matches.filter(m => {
-    const matchesSearch = (m.name || '').toLowerCase().includes(search.toLowerCase()) || 
+    const matchesSearch = (m.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
                          (m.city || '').toLowerCase().includes(search.toLowerCase());
     
     // Type filter (from URL /matches/:type or dropdown)
@@ -1126,7 +1147,7 @@ export default function Dashboard() {
            matchesManager && matchesGroup && matchesCompletion && isNotDeleted && matchesManagerView;
   }).sort((a, b) => {
     if (sortAlphabetically) {
-      return (a.name || '').localeCompare(b.name || '', 'he');
+      return (a.full_name || '').localeCompare(b.full_name || '', 'he');
     }
     if (sortByDate) {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -1273,7 +1294,7 @@ export default function Dashboard() {
                     negiah: 'כן',
                     age_range: '20-30',
                     created_by: user?.id || 'system',
-                    creator_name: user?.name || 'System',
+                    creator_name: user?.full_name || 'System',
                     creator_category: user?.category || 'General',
                     creation_source: 'manual'
                   };
@@ -1428,9 +1449,9 @@ export default function Dashboard() {
                                 <td className="px-6 py-4">
                                   <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center font-bold text-xs">
-                                      {admin.name?.charAt(0)}
+                                      {admin.full_name?.charAt(0)}
                                     </div>
-                                    <span className="font-bold text-slate-700">{admin.name}</span>
+                                    <span className="font-bold text-slate-700">{admin.full_name}</span>
                                   </div>
                                 </td>
                                 <td className="px-6 py-4 text-sm text-slate-500 font-medium">
@@ -1594,11 +1615,11 @@ export default function Dashboard() {
                     allUsers?.filter(u => {
                       const matchesRole = u?.role !== 'viewer';
                       const matchesAffiliation = viewerAffiliation === 'all' || u?.category === viewerAffiliation;
-                      const nameToSearch = (u?.name || u?.username || '').toLowerCase();
+                      const nameToSearch = (u?.full_name || u?.username || '').toLowerCase();
                       const matchesSearch = nameToSearch.includes(viewerSearch.toLowerCase());
                       return matchesRole && matchesAffiliation && matchesSearch;
                     }).map(m => {
-                      const displayName = m?.name?.trim() || m?.username?.trim() || 'מנהל';
+                      const displayName = m?.full_name?.trim() || m?.username?.trim() || 'מנהל';
                       const isSelected = viewerSelectedManagerId === m?.id;
                       
                       return (
@@ -1738,7 +1759,7 @@ export default function Dashboard() {
                           const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                           const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
                           const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
-                          const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                          const matchesSearch = m.full_name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
                           return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                         })}
                         onMatchClick={(m) => setViewingMatch(m)}
@@ -1771,7 +1792,7 @@ export default function Dashboard() {
                           const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                           const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
                           const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
-                          const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                          const matchesSearch = m.full_name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
                           return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                         })
                         .map(match => (
@@ -1841,7 +1862,7 @@ export default function Dashboard() {
                         const matchesManager = !viewerSelectedManagerId || m.created_by === viewerSelectedManagerId;
                         const matchesAffiliation = viewerAffiliation === 'all' || m.creator_category === viewerAffiliation;
                         const matchesGender = viewerGenderFilter === 'all' || m.type === viewerGenderFilter;
-                        const matchesSearch = m.name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
+                        const matchesSearch = m.full_name.toLowerCase().includes(viewerSearch.toLowerCase()) || m.city?.toLowerCase().includes(viewerSearch.toLowerCase());
                         return matchesManager && matchesAffiliation && matchesGender && matchesSearch;
                       }).length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
@@ -2100,16 +2121,16 @@ export default function Dashboard() {
             <div className="cursor-pointer" onClick={() => { setStatsModalType('males'); setShowStatsModal(true); }}>
               <StatCard 
                 icon={<UserCheck className="text-luxury-blue" />} 
-                label="סה״כ בנים" 
-                value={user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.malesMe || 0) : (stats?.malesGroup || 0))} 
+                label={user?.role === 'super_admin' ? "סה״כ בנים" : (statsViewMode === 'me' ? "הבנים שלי" : (user?.affiliation_group ? `בנים ב-${user.affiliation_group}` : "בנים בקבוצה"))} 
+                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.malesMe || 0) : (stats?.malesGroup || 0)))} 
                 color="border-blue-100 bg-blue-50/30"
               />
             </div>
             <div className="cursor-pointer" onClick={() => { setStatsModalType('females'); setShowStatsModal(true); }}>
               <StatCard 
                 icon={<Heart className="text-pink-600" fill="currentColor" />} 
-                label="סה״כ בנות" 
-                value={user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.femalesMe || 0) : (stats?.femalesGroup || 0))} 
+                label={user?.role === 'super_admin' ? "סה״כ בנות" : (statsViewMode === 'me' ? "הבנות שלי" : (user?.affiliation_group ? `בנות ב-${user.affiliation_group}` : "בנות בקבוצה"))} 
+                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.femalesMe || 0) : (stats?.femalesGroup || 0)))} 
                 color="border-pink-100 bg-pink-50/30"
               />
             </div>
@@ -2124,8 +2145,8 @@ export default function Dashboard() {
             }}>
               <StatCard 
                 icon={<Send className="text-green-600" />} 
-                label="פורסמו החודש" 
-                value={user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (statsViewMode === 'me' ? (stats?.publishedThisMonthMe || 0) : (stats?.publishedThisMonthGroup || 0))} 
+                label={user?.role === 'super_admin' ? "פורסמו החודש" : (statsViewMode === 'me' ? "פרסומים שלי" : "פרסומי הקבוצה")} 
+                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (statsViewMode === 'me' ? (stats?.publishedThisMonthMe || 0) : (stats?.publishedThisMonthGroup || 0)))} 
                 color="border-green-100 bg-green-50/30"
               />
             </div>
@@ -2133,7 +2154,7 @@ export default function Dashboard() {
               <StatCard 
                 icon={<Clock className="text-orange-600" />} 
                 label="טרם פורסמו" 
-                value={stats?.neverPublished || 0} 
+                value={loading && !stats ? 'טוען...' : (stats?.neverPublished || 0)} 
                 color="border-orange-100 bg-orange-50/30"
               />
             </div>
@@ -2143,12 +2164,14 @@ export default function Dashboard() {
             >
               <StatCard 
                 icon={<Users className="text-purple-600" />} 
-                label="מנהלים בקבוצות שלי" 
-                value={activeUser?.role === 'super_admin' ? adminCount : adminsInSameGroups.length} 
+                label={user?.role === 'super_admin' ? "סה״כ מנהלים" : (user?.affiliation_group ? `מנהלים ב-${user.affiliation_group}` : "מנהלים בקבוצה שלי")} 
+                value={loading && !stats ? 'טוען...' : (stats?.totalAdmins || 0)} 
                 color="border-purple-100 bg-purple-50/30"
               />
             </div>
           </div>
+
+
         </div>
       )}
 
@@ -2388,7 +2411,7 @@ export default function Dashboard() {
                         ) : (
                           <UserCheck size={14} />
                         )}
-                        {admin.name}
+                        {admin.full_name}
                       </button>
                     ))}
                   {allUsers.filter(u => (u.role === 'admin' || u.role === 'super_admin') && u.category === selectedGroupType).length === 0 && (
@@ -2519,6 +2542,12 @@ export default function Dashboard() {
             onSuggest={(m) => {
               handleSuggest(m);
             }}
+            onImageClick={(m) => {
+              setImageMatch(m);
+              setImageUrlInput(m.image_url || '');
+              setShowImageModal(true);
+            }}
+            onQuickUpdate={handleQuickUpdate}
             rows={rowsPerPage}
             cols={cardsPerRow}
             minimal={showMinimal}
@@ -2585,83 +2614,200 @@ export default function Dashboard() {
       {/* Image Manager Modal */}
       <AnimatePresence>
         {showImageModal && imageMatch && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="card w-full max-w-lg p-8 space-y-6 shadow-2xl border-none"
+              className="card w-full max-w-4xl p-8 space-y-6 shadow-2xl border-none bg-white/95 overflow-y-auto max-h-[90vh]"
             >
               <div className="flex justify-between items-center border-b pb-4">
                 <h2 className="text-2xl font-extrabold text-text-main flex items-center gap-2">
                   <ImageIcon size={24} className="text-luxury-blue" />
-                  ניהול תמונת משודך
+                  ניהול תמונות משודך
                 </h2>
                 <button onClick={() => setShowImageModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                   <X size={20} />
                 </button>
               </div>
 
-              <div className="space-y-6">
-                {/* Current Image Preview */}
-                <div className="aspect-square w-48 mx-auto rounded-2xl overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50 relative group">
-                  {imageMatch.image_url ? (
-                    <img 
-                      src={dataService.getPublicImageUrl(imageMatch.image_url)} 
-                      alt="Preview" 
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <ImageIcon size={48} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Left Column: Preview & Gallery */}
+                <div className="space-y-6">
+                  <div className="aspect-square w-full max-w-[350px] mx-auto rounded-2xl overflow-hidden border-4 border-slate-100 shadow-xl bg-slate-50 relative group">
+                    {(() => {
+                      const additional = JSON.parse(imageMatch.additional_images || '[]');
+                      const allImages = [imageMatch.image_url, ...additional].filter(Boolean);
+                      const currentImg = allImages[imageMatch.main_image_index || 0] || imageMatch.image_url;
+                      
+                      return currentImg ? (
+                        <>
+                          <img 
+                            src={dataService.getPublicImageUrl(currentImg)} 
+                            alt="Preview" 
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                            <button 
+                              onClick={() => window.open(dataService.getPublicImageUrl(currentImg), '_blank')}
+                              className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/40 transition-all"
+                              title="פתח תמונה מקורית"
+                            >
+                              <ExternalLink size={24} />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-300">
+                          <ImageIcon size={64} />
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Gallery Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <Sparkles size={16} className="text-emerald-500" />
+                      גלריית תמונות קיימת (לחץ לבחירת תמונה ראשית)
+                    </h3>
+                    <div className="grid grid-cols-4 gap-3">
+                      {(() => {
+                        const additional = JSON.parse(imageMatch.additional_images || '[]');
+                        const allImages = [imageMatch.image_url, ...additional].filter(Boolean);
+                        
+                        return allImages.map((img, idx) => (
+                          <div key={idx} className="relative group/item">
+                            <button
+                              onClick={async () => {
+                                setIsSavingImage(true);
+                                try {
+                                  await handleQuickUpdate(imageMatch.id, { main_image_index: idx });
+                                  setImageMatch(prev => prev ? { ...prev, main_image_index: idx } : null);
+                                  toast.success('התמונה הראשית הוחלפה');
+                                } catch (err) {
+                                  toast.error('שגיאה בהחלפת התמונה');
+                                } finally {
+                                  setIsSavingImage(false);
+                                }
+                              }}
+                              className={`aspect-square w-full rounded-xl overflow-hidden border-2 transition-all ${imageMatch.main_image_index === idx ? 'border-emerald-500 ring-4 ring-emerald-100' : 'border-slate-200 hover:border-emerald-300 shadow-sm'}`}
+                            >
+                              <img 
+                                src={dataService.getPublicImageUrl(img)} 
+                                alt={`Gallery ${idx}`} 
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </button>
+                            {allImages.length > 1 && (
+                              <button 
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm('האם למחוק תמונה זו מהגלריה?')) return;
+                                  setIsSavingImage(true);
+                                  try {
+                                    let newImageUrl = imageMatch.image_url;
+                                    let newAdditional = [...additional];
+                                    let newMainIndex = imageMatch.main_image_index || 0;
+
+                                    if (idx === 0) {
+                                      // Deleting the first image
+                                      newImageUrl = newAdditional[0] || '';
+                                      newAdditional.shift();
+                                    } else {
+                                      // Deleting from additional
+                                      newAdditional.splice(idx - 1, 1);
+                                    }
+
+                                    // Adjust main index
+                                    if (newMainIndex === idx) newMainIndex = 0;
+                                    else if (newMainIndex > idx) newMainIndex--;
+
+                                    const updates = {
+                                      image_url: newImageUrl,
+                                      additional_images: JSON.stringify(newAdditional),
+                                      main_image_index: newMainIndex
+                                    };
+
+                                    await handleQuickUpdate(imageMatch.id, updates);
+                                    setImageMatch(prev => prev ? { ...prev, ...updates } : null);
+                                    toast.success('התמונה נמחקה');
+                                  } catch (err) {
+                                    toast.error('שגיאה במחיקת התמונה');
+                                  } finally {
+                                    setIsSavingImage(false);
+                                  }
+                                }}
+                                className="absolute -top-2 -right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
+                        ));
+                      })()}
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6">
+                {/* Right Column: Upload Options */}
+                <div className="space-y-6">
+                  <h3 className="text-sm font-bold text-slate-700">הוספת תמונה חדשה</h3>
+                  
                   {/* Option 1: File Upload */}
-                  <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-3">
+                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-4">
                     <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
                       <Plus size={18} />
-                      אפשרות 1: העלאת קובץ מהמחשב
+                      העלאת קובץ מהמחשב
                     </div>
-                    <input 
-                      type="file" 
-                      accept="image/*"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setIsSavingImage(true);
-                        try {
-                          const reader = new FileReader();
-                          reader.onloadend = async () => {
-                            const base64 = reader.result as string;
-                            await handleQuickUpdate(imageMatch.id, { image_url: base64 });
-                            setImageMatch(prev => prev ? { ...prev, image_url: base64 } : null);
-                            toast.success('התמונה הועלתה בהצלחה');
-                          };
-                          reader.readAsDataURL(file);
-                        } catch (err) {
-                          toast.error('שגיאה בהעלאת התמונה');
-                        } finally {
-                          setIsSavingImage(false);
-                        }
-                      }}
-                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-luxury-blue file:text-white hover:file:bg-blue-600 transition-all cursor-pointer"
-                    />
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setIsSavingImage(true);
+                          try {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const base64 = reader.result as string;
+                              const additional = JSON.parse(imageMatch.additional_images || '[]');
+                              
+                              if (imageMatch.image_url) {
+                                const newAdditional = [...additional, base64];
+                                await handleQuickUpdate(imageMatch.id, { additional_images: JSON.stringify(newAdditional) });
+                                setImageMatch(prev => prev ? { ...prev, additional_images: JSON.stringify(newAdditional) } : null);
+                              } else {
+                                await handleQuickUpdate(imageMatch.id, { image_url: base64 });
+                                setImageMatch(prev => prev ? { ...prev, image_url: base64 } : null);
+                              }
+                              toast.success('התמונה נוספה בהצלחה');
+                            };
+                            reader.readAsDataURL(file);
+                          } catch (err) {
+                            toast.error('שגיאה בהעלאת התמונה');
+                          } finally {
+                            setIsSavingImage(false);
+                          }
+                        }}
+                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-6 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-luxury-blue file:text-white hover:file:bg-blue-600 transition-all cursor-pointer"
+                      />
+                    </div>
                   </div>
 
                   {/* Option 2: URL */}
-                  <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 space-y-3">
+                  <div className="p-6 bg-purple-50/50 rounded-2xl border border-purple-100 space-y-4">
                     <div className="flex items-center gap-2 text-purple-700 font-bold text-sm">
                       <Paperclip size={18} />
-                      אפשרות 2: שימוש בקישור (URL)
+                      שימוש בקישור (URL)
                     </div>
-                    <div className="flex gap-2">
+                    <div className="space-y-3">
                       <input 
                         type="text"
-                        className="input-field flex-1 text-sm"
+                        className="input-field w-full text-sm"
                         placeholder="הדבק כאן כתובת URL של תמונה..."
                         value={imageUrlInput}
                         onChange={(e) => setImageUrlInput(e.target.value)}
@@ -2685,9 +2831,17 @@ export default function Dashboard() {
                               console.warn("Could not convert URL to base64 due to CORS, saving as URL instead", e);
                             }
 
-                            await handleQuickUpdate(imageMatch.id, { image_url: finalUrl });
-                            setImageMatch(prev => prev ? { ...prev, image_url: finalUrl } : null);
-                            toast.success('התמונה נשמרה במערכת');
+                            const additional = JSON.parse(imageMatch.additional_images || '[]');
+                            if (imageMatch.image_url) {
+                              const newAdditional = [...additional, finalUrl];
+                              await handleQuickUpdate(imageMatch.id, { additional_images: JSON.stringify(newAdditional) });
+                              setImageMatch(prev => prev ? { ...prev, additional_images: JSON.stringify(newAdditional) } : null);
+                            } else {
+                              await handleQuickUpdate(imageMatch.id, { image_url: finalUrl });
+                              setImageMatch(prev => prev ? { ...prev, image_url: finalUrl } : null);
+                            }
+                            toast.success('התמונה נוספה למערכת');
+                            setImageUrlInput('');
                           } catch (err) {
                             toast.error('שגיאה בעדכון התמונה');
                           } finally {
@@ -2695,21 +2849,21 @@ export default function Dashboard() {
                           }
                         }}
                         disabled={isSavingImage}
-                        className="bg-purple-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-purple-700 transition-all flex items-center gap-2 shadow-sm"
+                        className="w-full bg-purple-600 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
                       >
-                        {isSavingImage ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
-                        שמור
+                        {isSavingImage ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+                        שמור והוסף לגלריה
                       </button>
                     </div>
-                    <p className="text-[10px] text-purple-400">מומלץ להשתמש בקישור ישיר לקובץ תמונה (מסתיים ב-jpg, png וכו').</p>
+                    <p className="text-[11px] text-purple-400 leading-relaxed">מומלץ להשתמש בקישור ישיר לקובץ תמונה (מסתיים ב-jpg, png וכו'). התמונה תתווסף לגלריה הקיימת.</p>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-6 flex justify-end">
+              <div className="pt-6 flex justify-end border-t">
                 <button 
                   onClick={() => setShowImageModal(false)}
-                  className="btn-secondary px-8 py-2.5"
+                  className="btn-secondary px-10 py-3 text-base font-bold"
                 >
                   סגור
                 </button>
@@ -2728,27 +2882,48 @@ export default function Dashboard() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="card w-full max-w-md p-8 space-y-6 shadow-2xl border-none text-center"
+              className="card w-full max-w-md p-8 shadow-2xl border-none text-center overflow-hidden"
             >
-              <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 size={40} />
-              </div>
-              <h2 className="text-2xl font-extrabold text-text-main">מחיקת כרטיס</h2>
-              <p className="text-text-secondary font-medium">האם אתה בטוח שברצונך למחוק את כרטיסיית המשודך? פעולה זו תעביר את הכרטיס לארכיון.</p>
-              <div className="flex gap-3 pt-4">
-                <button 
-                  onClick={confirmDelete}
-                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg"
-                >
-                  כן, מחק
-                </button>
-                <button 
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="flex-1 py-3 btn-secondary font-bold"
-                >
-                  ביטול
-                </button>
-              </div>
+              {isDeleting ? (
+                <div className="py-12 flex flex-col items-center gap-6">
+                  {deleteSuccess ? (
+                    <>
+                      <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center animate-bounce">
+                        <Check size={40} />
+                      </div>
+                      <h2 className="text-2xl font-extrabold text-text-main">הכרטיס נמחק בהצלחה</h2>
+                      <p className="text-text-secondary text-sm">אם ברצונך לשחזר, ניתן להסתכל בהיסטוריית הפעולות.</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-20 h-20 border-4 border-red-200 border-t-red-600 rounded-full animate-spin" />
+                      <h2 className="text-xl font-bold text-text-main">מוחק כרטיס...</h2>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Trash2 size={40} />
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-text-main">מחיקת כרטיס</h2>
+                  <p className="text-text-secondary font-medium">האם אתה בטוח שברצונך למחוק את כרטיסיית המשודך? פעולה זו תעביר את הכרטיס לארכיון.</p>
+                  <div className="flex gap-3 pt-4">
+                    <button 
+                      onClick={confirmDelete}
+                      className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg"
+                    >
+                      כן, מחק
+                    </button>
+                    <button 
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="flex-1 py-3 btn-secondary font-bold"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
@@ -2863,7 +3038,7 @@ export default function Dashboard() {
               
               <div className="space-y-4">
                 <p className="text-text-main font-medium">
-                  לא ניתן לפרסם את הכרטיס של <span className="font-bold">{validationMatch?.name}</span> מכיוון שחסרים הפרטים הבאים:
+                  לא ניתן לפרסם את הכרטיס של <span className="font-bold">{validationMatch?.full_name}</span> מכיוון שחסרים הפרטים הבאים:
                 </p>
                 
                 <div className="flex flex-wrap gap-2">
@@ -2981,7 +3156,7 @@ export default function Dashboard() {
               
               <div className="space-y-4">
                 <p className="text-text-main font-medium">
-                  הכרטיס של <span className="font-bold">{pendingMatchToPublish.name}</span> פורסם בתאריך <span className="font-bold">{new Date(pendingMatchToPublish.last_published_at!).toLocaleDateString('he-IL')}</span>.
+                  הכרטיס של <span className="font-bold">{pendingMatchToPublish.full_name}</span> פורסם בתאריך <span className="font-bold">{new Date(pendingMatchToPublish.last_published_at!).toLocaleDateString('he-IL')}</span>.
                 </p>
                 <p className="text-sm text-text-secondary">
                   האם אתה בטוח שברצונך לפרסם כרטיס זה שוב?
@@ -3023,7 +3198,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 text-luxury-blue">
                   <History size={32} />
-                  <h2 className="text-2xl font-extrabold">היסטוריית פרסומים - {historyMatch.name}</h2>
+                  <h2 className="text-2xl font-extrabold">היסטוריית פרסומים - {historyMatch.full_name}</h2>
                 </div>
                 <button onClick={() => setShowHistoryModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-all">
                   <RefreshCw size={20} className="text-slate-400" />
@@ -3092,7 +3267,7 @@ export default function Dashboard() {
                     <Paperclip size={24} />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900">הערות על {notesMatch.name}</h3>
+                    <h3 className="text-2xl font-black text-slate-900">הערות על {notesMatch.full_name}</h3>
                     <p className="text-sm text-slate-500">נהל הערות וסטטוס פניות עבור המשודך</p>
                   </div>
                 </div>
@@ -3205,7 +3380,7 @@ export default function Dashboard() {
                     onClick={() => {
                       const link = document.createElement('a');
                       link.href = generatedImageUrl;
-                      link.download = `match-${selectedMatch?.name || 'card'}.png`;
+                      link.download = `match-${selectedMatch?.full_name || 'card'}.png`;
                       link.click();
                     }}
                     className="flex-1 py-4 bg-white text-luxury-blue rounded-2xl font-black shadow-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3 text-lg"
@@ -3235,23 +3410,71 @@ export default function Dashboard() {
               className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-lg space-y-6"
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-black text-slate-900">מנהלים בקבוצות שלי</h3>
-                <button onClick={() => setShowSameGroupsAdminsModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                <h3 className="text-2xl font-black text-slate-900">
+                  {user?.role === 'super_admin' ? "כל המנהלים במערכת" : "מנהלים בקבוצות שלי"}
+                </h3>
+                <button onClick={() => { setShowSameGroupsAdminsModal(false); setSelectedAdminRole(null); }} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                   <X size={24} className="text-slate-400" />
                 </button>
               </div>
 
-              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">מנהל ראשי</span>
+                    <span className="text-lg font-black text-luxury-blue">{stats?.superAdmins || 0}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">מנהל עמותה</span>
+                    <span className="text-lg font-black text-emerald-600">{stats?.associationManagers || 0}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setSelectedAdminRole(selectedAdminRole === 'team_leader' ? null : 'team_leader')}
+                    className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all border ${
+                      selectedAdminRole === 'team_leader' 
+                        ? 'bg-luxury-blue text-white border-luxury-blue shadow-lg' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ראשי צוות ({stats?.teamLeaders || 0})
+                  </button>
+                  <button 
+                    onClick={() => setSelectedAdminRole(selectedAdminRole === 'admin' ? null : 'admin')}
+                    className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all border ${
+                      selectedAdminRole === 'admin' 
+                        ? 'bg-slate-700 text-white border-slate-700 shadow-lg' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    מנהלים ({stats?.regularManagers || 0})
+                  </button>
+                  <button 
+                    onClick={() => setSelectedAdminRole(selectedAdminRole === 'viewer' ? null : 'viewer')}
+                    className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all border ${
+                      selectedAdminRole === 'viewer' 
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-lg' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    צופים ({stats?.observers || 0})
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2">
                 {/* Team Leaders Section */}
-                {adminsInSameGroups.filter(u => u.role === 'team_leader').length > 0 && (
+                {(!selectedAdminRole || selectedAdminRole === 'team_leader') && dashboardAdmins.filter(u => u.role === 'team_leader').length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-sm font-black text-luxury-blue uppercase tracking-widest border-b border-blue-100 pb-2">ראשי צוותים</h4>
-                    {adminsInSameGroups.filter(u => u.role === 'team_leader').map(u => (
+                    {dashboardAdmins.filter(u => u.role === 'team_leader').map(u => (
                       <div key={u.id} className="flex items-center justify-between p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
                         <div className="flex items-center gap-3">
                           <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
                           <div>
-                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="font-bold text-slate-800">{u.full_name}</p>
                             <p className="text-[10px] text-slate-500">
                               {getGenderedText(u.gender, 'ראש צוות', 'ראשת צוות')} | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
                             </p>
@@ -3295,15 +3518,19 @@ export default function Dashboard() {
             ניהול משודכים
           </button>
         )}
-                {adminsInSameGroups.filter(u => u.role === 'admin' || u.role === 'super_admin').length > 0 && (
+                {(() => {
+                  console.log('Dashboard List Data:', dashboardAdmins);
+                  return null;
+                })()}
+                {(!selectedAdminRole || selectedAdminRole === 'admin') && dashboardAdmins.filter(u => u.role === 'admin').length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">מנהלים</h4>
-                    {adminsInSameGroups.filter(u => u.role === 'admin' || u.role === 'super_admin').map(u => (
+                    {dashboardAdmins.filter(u => u.role === 'admin').map(u => (
                       <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                         <div className="flex items-center gap-3">
                           <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
                           <div>
-                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="font-bold text-slate-800">{u.full_name}</p>
                             <p className="text-[10px] text-slate-500">
                               מנהל | {u.category || 'ללא קטגוריה'} | {managerCounts[u.id] || 0} משודכים
                             </p>
@@ -3320,15 +3547,15 @@ export default function Dashboard() {
                 )}
 
                 {/* Viewers Section */}
-                {adminsInSameGroups.filter(u => u.role === 'viewer').length > 0 && (
+                {(!selectedAdminRole || selectedAdminRole === 'viewer') && dashboardAdmins.filter(u => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(u.role)).length > 0 && (
                   <div className="space-y-3">
-                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">צופים</h4>
-                    {adminsInSameGroups.filter(u => u.role === 'viewer').map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 className="text-sm font-black text-purple-400 uppercase tracking-widest border-b border-purple-100 pb-2">צופים</h4>
+                    {dashboardAdmins.filter(u => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(u.role)).map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-4 bg-purple-50/30 rounded-2xl border border-purple-100">
                         <div className="flex items-center gap-3">
                           <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
                           <div>
-                            <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                            <p className="font-bold text-slate-800">{u.full_name}</p>
                             <p className="text-[10px] text-slate-500">
                               צופה | {u.category || 'ללא קטגוריה'}
                             </p>
@@ -3344,7 +3571,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {adminsInSameGroups.length === 0 && (
+                {dashboardAdmins.length === 0 && (
                   <div className="text-center py-8 text-slate-400 italic">לא נמצאו מנהלים נוספים בקבוצות שלך</div>
                 )}
               </div>
@@ -3375,7 +3602,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3">
                       <OnlineIndicator isOnline={!!presenceState[u.id]} />
                       <div>
-                        <p className="font-bold text-slate-800">{u.full_name || u.name}</p>
+                        <p className="font-bold text-slate-800">{u.full_name}</p>
                         <p className="text-xs text-slate-500">{!!presenceState[u.id] ? 'מחובר' : 'לא מחובר'}</p>
                       </div>
                     </div>
@@ -3513,7 +3740,7 @@ export default function Dashboard() {
                       })
                       .map(m => (
                         <tr key={m.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-3 font-bold text-text-main">{m.name}</td>
+                          <td className="px-4 py-3 font-bold text-text-main">{m.full_name}</td>
                           <td className="px-4 py-3 text-sm">{m.age}</td>
                           <td className="px-4 py-3 text-sm">{m.city}</td>
                           <td className="px-4 py-3 text-sm">{m.religious_level}</td>
@@ -3608,9 +3835,9 @@ export default function Dashboard() {
                                   <div key={managerId} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 bg-luxury-blue/10 text-luxury-blue rounded-full flex items-center justify-center text-[10px] font-black">
-                                        {mData.name[0]}
+                                        {mData.full_name[0]}
                                       </div>
-                                      <span className="text-sm font-black text-slate-800">{mData.name}</span>
+                                      <span className="text-sm font-black text-slate-800">{mData.full_name}</span>
                                     </div>
                                     <div className="flex items-center gap-4">
                                       <div className="flex flex-col items-center">
@@ -3666,7 +3893,7 @@ export default function Dashboard() {
               <WhatsAppWidget 
                 groupId={whatsappGroups.find(g => g.id === selectedGroupId)?.whapi_id || whatsappGroups.find(g => g.id === selectedGroupId)?.name || ""}
                 groupName={whatsappGroups.find(g => g.id === selectedGroupId)?.name || "קבוצה כללית"}
-                senderName={user?.name}
+                senderName={user?.full_name}
                 groupIdNum={selectedGroupId || undefined}
                 groupLink={whatsappGroups.find(g => g.id === selectedGroupId)?.link || ""}
                 currentMatch={selectedMatch}
@@ -3724,7 +3951,7 @@ function DetailItem({ label, value }: { label: string, value: string | number | 
   );
 }
 
-function StatCard({ icon, label, value, color, onClick }: { icon: React.ReactNode, label: string, value: number, color: string, onClick?: () => void }) {
+function StatCard({ icon, label, value, color, onClick }: { icon: React.ReactNode, label: string, value: number | string, color: string, onClick?: () => void }) {
   return (
     <div 
       onClick={onClick}

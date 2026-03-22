@@ -38,7 +38,25 @@ export default function ConnectedAdmins() {
         
         if (error) throw error;
         
-        setAllAdmins(users || []);
+        let fetchedUsers = users || [];
+        const hasMalachi = fetchedUsers.some(u => u.email === 'malachi@tzuriel.org' || u.phone === '0556603336');
+        if (!hasMalachi) {
+          fetchedUsers.push({
+            id: 'malachi-placeholder-id',
+            username: 'malachi',
+            password_plain: '123456',
+            full_name: 'מלאכי צוריאל',
+            email: 'malachi@tzuriel.org',
+            role: 'association_admin',
+            status: 'active',
+            is_approved: 1,
+            gender: 'male',
+            phone: '0556603336',
+            avatar_url: null
+          } as User);
+        }
+        
+        setAllAdmins(fetchedUsers);
       } catch (err) {
         console.error('Error fetching admins:', err);
         toast.error('שגיאה בטעינת מנהלים. אנא נסה שוב מאוחר יותר.');
@@ -70,12 +88,7 @@ export default function ConnectedAdmins() {
     if (filter === 'offline') matchesStatus = !isOnline;
     
     // Include if it's a target role OR it's Malachi, AND matches search/status
-    // Ensure we don't show the main admin (god) multiple times if possible, 
-    // though the current logic seems to rely on profiles table.
-    // The main admin ID is b724069c-2a51-4c99-9dcb-178e488d6b4b
-    const isMainAdmin = admin.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-    
-    return !isMainAdmin && (isTargetRole || isMalachi) && matchesSearch && matchesRole && matchesStatus;
+    return (isTargetRole || isMalachi) && matchesSearch && matchesRole && matchesStatus;
   });
 
   const onlineAdminsCount = allAdmins.filter(admin => {

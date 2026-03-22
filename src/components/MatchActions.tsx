@@ -73,7 +73,7 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
       return;
     }
 
-    const message = `סקר חדש עבור: ${match.name}`;
+    const message = `סקר חדש עבור: ${match.full_name}`;
 
     try {
       await dataService.sendWhatsAppMessage(group.whapi_id, message);
@@ -98,7 +98,7 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
 
   const sendMessageToInternalChat = async (match: Match) => {
     const chatId = '120363210658789236@g.us';
-    const surveyMessage = `סקר חדש עבור: ${match.name} (סוג: ${match.type}, גיל: ${match.age}, עיר: ${match.city})`;
+    const surveyMessage = `סקר חדש עבור: ${match.full_name} (סוג: ${match.type}, גיל: ${match.age}, עיר: ${match.city})`;
 
     try {
       await dataService.sendInternalMessage({
@@ -120,14 +120,14 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
       return;
     }
 
-    const message = `אני פונה אליך בקשר לכרטיס של ${match.name}`;
+    const message = `אני פונה אליך בקשר לכרטיס של ${match.full_name}`;
 
     try {
       await dataService.sendInternalMessage({
         receiver_id: match.created_by,
         content: message,
         sender_id: user?.id || 'unknown',
-        sender_name: user?.name || 'מנהל'
+        sender_name: user?.full_name || 'מנהל'
       });
       toast.success('ההודעה נשלחה למנהל');
       onOpenChat(match.created_by, message);
@@ -174,7 +174,7 @@ export const MatchActions: React.FC<MatchActionsProps> = ({ match, whatsappGroup
         }} className="bg-blue-500 text-white p-2 rounded-lg flex items-center justify-center" title="שליחת הודעה למנהל"><MessageCircle size={16} /></button>
         <button onClick={(e) => {
           if (handleViewerClick(e)) return;
-          const message = `שלום ${match.name}, רצינו להסביר לך על החצי השני...`;
+          const message = `שלום ${match.full_name}, רצינו להסביר לך על החצי השני...`;
           window.open(`https://wa.me/${match.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
         }} className="bg-emerald-500 text-white p-2 rounded-lg flex items-center justify-center" title="שליחת הודעת הסבר"><Info size={16} /></button>
       </div>

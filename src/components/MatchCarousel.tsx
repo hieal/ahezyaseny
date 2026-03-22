@@ -11,6 +11,8 @@ interface MatchCarouselProps {
   onEdit: (id: string) => void;
   onChat: (match: Match) => void;
   onSuggest: (match: Match) => void;
+  onImageClick?: (match: Match) => void;
+  onQuickUpdate?: (id: string, updates: Partial<Match>) => void;
   rows?: number;
   cols?: number;
   minimal?: boolean;
@@ -25,6 +27,8 @@ export const MatchCarousel: React.FC<MatchCarouselProps> = ({
   onEdit,
   onChat,
   onSuggest,
+  onImageClick,
+  onQuickUpdate,
   rows: initialRows = 1,
   cols: initialCols = 3,
   minimal = false,
@@ -60,7 +64,20 @@ export const MatchCarousel: React.FC<MatchCarouselProps> = ({
         >
           {displayedMatches.map((match) => (
             <div key={match.id} onClick={() => onMatchClick(match)} className="cursor-pointer w-full">
-              <MatchCard match={match} minimal={minimal} onNext={next} onPrev={prev} isViewer={isViewer} onDelete={onDelete} onEdit={onEdit} onChat={onChat} onSuggest={onSuggest} />
+              <MatchCard 
+                match={match} 
+                minimal={minimal} 
+                size={displaySize}
+                onNext={next} 
+                onPrev={prev} 
+                isViewer={isViewer} 
+                onDelete={onDelete} 
+                onEdit={onEdit} 
+                onChat={onChat} 
+                onSuggest={onSuggest}
+                onImageClick={onImageClick}
+                onQuickUpdate={onQuickUpdate}
+              />
             </div>
           ))}
         </motion.div>

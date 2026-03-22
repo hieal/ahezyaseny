@@ -50,9 +50,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
         const sent = sentRaw || [];
 
         // Filter matches to only show those created by me (or assigned to me) and have a name
-        setMyMatches(matches.filter(m => m && m.name && m.created_by === activeUser.id));
+        setMyMatches(matches.filter(m => m && m.full_name && m.created_by === activeUser.id));
         // Filter admins to exclude self and ensure they have a name
-        setAllAdmins(admins.filter(a => a && a.name && a.id !== activeUser.id));
+        setAllAdmins(admins.filter(a => a && a.full_name && a.id !== activeUser.id));
         setSentTransfers(sent);
       } else {
         const pending = await dataService.getPendingTransfersForMe(activeUser.id);
@@ -104,12 +104,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
   };
 
   const filteredMatches = (myMatches || []).filter(m => 
-    m && m.name && (m.name || '').toLowerCase().includes((searchTerm || '').toLowerCase())
+    m && m.full_name && (m.full_name || '').toLowerCase().includes((searchTerm || '').toLowerCase())
   );
 
   const filteredAdmins = (allAdmins || []).filter(a => 
-    a && a.name && (
-      (a.name || '').toLowerCase().includes((adminSearchTerm || '').toLowerCase()) ||
+    a && a.full_name && (
+      (a.full_name || '').toLowerCase().includes((adminSearchTerm || '').toLowerCase()) ||
       (a.username || '').toLowerCase().includes((adminSearchTerm || '').toLowerCase())
     )
   );
@@ -224,7 +224,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-slate-900 truncate">{match.name}</p>
+                          <p className="font-bold text-slate-900 truncate">{match.full_name}</p>
                           <p className="text-xs text-slate-500">{match.type === 'male' ? 'בחור' : 'בחורה'} • {match.age} • {match.city}</p>
                         </div>
                         {selectedMatchId === match.id && (
@@ -277,7 +277,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                           <UserCog size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-slate-900 truncate">{admin.name}</p>
+                          <p className="font-bold text-slate-900 truncate">{admin.full_name}</p>
                           <p className="text-xs text-slate-500">{admin.role === 'super_admin' ? 'מנהל על' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}</p>
                         </div>
                         {selectedReceiverId === admin.id && (
@@ -333,7 +333,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">משודך להעברה</p>
-                          <h4 className="text-lg font-black text-slate-900 truncate">{match.name}</h4>
+                          <h4 className="text-lg font-black text-slate-900 truncate">{match.full_name}</h4>
                           <p className="text-sm text-slate-500 font-medium">
                             {match.age} • {match.city}
                           </p>
@@ -400,10 +400,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                                     />
                                   )}
                                 </div>
-                                <span className="font-bold text-slate-700">{transfer.candidate?.name}</span>
+                                <span className="font-bold text-slate-700">{transfer.candidate?.full_name}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-4 font-medium text-slate-600">{transfer.receiver?.name}</td>
+                            <td className="px-6 py-4 font-medium text-slate-600">{transfer.receiver?.full_name}</td>
                             <td className="px-6 py-4 text-slate-400 text-sm">{new Date(transfer.created_at).toLocaleDateString('he-IL')}</td>
                             <td className="px-6 py-4">
                               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${

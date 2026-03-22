@@ -144,7 +144,7 @@ export default function GamesPortal() {
     try {
       // 1. Look for someone already searching
       const query = supabase
-        .from('profiles')
+        .from('admins')
         .select('id, full_name, gender')
         .eq('status', 'searching_for_opponent')
         .neq('id', user.id);
@@ -181,8 +181,8 @@ export default function GamesPortal() {
 
         // 3. Update both statuses
         await Promise.all([
-          supabase.from('profiles').update({ status: 'playing' }).eq('id', user.id),
-          supabase.from('profiles').update({ status: 'playing' }).eq('id', opponent.id)
+          supabase.from('admins').update({ status: 'playing' }).eq('id', user.id),
+          supabase.from('admins').update({ status: 'playing' }).eq('id', opponent.id)
         ]);
 
         setActiveRpsMatch({
@@ -195,7 +195,7 @@ export default function GamesPortal() {
       } else {
         // 4. No opponent found, set status to searching
         const { error } = await supabase
-          .from('profiles')
+          .from('admins')
           .update({ status: 'searching_for_opponent' })
           .eq('id', user.id);
         

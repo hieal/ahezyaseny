@@ -242,7 +242,7 @@ export default function TrackingPage() {
                     >
                       <option value="">כל המנהלים</option>
                       {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.username})</option>
+                        <option key={u.id} value={u.id}>{u.full_name} ({u.username})</option>
                       ))}
                     </select>
                   </div>
@@ -369,7 +369,7 @@ export default function TrackingPage() {
                 <tbody className="divide-y divide-slate-50">
                   {matches.filter(m => m.publish_count > 0).map((match) => (
                     <tr key={match.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-5 font-bold text-text-main">{match.name}</td>
+                      <td className="px-6 py-5 font-bold text-text-main">{match.full_name}</td>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-2">
                           <input 

@@ -522,18 +522,18 @@ export default function SettingsPage() {
                 <h3 className="font-black text-red-700 flex items-center gap-2">
                   <Trash2 size={20} /> איפוס מערכת מלא
                 </h3>
-                <p className="text-xs text-red-600/80">מוחק הכל: כרטיסי משודכים, קבוצות וואטסאפ, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות (מחיקה של הכל חוץ ממנהל ראשי).</p>
+                <p className="text-xs text-red-600/80">מוחק נתונים בלבד: כרטיסי משודכים, התאמות, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות. לא מוחק הגדרות או קבוצות וואטסאפ.</p>
                 <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: המנהל הראשי ומנהל העמותה (מלאכי) הם חלק משלד המערכת ואינם נמחקים באף סוג של איפוס.</p>
                 <button 
                   onClick={() => setResetModalConfig({
                     isOpen: true,
                     title: 'איפוס מערכת מלא',
-                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת (מחיקה של הכל חוץ ממנהל ראשי). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
+                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים ראשיים, הגדרות וקבוצות). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
                     color: 'red',
                     onConfirm: async () => {
                       await dataService.factoryReset();
-                      toast.success('המערכת אופסה לחלוטין');
-                      window.location.href = '/login';
+                      toast.success('המערכת אופסה לחלוטין (נתונים בלבד)');
+                      window.location.reload();
                     }
                   })} 
                   className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
@@ -745,7 +745,7 @@ export default function SettingsPage() {
                 <p className="text-slate-500 font-medium">
                   <strong>אזהרה חמורה!</strong>
                   <br />
-                  פעולה זו תמחק את כל המנהלים, הקבוצות, הכרטיסים וההגדרות (מחיקה של הכל חוץ ממנהל ראשי). המערכת תחזור למצב התחלתי.
+                  פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים ראשיים, הגדרות וקבוצות). המערכת תתאפס לנתונים ריקים.
                 </p>
               </div>
               <div className="flex gap-3">
@@ -760,9 +760,9 @@ export default function SettingsPage() {
                     setResetting(true);
                     try {
                       await dataService.factoryReset();
-                      toast.success('המערכת הוחזרה למצב יצרן');
+                      toast.success('המערכת אופסה לחלוטין (נתונים בלבד)');
                       setShowFactoryResetModal(false);
-                      window.location.href = '/login';
+                      window.location.reload();
                     } catch (err) {
                       toast.error('שגיאה באיפוס');
                     } finally {
@@ -835,7 +835,7 @@ export default function SettingsPage() {
             <WhatsAppWidget 
               groupId={testGroup.whapi_id || testGroup.name}
               groupName={testGroup.name}
-              senderName={user?.name || "מנהל ראשי"}
+              senderName={user?.full_name || "מנהל ראשי"}
               onClose={() => setTestGroup(null)}
             />
           </div>

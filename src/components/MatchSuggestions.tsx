@@ -187,7 +187,7 @@ export const MatchSuggestions: React.FC = () => {
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-black text-slate-900">{suggestion.match.name}</p>
+                  <p className="text-sm font-black text-slate-900">{suggestion.match.full_name}</p>
                   <p className="text-[10px] text-slate-500 font-bold">{suggestion.match.age} • {suggestion.match.city}</p>
                   <div className="mt-1 inline-block px-2 py-0.5 bg-blue-50 text-luxury-blue rounded-full text-[9px] font-black uppercase tracking-wider">
                     המשודך שלך
@@ -222,7 +222,7 @@ export const MatchSuggestions: React.FC = () => {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-slate-900 truncate">{pm.name}</p>
+                    <p className="text-xs font-black text-slate-900 truncate">{pm.full_name}</p>
                     <p className="text-[10px] text-slate-500 font-bold">{pm.age} • {pm.city}</p>
                     <p className="text-[9px] text-luxury-blue font-bold mt-0.5 truncate">מנהל: {pm.creator_name || 'אחר'}</p>
                   </div>

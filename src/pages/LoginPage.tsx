@@ -9,8 +9,7 @@ import { APP_NAME } from '../constants';
 import { getGenderedText } from '../utils/gender';
 import { Logo } from '../components/Logo';
 import { dataService } from '../services/dataService';
-import { supabase } from '../services/supabase';
-import { createClient } from '@supabase/supabase-js';
+import { supabase, createClient } from '../services/supabase';
 
 export default function LoginPage() {
   const { mode, setMode } = useBackend();
@@ -163,6 +162,22 @@ export default function LoginPage() {
       }
 
       if (user) {
+        const isMalachi = user.email === 'malachi@tzuriel.org' || user.phone === '0556603336';
+        const isSuperAdmin = user.role === 'super_admin';
+
+        // VIP Access: Malachi and Super Admin can enter through any door
+        if (!isMalachi && !isSuperAdmin) {
+          if (loginType === 'super' && user.role !== 'super_admin') {
+            throw new Error('אין לך הרשאה לכניסה זו');
+          }
+          if (loginType === 'admin' && user.role === 'candidate') {
+            throw new Error('אין לך הרשאה לכניסה זו');
+          }
+          if (loginType === 'candidate' && user.role !== 'candidate') {
+            throw new Error('אין לך הרשאה לכניסה זו');
+          }
+        }
+
         login(user);
         if (user.phone === '0556603336') {
           toast.success('ברוך הבא, מלאכי צוריאל - מנהל העמותה');
@@ -171,6 +186,8 @@ export default function LoginPage() {
         }
         if (user.role === 'super_observer') {
           navigate('/identity-selector');
+        } else if (user.role === 'super_admin') {
+          navigate('/dashboard');
         } else if (user.role === 'candidate') {
           navigate('/candidate-profile');
         } else {
@@ -182,50 +199,6 @@ export default function LoginPage() {
     } catch (err: any) {
       setErrorMessage(err.message || 'שגיאה בחיבור למסד הנתונים');
       setShowErrorModal(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBypassLogin = async () => {
-    setLoading(true);
-    try {
-      // First check if profiles table exists
-      const { error: checkError } = await supabase.from('profiles').select('id').limit(1);
-      
-      if (checkError && (checkError.code === '42P01' || checkError.message?.includes('does not exist'))) {
-        toast.error('מסד הנתונים אינו מוכן. אנא לחץ על כפתור הסנכרון (Refresh) למטה.');
-        setLoading(false);
-        return;
-      }
-
-      const user = await dataService.login('god', 'good', 'admin');
-      if (user) {
-        login(user);
-        toast.success('כניסה מהירה בוצעה בהצלחה!');
-        if (user.role === 'candidate') {
-          navigate('/portal');
-        } else {
-          navigate('/');
-        }
-      } else {
-        // Fallback to 'good' if 'god' doesn't exist yet
-        const fallbackUser = await dataService.login('good', 'good', 'admin');
-        if (fallbackUser) {
-          login(fallbackUser);
-          toast.success('כניסה מהירה בוצעה בהצלחה!');
-          if (fallbackUser.role === 'candidate') {
-            navigate('/portal');
-          } else {
-            navigate('/');
-          }
-        } else {
-          toast.error('שגיאה בכניסה מהירה');
-        }
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast.error('שגיאה: ' + (err.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }

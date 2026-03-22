@@ -198,7 +198,7 @@ function CandidateDashboard() {
 
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/jpeg", 0.9);
-      link.download = `profile-card-${myMatch?.name || "candidate"}.jpg`;
+      link.download = `profile-card-${myMatch?.full_name || "candidate"}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -382,14 +382,14 @@ function CandidateDashboard() {
                         log.match?.image_url ||
                         "https://picsum.photos/seed/match/400/500"
                       }
-                      alt={log.match?.name}
+                      alt={log.match?.full_name}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-4 right-4 left-4 text-white">
                       <h3 className="text-xl font-black">
-                        {log.match?.name}, {log.match?.age}
+                        {log.match?.full_name}, {log.match?.age}
                       </h3>
                       <p className="text-xs font-medium opacity-80">
                         {log.match?.city}
@@ -452,7 +452,7 @@ function CandidateDashboard() {
                             myMatch.image_url ||
                             "https://picsum.photos/seed/profile/600/800"
                           }
-                          alt={myMatch.name}
+                          alt={myMatch.full_name}
                           className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
                         />
@@ -465,7 +465,7 @@ function CandidateDashboard() {
                           </h3>
                           <div className="space-y-1 text-sm font-medium text-slate-800 whitespace-pre-wrap leading-relaxed">
                             <p>✨ <strong>כרטיס שידוכים החצי השני 💍</strong></p>
-                            <p>👤 <strong>שם:</strong> {myMatch.name}</p>
+                            <p>👤 <strong>שם:</strong> {myMatch.full_name}</p>
                             <p>🎂 <strong>גיל:</strong> {myMatch.age}</p>
                             <p>📍 <strong>עיר:</strong> {myMatch.city}</p>
                             <p>📏 <strong>גובה:</strong> {myMatch.height}</p>
@@ -612,7 +612,7 @@ function CandidateDashboard() {
                     <div className="flex-1 px-8 pt-6 space-y-4 overflow-y-auto custom-scrollbar">
                       <div className="text-center">
                         <h3 className="text-3xl font-black mb-1 drop-shadow-lg">
-                          {myMatch?.name}
+                          {myMatch?.full_name}
                         </h3>
                         <div className="flex items-center justify-center gap-2 text-lg font-bold opacity-90">
                           <MapPin size={18} />
@@ -719,7 +719,7 @@ function CandidateDashboard() {
                         <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden">
                           {item.photo && <img src={item.photo} alt="" className="w-full h-full object-cover" />}
                         </div>
-                        <div className="flex-1 font-bold text-slate-900">{item.name}</div>
+                        <div className="flex-1 font-bold text-slate-900">{item.full_name}</div>
                         <div className="text-emerald-600 font-black">{cat.key === 'wins' ? (item as any).wins : (item as any).played}</div>
                       </div>
                     ))}
@@ -745,7 +745,7 @@ function CandidateDashboard() {
                     dailySuggestion.image_url ||
                     "https://picsum.photos/seed/match/800/600"
                   }
-                  alt={dailySuggestion.name}
+                  alt={dailySuggestion.full_name}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
@@ -755,7 +755,7 @@ function CandidateDashboard() {
                     התאמה חכמה להיום
                   </div>
                   <h3 className="text-3xl font-black mb-1">
-                    {dailySuggestion.name}, {dailySuggestion.age}
+                    {dailySuggestion.full_name}, {dailySuggestion.age}
                   </h3>
                   <p className="text-sm font-medium opacity-90 flex items-center gap-2">
                     <TrendingUp size={14} />
@@ -1108,7 +1108,7 @@ function CandidateDashboard() {
         <StrategicRPS
           gameId={activeGame.id}
           myId={user.id}
-          myName={user.name}
+          myName={user.full_name}
           opponentId={activeGame.opponentId}
           opponentName={activeGame.opponentName}
           onClose={() => setActiveGame(null)}

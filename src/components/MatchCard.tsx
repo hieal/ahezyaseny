@@ -47,6 +47,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
   const [hasChanges, setHasChanges] = React.useState(false);
   const [showConfirmCancel, setShowConfirmCancel] = React.useState(false);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [initialCropConfig, setInitialCropConfig] = React.useState<ImagePosition | null>(null);
   const [showViewerSelector, setShowViewerSelector] = React.useState(false);
   const [allGroups, setAllGroups] = React.useState<WhatsAppGroup[]>(allGroupsProp || []);
@@ -161,7 +162,8 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       setIsAdjusting(false);
       setHasChanges(false);
       setShowConfirmCancel(false);
-      toast.success('מיקום התמונה נשמר');
+      setShowSuccessModal(true);
+      setTimeout(() => setShowSuccessModal(false), 2000);
     } catch (err) {
       toast.error('שגיאה בשמירה');
     }
@@ -181,12 +183,11 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
     setHasChanges(false);
   };
 
-  const confirmFreeMove = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowConfirmCancel(false);
-    setIsFreeMoving(false);
-    // Returns to the "special adjustment screen" (the panel)
-  };
+    const confirmFreeMove = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      await saveAdjustment(e);
+      setIsFreeMoving(false);
+    };
 
   const [showManualPublishModal, setShowManualPublishModal] = React.useState(false);
   const [manualPublishDate, setManualPublishDate] = React.useState(new Date().toISOString().split('T')[0]);
@@ -297,6 +298,28 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         ''
       } ${selected ? 'ring-2 ring-luxury-blue bg-blue-50/30' : ''} ${isCsvMissing ? 'border-red-200' : ''}`}
     >
+      {/* Success Modal */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-none">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              className="bg-white/95 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl border border-emerald-100 flex flex-col items-center gap-4 pointer-events-auto ring-1 ring-black/5"
+            >
+              <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-200 animate-bounce">
+                <Check className="text-white" size={40} strokeWidth={3} />
+              </div>
+              <div className="text-center space-y-1">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">עודכן בהצלחה!</h3>
+                <p className="text-slate-500 font-bold">השינוי בוצע ונשמר במערכת</p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {hasMissingFields && (
         <div className="bg-red-50 border-b border-red-100 py-2 px-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 z-20">
           <div className="flex items-center gap-1.5 text-red-600 font-black text-[11px]">
@@ -339,23 +362,26 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {match.image_url && !minimal && (
         <div 
-          className={`relative h-48 w-full overflow-hidden bg-slate-100 ${!isViewer ? (isAdjusting ? 'cursor-move' : 'cursor-pointer') : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : ''}`}
-          onClick={() => !isViewer && !isAdjusting && onImageClick?.(match)}
+          className={`relative h-64 w-full overflow-hidden bg-slate-100 ${!isViewer ? (isAdjusting ? 'cursor-move' : 'cursor-pointer') : 'cursor-default'} ${isDragging ? 'cursor-grabbing' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            !isViewer && !isAdjusting && onImageClick?.(match);
+          }}
           onMouseDown={handleMouseDown}
         >
-          {onPrev && (
-            <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80">
+          {onNext && (
+            <button onClick={(e) => { e.stopPropagation(); onNext(); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80" title="הבא">
               <ChevronLeft size={20} />
             </button>
           )}
-          {onNext && (
-            <button onClick={(e) => { e.stopPropagation(); onNext(); }} className="absolute right-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80">
+          {onPrev && (
+            <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className="absolute right-2 top-1/2 -translate-y-1/2 z-30 p-2 bg-white/50 backdrop-blur-sm rounded-full hover:bg-white/80" title="הקודם">
               <ChevronRight size={20} />
             </button>
           )}
           <img 
             src={dataService.getPublicImageUrl(mainImage)} 
-            alt={match.name} 
+            alt={match.full_name} 
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover transition-all pointer-events-none select-none" 
             style={{
@@ -397,29 +423,28 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  className="bg-white/90 backdrop-blur-2xl p-10 rounded-[3.5rem] shadow-[0_30px_70px_rgba(0,0,0,0.4)] border border-white/60 flex flex-col items-center gap-8 z-50 ring-1 ring-black/5"
+                  className="bg-white/95 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-white/60 flex flex-col items-center gap-6 z-50 ring-1 ring-black/5"
                   onClick={e => e.stopPropagation()}
                 >
-                  <div className="text-center space-y-2">
-                    <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                      <ImageIcon className="text-emerald-600" size={32} />
+                  <div className="text-center space-y-1">
+                    <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-1">
+                      <ImageIcon className="text-emerald-600" size={24} />
                     </div>
-                    <p className="text-slate-900 font-black text-2xl tracking-tight">לשמור את המיקום החדש?</p>
-                    <p className="text-slate-500 text-sm font-bold opacity-70">התמונה הוזזה בהצלחה</p>
+                    <p className="text-slate-900 font-black text-lg tracking-tight">לשמור את המיקום?</p>
                   </div>
-                  <div className="flex gap-4 w-full">
+                  <div className="flex gap-3 w-full">
                     <button 
                       onClick={confirmFreeMove}
-                      className="flex-1 flex items-center justify-center gap-3 px-10 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-[2rem] hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-xl shadow-emerald-500/40 font-black text-base active:scale-95 hover:scale-105"
+                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-lg shadow-emerald-500/30 font-black text-sm active:scale-95"
                     >
-                      <Check size={24} strokeWidth={3} />
+                      <Check size={20} strokeWidth={3} />
                       <span>אישור</span>
                     </button>
                     <button 
                       onClick={cancelAdjustment}
-                      className="flex-1 flex items-center justify-center gap-3 px-10 py-5 bg-gradient-to-br from-rose-500 to-rose-700 text-white rounded-[2rem] hover:from-rose-600 hover:to-rose-800 transition-all shadow-xl shadow-rose-500/40 font-black text-base active:scale-95 hover:scale-105"
+                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-br from-rose-500 to-rose-700 text-white rounded-2xl hover:from-rose-600 hover:to-rose-800 transition-all shadow-lg shadow-rose-500/30 font-black text-sm active:scale-95"
                     >
-                      <X size={24} strokeWidth={3} />
+                      <X size={20} strokeWidth={3} />
                       <span>ביטול</span>
                     </button>
                   </div>
@@ -429,37 +454,37 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
               {/* Main Adjustment Panel */}
               {!isDragging && !showConfirmCancel && !isFreeMoving && (
                 <div 
-                  className={`flex flex-col items-center gap-4 bg-black/20 p-6 rounded-[3rem] border border-white/10 w-[220px] transition-all pointer-events-auto shadow-2xl ${
-                    isAdjusting ? 'scale-100' : 'scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100'
+                  className={`flex flex-col items-center gap-2 bg-black/60 backdrop-blur-md p-3 rounded-3xl border border-white/20 w-[160px] transition-all pointer-events-auto shadow-2xl ${
+                    isAdjusting ? 'scale-90' : 'scale-75 opacity-0 group-hover:opacity-100 group-hover:scale-90'
                   }`} 
                   onClick={e => e.stopPropagation()}
                 >
-                  <div className="text-center space-y-0.5">
-                    <div className="text-[14px] font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+                  <div className="text-center">
+                    <div className="text-[12px] font-black text-white drop-shadow-md">
                       {isAdjusting ? 'כוונון תמונה' : 'שיפור מיקום'}
                     </div>
                   </div>
                   
-                  <div className="flex flex-col items-center gap-3 w-full">
+                  <div className="flex flex-col items-center gap-2 w-full">
                     <button 
                       onClick={(e) => handleAdjust(e, { y: localCropConfig.y + 5 })} 
-                      className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
+                      className="p-1.5 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-md transition-all active:scale-75"
                     >
-                      <ChevronUp size={24} strokeWidth={3} />
+                      <ChevronUp size={18} strokeWidth={3} />
                     </button>
                     
-                    <div className="flex items-center justify-between w-full gap-3">
+                    <div className="flex items-center justify-between w-full gap-2">
                       <button 
                         onClick={(e) => handleAdjust(e, { x: localCropConfig.x - 5 })} 
-                        className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
+                        className="p-1.5 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-md transition-all active:scale-75"
                       >
-                        <ChevronRight size={24} strokeWidth={3} />
+                        <ChevronRight size={18} strokeWidth={3} />
                       </button>
                       
-                      <div className="flex flex-col gap-3">
-                        <div className="flex gap-1.5 bg-black/40 p-1.5 rounded-2xl border border-white/10 shadow-inner">
-                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) + 0.1 })} className="p-2 bg-white hover:bg-slate-50 rounded-xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הגדל"><ZoomIn size={18} strokeWidth={2.5} /></button>
-                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) - 0.1 })} className="p-2 bg-white hover:bg-slate-50 rounded-xl text-luxury-blue shadow-lg transition-all active:scale-90 hover:scale-105" title="הקטן"><ZoomOut size={18} strokeWidth={2.5} /></button>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) + 0.1 })} className="p-1.5 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-md transition-all active:scale-90" title="הגדל"><ZoomIn size={14} strokeWidth={2.5} /></button>
+                          <button onClick={(e) => handleAdjust(e, { zoom: (localCropConfig.zoom || 1) - 0.1 })} className="p-1.5 bg-white hover:bg-slate-50 rounded-lg text-luxury-blue shadow-md transition-all active:scale-90" title="הקטן"><ZoomOut size={14} strokeWidth={2.5} /></button>
                         </div>
 
                         <button 
@@ -468,44 +493,44 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                             setIsAdjusting(true);
                             setIsFreeMoving(true);
                             setInitialCropConfig({ ...localCropConfig });
-                            toast.success('כעת ניתן להזיז את התמונה בחופשיות עם העכבר');
+                            toast.success('כעת ניתן להזיז את התמונה בחופשיות');
                           }} 
-                          className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-3xl transition-all shadow-xl ${isFreeMoving ? 'bg-gradient-to-br from-luxury-blue to-blue-900 text-white scale-105 ring-2 ring-white/30' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                          className={`flex flex-col items-center justify-center gap-1 p-2 rounded-2xl transition-all shadow-md ${isFreeMoving ? 'bg-gradient-to-br from-luxury-blue to-blue-900 text-white scale-105 ring-1 ring-white/30' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
                           title="הזזה חופשית"
                         >
-                          <Move size={24} strokeWidth={2.5} />
-                          <span className="text-[9px] font-black uppercase tracking-widest">הזזה חופשית</span>
+                          <Move size={18} strokeWidth={2.5} />
+                          <span className="text-[7px] font-black uppercase tracking-tighter">הזזה חופשית</span>
                         </button>
                       </div>
 
                       <button 
                         onClick={(e) => handleAdjust(e, { x: localCropConfig.x + 5 })} 
-                        className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
+                        className="p-1.5 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-md transition-all active:scale-75"
                       >
-                        <ChevronLeft size={24} strokeWidth={3} />
+                        <ChevronLeft size={18} strokeWidth={3} />
                       </button>
                     </div>
                     
                     <button 
                       onClick={(e) => handleAdjust(e, { y: localCropConfig.y - 5 })} 
-                      className="p-3 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-lg transition-all active:scale-75 hover:scale-110"
+                      className="p-1.5 bg-white/90 hover:bg-white rounded-full text-slate-900 shadow-md transition-all active:scale-75"
                     >
-                      <ChevronDown size={24} strokeWidth={3} />
+                      <ChevronDown size={18} strokeWidth={3} />
                     </button>
                   </div>
 
                   {/* Reset and Original View Buttons */}
-                  <div className="flex gap-2 w-full">
+                  <div className="flex gap-1.5 w-full">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         setLocalCropConfig({ x: 50, y: 50, zoom: 1 });
                         setHasChanges(true);
                       }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all text-[10px] font-bold border border-white/10"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all text-[9px] font-bold border border-white/10"
                       title="איפוס"
                     >
-                      <RotateCcw size={14} />
+                      <RotateCcw size={12} />
                       <span>איפוס</span>
                     </button>
                     <button 
@@ -513,21 +538,21 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
                         e.stopPropagation();
                         window.open(dataService.getPublicImageUrl(mainImage), '_blank');
                       }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all text-[10px] font-bold border border-white/10"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all text-[9px] font-bold border border-white/10"
                       title="תמונה מקורית"
                     >
-                      <ExternalLink size={14} />
+                      <ExternalLink size={12} />
                       <span>מקור</span>
                     </button>
                   </div>
                   
                   {isAdjusting && hasChanges && (
-                    <div className="flex gap-2 mt-2 pt-4 border-t border-white/10 w-full justify-center">
+                    <div className="flex gap-2 mt-1 pt-2 border-t border-white/10 w-full justify-center">
                       <button 
                         onClick={saveAdjustment}
-                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-xl shadow-emerald-500/30 font-black text-sm w-full justify-center active:scale-95 hover:scale-105"
+                        className="flex items-center gap-2 px-3 py-2 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-800 transition-all shadow-lg shadow-emerald-500/30 font-black text-xs w-full justify-center active:scale-95"
                       >
-                        <Check size={18} strokeWidth={3} />
+                        <Check size={14} strokeWidth={3} />
                         <span>שמור</span>
                       </button>
                     </div>
@@ -546,7 +571,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
       )}
       {!match.image_url && !minimal && (
         <div 
-          className={`relative h-48 w-full overflow-hidden flex items-center justify-center ${
+          className={`relative h-64 w-full overflow-hidden flex items-center justify-center ${
             match.type === 'male' ? 'bg-blue-50' : 'bg-pink-50'
           } ${!isViewer ? 'cursor-pointer' : 'cursor-default'}`}
           onClick={() => !isViewer && onImageClick?.(match)}
@@ -595,7 +620,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           <div className="flex items-center gap-3">
             <div>
               <div className="flex flex-col items-start gap-2">
-                <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.name}</h3>
+                <h3 className="text-xl font-bold text-text-main group-hover:text-luxury-blue transition-colors">{match.full_name}</h3>
                 <div className="flex bg-slate-100 p-0.5 rounded-lg scale-75 origin-right">
                   <button 
                     onClick={() => setViewMode('standard')}
@@ -820,7 +845,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
         ) : viewMode === 'whatsapp' ? (
           <div className="bg-[#E7F3EF] p-4 rounded-2xl border border-emerald-100 space-y-2 font-medium text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
             <p>✨ *כרטיס משודך חדש* ✨</p>
-            <p>👤 *שם:* {match.name}</p>
+            <p>👤 *שם:* {match.full_name}</p>
             <p>🎂 *גיל:* {match.age}</p>
             <p>📍 *עיר:* {match.city}</p>
             <p>📏 *גובה:* {match.height}</p>
@@ -838,7 +863,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                const text = `✨ *כרטיס משודך חדש* ✨\n👤 *שם:* ${match.name}\n🎂 *גיל:* ${match.age}\n📍 *עיר:* ${match.city}\n📏 *גובה:* ${match.height}\n💍 *מצב משפחתי:* ${match.marital_status}\n🕍 *מגזר:* ${match.religious_level}\n💼 *עיסוק:* ${match.occupation}\n✡️ *עדה:* ${match.ethnicity}\n🎖️ *שירות:* ${match.service}\n🚬 *מעשן:* ${match.smoking}\n👐 *שומר נגיעה:* ${match.negiah}\n📝 *קצת עלי:* ${match.about || 'לא צוין'}\n🎯 *מה מחפש:* ${match.looking_for || 'לא צוין'}\n\nפורסם באמצעות פורטל יוחאי`;
+                const text = `✨ *כרטיס משודך חדש* ✨\n👤 *שם:* ${match.full_name}\n🎂 *גיל:* ${match.age}\n📍 *עיר:* ${match.city}\n📏 *גובה:* ${match.height}\n💍 *מצב משפחתי:* ${match.marital_status}\n🕍 *מגזר:* ${match.religious_level}\n💼 *עיסוק:* ${match.occupation}\n✡️ *עדה:* ${match.ethnicity}\n🎖️ *שירות:* ${match.service}\n🚬 *מעשן:* ${match.smoking}\n👐 *שומר נגיעה:* ${match.negiah}\n📝 *קצת עלי:* ${match.about || 'לא צוין'}\n🎯 *מה מחפש:* ${match.looking_for || 'לא צוין'}\n\nפורסם באמצעות פורטל יוחאי`;
                 navigator.clipboard.writeText(text);
                 toast.success('הטקסט הועתק!');
               }}
@@ -874,7 +899,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
 
               <div className="flex-1 pt-4 space-y-3 overflow-y-auto custom-scrollbar pr-1">
                 <div className="text-center">
-                  <h3 className="text-xl font-black mb-0.5 drop-shadow-md">{match.name}</h3>
+                  <h3 className="text-xl font-black mb-0.5 drop-shadow-md">{match.full_name}</h3>
                   <div className="flex items-center justify-center gap-1 text-xs font-bold opacity-90">
                     <MapPin size={12} />
                     {match.age} • {match.city}

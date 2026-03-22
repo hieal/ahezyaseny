@@ -328,7 +328,7 @@ export default function CandidatePortalAdmin() {
                         {winner.photo && <img src={winner.photo} alt="" className="w-full h-full object-cover" />}
                       </div>
                       <div>
-                        <p className="font-bold text-slate-900">{winner.name}</p>
+                        <p className="font-bold text-slate-900">{winner.full_name}</p>
                         <p className="text-xs font-bold text-amber-600">אלוף הלבבות</p>
                       </div>
                     </div>
@@ -339,10 +339,10 @@ export default function CandidatePortalAdmin() {
                           const profile = await dataService.getProfileById(winner.id);
                           if (candidate && profile && profile.phone) {
                             await dataService.updateCandidateNotes(candidate.id, 'STAR');
-                            await dataService.sendWhatsAppMessage(profile.phone, `ברכות ${winner.name}! זכית בתואר אלוף הלבבות! הפרס הוענק לך.`);
-                            toast.success(`הפרס הוענק ל${winner.name}!`);
+                            await dataService.sendWhatsAppMessage(profile.phone, `ברכות ${winner.full_name}! זכית בתואר אלוף הלבבות! הפרס הוענק לך.`);
+                            toast.success(`הפרס הוענק ל${winner.full_name}!`);
                           } else {
-                            toast.error(`לא נמצא מועמד או מספר טלפון ל${winner.name}`);
+                            toast.error(`לא נמצא מועמד או מספר טלפון ל${winner.full_name}`);
                           }
                         } catch (error) {
                           toast.error(`שגיאה בהענקת הפרס: ${error}`);

@@ -19,13 +19,13 @@ const InitialContactPage = () => {
   const fetchCandidates = async () => {
     const { data, error } = await supabase
       .from('candidates')
-      .select('*, profiles(full_name)');
+      .select('*, admins(full_name)');
     if (error) toast.error('שגיאה בטעינת מועמדים');
     else setCandidates(data || []);
   };
 
   const fetchAdmins = async () => {
-    const { data } = await supabase.from('profiles').select('id, affiliation_group, full_name');
+    const { data } = await supabase.from('admins').select('id, affiliation_group, full_name');
     setAdmins(data || []);
   };
 
@@ -167,7 +167,7 @@ const InitialContactPage = () => {
               about: c.about,
               looking_for: c.looking_for,
               image_url: c.image_url,
-              admin_name: c.profiles?.full_name,
+              admin_name: c.admins?.full_name,
               height: c.height || '',
               family_description: c.family_description || '',
               shomer_negia: c.negiah || '',

@@ -17,7 +17,7 @@ export const ActiveManagersWidget: React.FC = () => {
   }
 
   const onlineUsers = Object.values(presenceState).filter(p => p.user_id !== user.id);
-  const isMalachi = user.username === 'god';
+  const isMalachi = user.phone === '0556603336';
 
   const nextManager = () => setCarouselIndex((prev) => (prev + 1) % onlineUsers.length);
   const prevManager = () => setCarouselIndex((prev) => (prev - 1 + onlineUsers.length) % onlineUsers.length);

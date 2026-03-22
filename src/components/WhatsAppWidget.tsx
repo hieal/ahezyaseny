@@ -237,7 +237,7 @@ export function WhatsAppWidget({
     }
 
     const text = includeText ? (matchMessage || `<strong>כרטיס חדש במערכת:</strong>
-<strong>שם:</strong> ${currentMatch.name}
+<strong>שם:</strong> ${currentMatch.full_name}
 <strong>גיל:</strong> ${currentMatch.age}
 <strong>גובה:</strong> ${currentMatch.height || '---'}
 <strong>עדה:</strong> ${currentMatch.ethnicity || '---'}
@@ -615,7 +615,7 @@ export function WhatsAppWidget({
                     <img src={matchImage} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-[#075E54] mb-1">תוכן לפרסום: {currentMatch.name}</p>
+                    <p className="text-xs font-bold text-[#075E54] mb-1">תוכן לפרסום: {currentMatch.full_name}</p>
                     <p className="text-[10px] text-slate-600 line-clamp-2 leading-tight">{matchMessage}</p>
                   </div>
                   <button 

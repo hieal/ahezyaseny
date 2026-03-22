@@ -6,21 +6,21 @@ import { isVercel } from '../utils/env';
 
 interface AuthContextType {
   user: User | null;
-  activeRole: 'admin' | 'team_leader' | null;
+  activeRole: 'admin' | 'team_leader' | 'observer_manager' | null;
   loading: boolean;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isReadOnly: boolean;
-  setActiveRole: (role: 'admin' | 'team_leader') => void;
-  selectRole: (role: 'admin' | 'team_leader') => void;
+  setActiveRole: (role: 'admin' | 'team_leader' | 'observer_manager' | null) => void;
+  selectRole: (role: 'admin' | 'team_leader' | 'observer_manager' | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | null>(null);
+  const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | 'observer_manager' | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
@@ -119,12 +119,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else if (event === 'SIGNED_OUT') {
-        // Don't clear local storage if it's a super_observer or god (they don't use Supabase Auth)
+        // Don't clear local storage if it's a super_observer (they don't use Supabase Auth)
         const localUserStr = localStorage.getItem('current_user');
         if (localUserStr) {
           try {
             const localUser = JSON.parse(localUserStr);
-            if (localUser.role === 'super_observer' || localUser.username === 'god') {
+            if (localUser.role === 'super_observer') {
               return; // Ignore SIGNED_OUT for these special users
             }
           } catch (e) {}
@@ -155,18 +155,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user && user.role === 'super_admin') {
+      // Run aggressive cleanup once per session for super admins
+      const hasCleaned = sessionStorage.getItem('admin_cleanup_done');
+      if (!hasCleaned) {
+        dataService.performAdminCleanup().then(() => {
+          sessionStorage.setItem('admin_cleanup_done', 'true');
+          console.log('Automatic admin cleanup completed');
+        });
+      }
+    }
+  }, [user]);
+
   const login = (userData: User) => {
-    if (userData.role === 'admin' && userData.is_team_leader) {
+    const isMalachi = userData.email === 'malachi@tzuriel.org' || userData.phone === '0556603336';
+    if (isMalachi) {
+      userData.role = 'observer_manager';
+      setUser(userData);
+      setActiveRole('observer_manager');
+      localStorage.setItem('current_user', JSON.stringify(userData));
+      return;
+    }
+
+    if ((userData.role === 'admin' && userData.is_team_leader) || userData.role === 'observer_manager') {
       setPendingUser(userData);
       setShowRolePicker(true);
     } else {
       setUser(userData);
-      setActiveRole(userData.role as 'admin' | 'team_leader');
+      setActiveRole(userData.role as any);
       localStorage.setItem('current_user', JSON.stringify(userData));
     }
   };
 
-  const selectRole = (role: 'admin' | 'team_leader') => {
+  const selectRole = (role: 'admin' | 'team_leader' | 'observer_manager') => {
     if (!pendingUser) return;
     
     setUser(pendingUser);
@@ -183,10 +205,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('current_user');
   };
 
-  const isReadOnly = user?.role === 'super_observer';
+  const isReadOnly = user?.role === 'super_observer' || user?.role === 'observer_manager' || user?.role === 'association_admin';
 
   return (
-    <AuthContext.Provider value={{ user, activeRole, loading, login, logout, refreshUser, isReadOnly, setActiveRole: (role) => setActiveRole(role), selectRole }}>
+    <AuthContext.Provider value={{ user, activeRole, loading, login, logout, refreshUser, isReadOnly, setActiveRole: (role) => setActiveRole(role as any), selectRole: (role) => selectRole(role as any) }}>
       {children}
       {showRolePicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -195,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             <div className="flex gap-4">
               <button onClick={() => selectRole('admin')} className="bg-luxury-blue text-white px-4 py-2 rounded-lg">מנהל קבוצה</button>
               <button onClick={() => selectRole('team_leader')} className="bg-luxury-blue text-white px-4 py-2 rounded-lg">ראש צוות</button>
+              <button onClick={() => selectRole('observer_manager')} className="bg-luxury-blue text-white px-4 py-2 rounded-lg">צופה מנהל</button>
             </div>
           </div>
         </div>

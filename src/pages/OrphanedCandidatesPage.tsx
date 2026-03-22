@@ -69,7 +69,7 @@ const OrphanedCandidatesPage: React.FC = () => {
   };
 
   const filteredCandidates = candidates.filter(c => 
-    c.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    c.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) return <div className="p-8 text-center">טוען...</div>;
@@ -127,7 +127,7 @@ const OrphanedCandidatesPage: React.FC = () => {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 truncate">{match.name}</p>
+                  <p className="font-bold text-slate-900 truncate">{match.full_name}</p>
                   <p className="text-xs text-slate-500">
                     {getGenderedText(match.type as any, 'בחור', 'בחורה')} • {match.age}
                   </p>
@@ -180,7 +180,7 @@ const OrphanedCandidatesPage: React.FC = () => {
                     <User size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-900 text-sm truncate">{admin.full_name || admin.name}</p>
+                    <p className="font-bold text-slate-900 text-sm truncate">{admin.full_name}</p>
                     <p className="text-[10px] text-slate-500 uppercase">
                       {getGenderedText(admin.gender, 'מנהל', 'מנהלת')}
                     </p>

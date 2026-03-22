@@ -53,7 +53,6 @@ export default function MatchesManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('האם אתה בטוח שברצונך למחוק משודך זה?')) return;
     try {
       await dataService.deleteMatch(id);
       setMatches(matches.filter(m => m.id !== id));
@@ -117,7 +116,7 @@ export default function MatchesManagement() {
           <tbody>
             {matches.map(match => (
               <tr key={match.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="p-3 font-bold">{match.full_name || match.name}</td>
+                <td className="p-3 font-bold">{match.full_name}</td>
                 <td className="p-3">
                   <div className="flex items-center gap-2">
                     <input 

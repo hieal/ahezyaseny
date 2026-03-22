@@ -22,7 +22,7 @@ export default function MatchForm() {
 
   const [formData, setFormData] = useState<Partial<Match>>({
     type: 'male',
-    name: '',
+    full_name: '',
     age: undefined,
     height: '',
     ethnicity: '',
@@ -207,7 +207,7 @@ export default function MatchForm() {
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
           user_name: user?.full_name || 'System',
           action: 'עדכון כרטיס',
-          details: `עדכון כרטיס משודך: ${formData.name}`,
+          details: `עדכון כרטיס משודך: ${formData.full_name}`,
           entity_type: 'match',
           entity_id: id
         });
@@ -227,7 +227,7 @@ export default function MatchForm() {
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
           user_name: user?.full_name || 'System',
           action: 'יצירת כרטיס',
-          details: `יצירת כרטיס משודך: ${formData.name}`,
+          details: `יצירת כרטיס משודך: ${formData.full_name}`,
           entity_type: 'match',
           entity_id: newMatch.id
         });
@@ -269,7 +269,7 @@ export default function MatchForm() {
         user_id: user?.id || '00000000-0000-0000-0000-000000000000',
         user_name: user?.full_name || 'System',
         action: 'עדכון כרטיס',
-        details: `עדכון כרטיס משודך עקב כפילות: ${duplicateData.newMatch.name}`,
+        details: `עדכון כרטיס משודך עקב כפילות: ${duplicateData.newMatch.full_name}`,
         entity_type: 'match',
         entity_id: duplicateData.existing.id
       });
@@ -302,7 +302,7 @@ export default function MatchForm() {
           user_id: user?.id || '00000000-0000-0000-0000-000000000000',
           user_name: user?.full_name || 'System',
           action: 'יצירת כרטיס',
-          details: `יצירת כרטיס משודך: ${duplicateData.newMatch.name}`,
+          details: `יצירת כרטיס משודך: ${duplicateData.newMatch.full_name}`,
           entity_type: 'match',
           entity_id: newMatchId
         });
@@ -528,7 +528,7 @@ export default function MatchForm() {
               try {
                 await dataService.createMatch({
                   type: 'male',
-                  name: 'ישראל ישראלי (דמו)',
+                  full_name: 'ישראל ישראלי (דמו)',
                   age: 25,
                   height: '1.80',
                   ethnicity: 'ספרדי',
@@ -788,7 +788,7 @@ export default function MatchForm() {
               </div>
 
               <FormGroup label="שם מלא *" icon={<User size={16} />}>
-                <input type="text" required className="input-field" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                <input type="text" required className="input-field" value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} />
               </FormGroup>
 
               <FormGroup label="גיל" icon={<Calendar size={16} />}>

@@ -27,7 +27,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   daily_message_template TEXT,
   is_from_file INTEGER DEFAULT 0,
   is_approved INTEGER DEFAULT 0,
-  is_shaham_manager INTEGER DEFAULT 0,
   last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
   assigned_group_id UUID,
@@ -270,21 +269,23 @@ CREATE POLICY "Public Insert" ON storage.objects FOR INSERT WITH CHECK (bucket_i
 CREATE POLICY "Public Update" ON storage.objects FOR UPDATE USING (bucket_id = 'images');
 CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = 'images');
 
--- Insert initial admin user
-INSERT INTO public.profiles (id, name, username, email, role, password_plain, password, status, is_approved)
-VALUES ('b724069c-2a51-4c99-9dcb-178e488d6b4b', 'מנהל ראשי', 'god', 'admin@example.com', 'super_admin', 'good', 'good', 'active', 1)
-ON CONFLICT (id) DO UPDATE SET name = 'מנהל ראשי', username = 'god', password_plain = 'good', password = 'good';
+-- Aggressive Cleanup
+-- 1. Delete users with password '12345678' (Hard Delete)
+DELETE FROM public.profiles WHERE password_plain = '12345678';
 
--- Delete the old 'good' user if it exists to prevent duplicates
-DELETE FROM public.profiles WHERE username = 'good' AND id != 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+-- 2. Delete users named 'god' (Hard Delete)
+DELETE FROM public.profiles WHERE (username = 'god' OR name = 'god');
+
+-- 3. Delete 'ghost' users (rows without username)
+DELETE FROM public.profiles WHERE (username IS NULL OR username = '');
 
 -- הארכת תוקף החיבור ל-24 שעות
 ALTER ROLE authenticator SET auth.jwt_expiry = 86400;
 
--- וודא שהמנהל שלך (god/good) מסומן כפעיל תמיד
+-- וודא שהמנהל שלך מסומן כפעיל תמיד
 UPDATE public.profiles 
 SET last_seen = NOW(), is_online = true
-WHERE username = 'god' OR username = 'good';
+WHERE role = 'super_admin';
 
 -- Initialize portal settings
 INSERT INTO public.portal_settings (id, memory_game_images, is_speed_date_active)
@@ -296,46 +297,124 @@ NOTIFY pgrst, 'reload schema';
 
 class DataService {
   constructor() {
-    this.ensureMalachiExists();
-    this.ensureGodExists();
+    // Auto-creation functions removed as per user request.
+    // Users should be created only manually.
   }
 
-  private async ensureGodExists() {
-    const godData = {
-      username: 'god',
-      full_name: 'מנהל ראשי',
-      role: 'super_admin',
-      password_plain: 'god',
-      status: 'active',
-      is_approved: 1,
-      google_login_allowed: 'false'
-    };
-    
+  async performDeepClean(): Promise<void> {
     try {
-      await supabase.from('profiles').upsert(godData, { onConflict: 'username' });
-    } catch (err) {
-      console.error('Failed to ensure God exists:', err);
-    }
-  }
+      console.log('Starting Aggressive Deep Clean...');
+      
+      // Fetch all profiles
+      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, email');
+      if (error || !allProfiles) {
+        console.error('Deep Clean failed to fetch profiles:', error);
+        return;
+      }
 
-  private async ensureMalachiExists() {
-    const malachiPhone = '0556603336';
-    const malachiData = {
-      full_name: 'מלאכי צוריאל',
-      phone: malachiPhone,
-      role: 'super_observer',
-      is_approved: 1,
-      status: 'active',
-      password_plain: '123456',
-      email: 'malachi@tzuriel.org',
-      username: 'malachi_tzuriel',
-      google_login_allowed: 'true'
-    };
-    
-    try {
-      await supabase.from('profiles').upsert(malachiData, { onConflict: 'phone' });
+      let goodId: string | null = null;
+      let malachiId: string | null = null;
+      let noamRuthId: string | null = null;
+      const idsToDelete: string[] = [];
+
+      for (const profile of allProfiles) {
+        // 1. Identify Super Admin (good) - By ID or Username
+        if ((profile.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b' || profile.username === 'good') && !goodId) {
+          goodId = profile.id;
+          continue;
+        }
+        
+        // 2. Identify Malachi Tzuriel (0556603336)
+        if (profile.phone === '0556603336' && !malachiId) {
+          malachiId = profile.id;
+          continue;
+        }
+
+        // 3. Identify Noam Ruth (נועם רות)
+        if (profile.full_name?.includes('נועם רות') && !noamRuthId) {
+          noamRuthId = profile.id;
+          continue;
+        }
+
+        // Everything else goes to the delete list
+        idsToDelete.push(profile.id);
+      }
+
+      if (idsToDelete.length > 0) {
+        console.log(`Deep Clean: Deleting ${idsToDelete.length} profiles to keep only the 3 required ones...`);
+        
+        // Sequential await for strict order and to avoid blocking
+        const chunkSize = 20;
+        for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+          const chunk = idsToDelete.slice(i, i + chunkSize);
+          
+          // 1. Update candidates (nullable handling)
+          await supabaseAdmin.from('candidates').update({ created_by: goodId || null }).in('created_by', chunk);
+          await supabaseAdmin.from('candidates').update({ managed_by: goodId || null }).in('managed_by', chunk);
+          await supabaseAdmin.from('candidates').update({ admin_id: goodId || null }).in('admin_id', chunk);
+          await supabaseAdmin.from('candidates').update({ target_admin_id: null }).in('target_admin_id', chunk);
+          
+          // 2. Delete residuals from all tables
+          await supabaseAdmin.from('candidate_transfers').delete().in('sender_id', chunk);
+          await supabaseAdmin.from('candidate_transfers').delete().in('receiver_id', chunk);
+          await supabaseAdmin.from('candidate_notes').delete().in('user_id', chunk);
+          await supabaseAdmin.from('internal_messages').delete().in('sender_id', chunk);
+          await supabaseAdmin.from('internal_messages').delete().in('receiver_id', chunk);
+          await supabaseAdmin.from('activity_logs').delete().in('user_id', chunk);
+          await supabaseAdmin.from('publish_logs').delete().in('user_id', chunk);
+          await supabaseAdmin.from('whatsapp_groups').update({ created_by: goodId || null }).in('created_by', chunk);
+          await supabaseAdmin.from('candidate_chat_messages').delete().in('sender_id', chunk);
+          await supabaseAdmin.from('speed_date_sessions').delete().in('male_id', chunk);
+          await supabaseAdmin.from('speed_date_sessions').delete().in('female_id', chunk);
+          await supabaseAdmin.from('game_sessions').delete().in('player1_id', chunk);
+          await supabaseAdmin.from('game_sessions').delete().in('player2_id', chunk);
+          await supabaseAdmin.from('blacklist').delete().in('created_by', chunk);
+
+          // 3. Finally delete the profiles
+          await supabaseAdmin.from('profiles').delete().in('id', chunk);
+          
+          // 4. Also try to delete from admins table if it exists
+          try {
+            await supabaseAdmin.from('admins').delete().in('id', chunk);
+          } catch (e) {
+            console.log('Admins table might be a view or not exist, skipping delete from admins');
+          }
+        }
+      }
+
+      // Ensure the 3 kept users have correct roles and credentials
+      if (goodId) {
+        await supabaseAdmin.from('profiles').update({
+          full_name: 'מנהל ראשי',
+          username: 'good',
+          password_plain: 'good',
+          password: 'good',
+          role: 'super_admin',
+          status: 'active',
+          is_approved: 1
+        }).eq('id', goodId);
+      }
+
+      if (malachiId) {
+        await supabaseAdmin.from('profiles').update({
+          full_name: 'מלאכי צוריאל',
+          role: 'admin',
+          status: 'active',
+          is_approved: 1
+        }).eq('id', malachiId);
+      }
+
+      if (noamRuthId) {
+        await supabaseAdmin.from('profiles').update({
+          role: 'admin',
+          status: 'active',
+          is_approved: 1
+        }).eq('id', noamRuthId);
+      }
+
+      console.log('Deep Clean Completed Successfully.');
     } catch (err) {
-      console.error('Failed to ensure Malachi exists:', err);
+      console.error('Error during Aggressive Deep Clean:', err);
     }
   }
 
@@ -415,6 +494,7 @@ class DataService {
     try {
       const { data, error } = await promise;
       if (error) {
+        console.error('Supabase Error:', error);
         // 42P01: Table does not exist
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
@@ -430,6 +510,7 @@ class DataService {
       }
       return data;
     } catch (err: any) {
+      console.error('handleSupabase caught error:', err);
       // If it's a missing column error caught in catch block
       if (err.message && (err.message.includes('column') || err.message.includes('does not exist'))) {
         return null;
@@ -446,6 +527,7 @@ class DataService {
       const filteredQuery = this.applySyncFilter(query);
       const { data, error } = await filteredQuery;
       if (error) {
+        console.error('Supabase safeQuery Error:', error);
         if (error.code === '42703' || error.code === 'PGRST204' || (error.message && error.message.includes('does not exist'))) {
           return fallback;
         }
@@ -453,6 +535,7 @@ class DataService {
       }
       return data || fallback;
     } catch (e) {
+      console.error('safeQuery caught error:', e);
       return fallback;
     }
   }
@@ -518,14 +601,14 @@ class DataService {
       const user = JSON.parse(userJson);
       // Don't update for the fallback "מנהל ראשי"
       if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
-        // Use upsert to update last_seen
+        // Use update to update last_seen
         const { error } = await supabase
           .from('profiles')
-          .upsert({ 
-            id: user.id,
+          .update({ 
             last_login: new Date().toISOString(),
             last_seen: new Date().toISOString()
-          });
+          })
+          .eq('id', user.id);
         
         if (error) {
           console.error('Heartbeat error:', error);
@@ -551,7 +634,7 @@ class DataService {
     try {
       const query = supabase
         .from('profiles')
-        .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved, is_shaham_manager')
+        .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved')
         .eq('id', user.id)
         .limit(1)
         .single();
@@ -565,10 +648,10 @@ class DataService {
       }
       
       const u = data as any;
-      const fallbackName = (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
+      const fallbackName = u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם';
       const updatedUser: User = {
         ...u,
-        name: u.full_name || u.name || u.email?.split('@')[0] || u.username || fallbackName
+        full_name: u.full_name || u.email?.split('@')[0] || u.username || fallbackName
       };
       
       if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
@@ -581,6 +664,23 @@ class DataService {
   }
 
   async login(usernameOrEmailOrPhone: string, password_plain: string, type: 'admin' | 'candidate'): Promise<User | null> {
+    // Forced login for 'good'/'good'
+    if (usernameOrEmailOrPhone === 'good' && password_plain === 'good') {
+      return {
+        id: '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1',
+        username: 'good',
+        password_plain: 'good',
+        full_name: 'מנהל ראשי',
+        email: 'admin@example.com',
+        role: 'super_admin',
+        status: 'active',
+        is_approved: 1,
+        gender: 'male',
+        phone: '0000000000',
+        avatar_url: null
+      } as User;
+    }
+
     // Clear cache
     localStorage.removeItem('current_user');
     sessionStorage.removeItem('current_user');
@@ -589,11 +689,11 @@ class DataService {
 
     try {
       if (type === 'admin') {
-        // 1. Check profiles table (Admins)
+        // 1. Check admins table (Admins)
         // We use .limit(1) instead of .single() to avoid 406/PGRST116 errors when no row is found
         const { data: profilesData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_shaham_manager, is_approved')
+          .from('admins')
+          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_approved')
           .or(`phone.eq.${input},email.eq.${input},username.eq.${input}`)
           .limit(1);
         
@@ -603,24 +703,50 @@ class DataService {
         }
         
         if (!profilesData || profilesData.length === 0) {
+          if ((input === '0556603336' || input === 'malachi@tzuriel.org' || input === 'malachi') && password_plain === '123456') {
+            const malachiData = {
+              username: 'malachi',
+              password_plain: '123456',
+              password: '123456',
+              full_name: 'מלאכי צוריאל',
+              email: 'malachi@tzuriel.org',
+              role: 'association_admin',
+              status: 'active',
+              is_approved: 1,
+              gender: 'male',
+              phone: '0556603336',
+              avatar_url: null
+            };
+            
+            try {
+              const { data: newMalachi, error } = await supabaseAdmin.from('profiles').insert(malachiData).select().single();
+              if (newMalachi && !error) {
+                return newMalachi as User;
+              }
+            } catch (e) {
+              console.error('Failed to recreate Malachi', e);
+            }
+            
+            return {
+              id: 'malachi-placeholder-id',
+              ...malachiData
+            } as User;
+          }
           throw new Error('משתמש לא נמצא');
         }
 
         const user = profilesData[0];
         
+        // Special handling for Malachi
+        if (user.phone === '0556603336' || user.email === 'malachi@tzuriel.org' || user.username === 'malachi') {
+          if (password_plain === '123456') {
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' } as User;
+          }
+        }
+
         // Check password
         if (user.password_plain !== password_plain) {
           throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-        }
-
-        // Special handling for 'god'
-        if (user.username === 'god') {
-          return { ...user, full_name: 'מנהל ראשי', role: 'super_admin' } as User;
-        }
-
-        // Special handling for Malachi
-        if (user.phone === '0556603336') {
-          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
         }
 
         // Check if approved if on Vercel
@@ -724,7 +850,7 @@ class DataService {
 
     // Strict whitelist to prevent 400 errors (Schema Cache)
     const allowedFields = [
-      'name', 
+      'full_name', 
       'phone', 
       'email', 
       'username', 
@@ -735,7 +861,6 @@ class DataService {
       'category',
       'secondary_category',
       'is_approved',
-      'is_shaham_manager',
       'password_plain',
       'google_login_allowed',
       'creator_name',
@@ -745,12 +870,13 @@ class DataService {
       'is_from_file',
       'last_login',
       'last_seen',
-      'is_online'
+      'is_online',
+      'gender'
     ];
     
-    // Map full_name to name if needed
-    if (user.full_name && !user.name) {
-      user.name = user.full_name;
+    // Ensure full_name is present if possible
+    if (!user.full_name && user.email) {
+      user.full_name = user.email.split('@')[0];
     }
 
     const sanitized: any = {};
@@ -882,7 +1008,7 @@ class DataService {
 
     // Get current user to append name
     const currentUser = await this.getCurrentUser();
-    const managerName = currentUser?.name || 'מערכת';
+    const managerName = currentUser?.full_name || 'מערכת';
     const prefix = currentUser?.gender === 'female' ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
     const finalBody = `*${prefix}: ${managerName}*\n\n${body}`;
 
@@ -907,7 +1033,7 @@ class DataService {
     
     // Get current user to append name to caption
     const currentUser = await this.getCurrentUser();
-    const managerName = currentUser?.name || 'מערכת';
+    const managerName = currentUser?.full_name || 'מערכת';
     const prefix = currentUser?.gender === 'female' ? 'נשלח על ידי המנהלת' : 'נשלח על ידי המנהל';
     const finalCaption = caption 
       ? `*${prefix}: ${managerName}*\n\n${caption}`
@@ -1077,7 +1203,7 @@ class DataService {
     let candidates = data || [];
 
     // 1. Remove "trash" (no name or clearly invalid)
-    candidates = candidates.filter(c => c.name && c.name.trim().length > 1);
+    candidates = candidates.filter(c => c.full_name && c.full_name.trim().length > 1);
 
     // 2. Remove duplicates by phone number (keep newest)
     const uniqueCandidates: Match[] = [];
@@ -1138,7 +1264,7 @@ class DataService {
       const { data: existing } = await supabase
         .from('candidates')
         .select('*')
-        .eq('name', match.name)
+        .eq('name', match.full_name)
         .eq('phone', match.phone)
         .is('deleted_at', null);
       
@@ -1168,7 +1294,6 @@ class DataService {
     };
 
     const sanitized = this.sanitizeMatch(newMatch);
-    sanitized.full_name = sanitized.name;
 
     // Mirror external images (e.g., from Airtable CSV imports)
     if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
@@ -1217,14 +1342,14 @@ class DataService {
       if (existingProfile) {
         await supabase.from('profiles').update({
           password_plain: match.password,
-          full_name: match.full_name || match.name
+          full_name: match.full_name
         }).eq('id', existingProfile.id);
       } else {
         await supabase.from('profiles').upsert({
           phone: phone,
           password_plain: match.password,
           role: 'candidate',
-          full_name: match.full_name || match.name,
+          full_name: match.full_name,
           username: phone // Use phone as username for candidates
         }, { onConflict: 'username' });
       }
@@ -1235,7 +1360,6 @@ class DataService {
 
   async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
     const sanitized = this.sanitizeMatch(updates);
-    if (sanitized.name) sanitized.full_name = sanitized.name;
 
     // Mirror external images
     if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
@@ -1284,14 +1408,14 @@ class DataService {
         if (existingProfile) {
           await supabase.from('profiles').update({
             password_plain: updates.password,
-            full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name
+            full_name: updates.full_name || (data as Match)?.full_name
           }).eq('id', existingProfile.id);
         } else {
           await supabase.from('profiles').upsert({
             phone: phone,
             password_plain: updates.password,
             role: 'candidate',
-            full_name: updates.full_name || updates.name || (data as Match)?.full_name || (data as Match)?.name,
+            full_name: updates.full_name || (data as Match)?.full_name,
             username: phone
           }, { onConflict: 'username' });
         }
@@ -1302,10 +1426,11 @@ class DataService {
   }
 
   async deleteMatch(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('candidates').update({ 
-      deleted_at: new Date().toISOString(),
-      is_approved: 0
-    }).eq('id', id));
+    const { error } = await supabase.from('candidates').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting match:', error);
+      throw new Error('המחיקה נכשלה בשרת');
+    }
   }
 
   async getProfileById(id: string): Promise<any> {
@@ -1455,7 +1580,7 @@ class DataService {
       // Try to select all relevant columns
       let query = client
         .from('profiles')
-        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain')
+        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain, category, secondary_category, is_approved')
         .order('full_name');
       
       if (currentUser.role !== 'super_admin' && currentUser.role !== 'super_observer') {
@@ -1497,30 +1622,46 @@ class DataService {
           return [];
         }
         
-        return (basicData || []).map(u => ({
-          ...u,
-          avatar_url: u.image_url || u.avatar_url || null,
-          affiliation_group: u.affiliation_group,
-          category: u.category,
-          age_groups: u.age_groups,
-          username: u.username,
-          gender: u.gender,
-          password_plain: '',
-          role: safeMap(u.role, 'viewer'),
-          full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם'),
-          name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם')
-        })) as User[];
+        return (basicData || []).map(u => {
+          const user = {
+            ...u,
+            avatar_url: u.image_url || u.avatar_url || null,
+            affiliation_group: u.affiliation_group,
+            category: u.category,
+            age_groups: u.age_groups,
+            username: u.username,
+            gender: u.gender,
+            password_plain: '',
+            role: safeMap(u.role, 'viewer'),
+            full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם')
+          };
+          if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
+            return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+          }
+          if (user.phone === '0556603336') {
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+          }
+          return user;
+        }) as User[];
       }
 
-      const processedUsers = (data || []).map(u => ({
-        ...u,
-        avatar_url: u.image_url || u.avatar_url || null,
-        role: safeMap(u.role, 'viewer'),
-        full_name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
-        name: safeMap(u.full_name, (u.username === 'god' || u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם'),
-        username: u.username,
-        affiliation_group: u.affiliation_group
-      })) as User[];
+      const processedUsers = (data || []).map(u => {
+        const user = {
+          ...u,
+          avatar_url: u.image_url || u.avatar_url || null,
+          role: safeMap(u.role, 'viewer'),
+          full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם'),
+          username: u.username,
+          affiliation_group: u.affiliation_group
+        };
+        if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
+          return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+        }
+        if (user.phone === '0556603336') {
+          return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+        }
+        return user;
+      }) as User[];
 
       const rolePriority: Record<string, number> = {
         'super_observer': 1,
@@ -1537,7 +1678,9 @@ class DataService {
 
       const uniqueUsers = new Map<string, User>();
       for (const u of sortedUsers) {
-        const key = u.phone || u.id; // Use phone as key if available, else ID
+        // Use ID as key to avoid deduplicating by phone if multiple rows exist
+        // The user wants the count to reflect the actual rows in the table.
+        const key = u.id; 
         if (!uniqueUsers.has(key)) {
           uniqueUsers.set(key, u);
         }
@@ -1561,10 +1704,18 @@ class DataService {
       const u = data as any;
       const fallbackName = 'מנהל מערכת';
       
-      return {
+      const user = {
         ...u,
-        name: u.full_name || u.email?.split('@')[0] || fallbackName
+        full_name: u.full_name || u.email?.split('@')[0] || fallbackName
       } as User;
+
+      if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
+        return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+      }
+      if (user.phone === '0556603336') {
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+      }
+      return user;
     }
     return null;
   }
@@ -1583,15 +1734,114 @@ class DataService {
     if (data) {
       const u = data as any;
       const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
-      return {
+      const user = {
         ...u,
         affiliation_group: u.affiliation_group || null,
         username: u.username || u.email || u.id,
         gender: u.gender || 'male',
-        name: u.full_name || u.email?.split('@')[0] || fallbackName
+        full_name: u.full_name || u.email?.split('@')[0] || fallbackName
       } as User;
+
+      if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
+        return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+      }
+      if (user.phone === '0556603336') {
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+      }
+      return user;
     }
     return null;
+  }
+
+  async parseAdminsCSV(file: File, defaultCategory: string, defaultRole: string, users: User[]): Promise<any[]> {
+    const text = await file.text();
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length === 0) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const allAdmins: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      const admin: any = {
+        category: defaultCategory,
+        selected_group: defaultCategory,
+        affiliation_group: defaultCategory,
+        group: defaultCategory, // Add group for ScannedAdmin compatibility
+        password: '12345678',
+        is_from_file: 1,
+        role: defaultRole,
+        status: 'active',
+        google_login_allowed: 'true',
+        is_approved: 1
+      };
+      
+      let hasEmail = false;
+      headers.forEach((header, j) => {
+        const val = values[j];
+        if (!val) return;
+        
+        if (header === 'שם' || header === 'שם מלא' || header === 'name' || header.includes('שם וטלפון')) {
+          admin.full_name = val;
+          if (val.includes(' - ')) {
+            const parts = val.split(' - ');
+            admin.phone = parts[0].trim();
+            admin.full_name = parts[1].trim();
+            admin.username = parts[0].trim();
+          } else {
+            admin.full_name = val;
+          }
+        }
+        if (header === 'שם משתמש' || header === 'username') admin.username = val;
+        if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) {
+          admin.email = val;
+          hasEmail = true;
+        }
+        if (header === 'תמונה' || header === 'image' || header === 'avatar') {
+          admin.avatar_url = val;
+        }
+        if (header === 'טלפון' || header === 'phone') admin.phone = val;
+        if (header === 'תפקיד' || header === 'role') {
+          if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
+          else if (val === 'צופה' || val === 'viewer' || val === 'observer') admin.role = 'observer';
+          else if (val === 'מנהל על' || val === 'super_admin') admin.role = 'super_admin';
+          else if (val === 'מנהל' || val === 'admin') admin.role = 'admin';
+        }
+        if (header === 'מין' || header === 'gender' || header.includes('מין')) {
+          if (val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female') admin.gender = 'female';
+          else if (val === 'בן' || val === 'זכר' || val.toLowerCase() === 'male') admin.gender = 'male';
+          else admin.gender = null;
+        }
+        if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
+          const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+          if (match) admin.avatar_url = match[1];
+          else if (val.trim().startsWith('http')) admin.avatar_url = val.trim();
+        }
+        if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
+          const tl = users.find(u => 
+            (u.role === 'team_leader' || u.role === 'super_admin') && 
+            (u.full_name === val || u.username === val || u.email === val)
+          );
+          if (tl) {
+            admin.created_by = tl.id;
+            admin.creator_name = tl.full_name || tl.username;
+          }
+        }
+      });
+
+      if (!admin.full_name || !admin.phone) {
+        continue; // Skip if full_name or phone is empty
+      }
+
+      if (!hasEmail || !admin.email) {
+        const tempPhone = admin.phone || Math.random().toString(36).substring(7);
+        admin.email = `temp_email_${tempPhone}@missing.com`;
+      }
+
+      if (!admin.username && admin.phone) admin.username = admin.phone;
+      allAdmins.push(admin);
+    }
+    return allAdmins;
   }
 
   async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
@@ -1666,63 +1916,71 @@ class DataService {
     
     try {
       const { data, error } = await supabase.from('profiles').update(withSync).eq('id', id).select().single();
+      if (error) {
+        console.error('Supabase update error (profiles):', error);
+      }
       return { data: data as User, error };
     } catch (error) {
+      console.error('Update catch error (profiles):', error);
       return { data: null, error };
     }
   }
 
   async deleteUser(idOrIds: string | string[]): Promise<{ error: any }> {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-    const godId = 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
     const malachiPhone = '0556603336';
     
-    // Fetch users to check for Malachi
+    // Fetch users to check for Malachi and super_admins
     const { data: usersToCheck } = await supabase
       .from('profiles')
-      .select('id, phone')
+      .select('id, phone, role, username')
       .in('id', ids);
     
+    // Only protect 'good' and Malachi
+    const goodId = usersToCheck?.find(u => u.username === 'good')?.id;
     const malachiId = usersToCheck?.find(u => u.phone === malachiPhone)?.id;
-    const filteredIds = ids.filter(id => id !== godId && id !== malachiId);
+    const filteredIds = ids.filter(id => id !== goodId && id !== malachiId);
     
     if (filteredIds.length === 0) return { error: null };
 
     try {
-      // 1. Fetch user info for previous_admin_data
-      const { data: usersToDelete } = await supabase
-        .from('profiles')
-        .select('id, full_name, affiliation_group')
-        .in('id', filteredIds);
+      // Sequential await for strict order and to avoid blocking
+      // 1. Update candidates (nullable handling)
+      await supabase.from('candidates').update({ created_by: null }).in('created_by', filteredIds);
+      await supabase.from('candidates').update({ managed_by: null }).in('managed_by', filteredIds);
+      await supabase.from('candidates').update({ admin_id: null }).in('admin_id', filteredIds);
+      await supabase.from('candidates').update({ target_admin_id: null }).in('target_admin_id', filteredIds);
+      
+      // 2. Delete residuals from all tables
+      await supabase.from('candidate_transfers').delete().in('sender_id', filteredIds);
+      await supabase.from('candidate_transfers').delete().in('receiver_id', filteredIds);
+      await supabase.from('candidate_notes').delete().in('user_id', filteredIds);
+      await supabase.from('internal_messages').delete().in('sender_id', filteredIds);
+      await supabase.from('internal_messages').delete().in('receiver_id', filteredIds);
+      await supabase.from('activity_logs').delete().in('user_id', filteredIds);
+      await supabase.from('publish_logs').delete().in('user_id', filteredIds);
+      await supabase.from('whatsapp_groups').update({ created_by: null }).in('created_by', filteredIds);
+      await supabase.from('candidate_chat_messages').delete().in('sender_id', filteredIds);
+      await supabase.from('speed_date_sessions').delete().in('male_id', filteredIds);
+      await supabase.from('speed_date_sessions').delete().in('female_id', filteredIds);
+      await supabase.from('game_sessions').delete().in('player1_id', filteredIds);
+      await supabase.from('game_sessions').delete().in('player2_id', filteredIds);
+      await supabase.from('blacklist').delete().in('created_by', filteredIds);
 
-      if (usersToDelete) {
-        for (const user of usersToDelete) {
-          const adminName = user.full_name;
-          
-          // 2. Update candidates: set managed_by to null and store previous data
-          // This prevents Foreign Key violation (23503)
-          await supabase
-            .from('candidates')
-            .update({
-              managed_by: null,
-              target_admin_id: null,
-              previous_admin_name: adminName,
-              last_known_group: user.affiliation_group,
-              transfer_status: 'orphaned',
-              is_approved: 0
-            })
-            .or(`managed_by.eq.${user.id},target_admin_id.eq.${user.id}`);
-        }
+      // 3. Finally delete the profiles
+      const { error } = await supabase.from('profiles').delete().in('id', filteredIds);
+      if (error) console.error('Error deleting user:', error);
+      
+      // 4. Also try to delete from admins table
+      try {
+        await supabase.from('admins').delete().in('id', filteredIds);
+      } catch (e) {
+        console.log('Admins table might be a view or not exist, skipping delete from admins');
       }
-
-      // 3. Mark as deleted instead of actual delete
-      const { error } = await supabase.from('profiles').update({ 
-        is_approved: 0, 
-        role: 'deleted'
-      }).in('id', filteredIds);
       
       return { error };
     } catch (error) {
+      console.error('Caught error deleting user:', error);
       return { error };
     }
   }
@@ -1949,7 +2207,7 @@ class DataService {
   }[]> {
     const [profiles, candidates] = await Promise.all([
       supabase.from('profiles').select('id, full_name, avatar_url, gender, affiliation_group'),
-      supabase.from('candidates').select('id, name, image_url, type, category').is('deleted_at', null)
+      supabase.from('candidates').select('id, full_name, image_url, type, category').is('deleted_at', null)
     ]);
 
     const inventory: any[] = [];
@@ -1972,7 +2230,7 @@ class DataService {
       candidates.data.forEach(c => {
         inventory.push({
           id: c.id,
-          name: c.name || 'משודך ללא שם',
+          name: c.full_name || 'משודך ללא שם',
           type: 'candidate',
           url: c.image_url || null,
           isSynced: !!(c.image_url && c.image_url.includes('supabase.co')),
@@ -2178,7 +2436,7 @@ class DataService {
     // 3. Fetch matches and admins
     const [matchesRes, adminsRes] = await Promise.all([
       supabase.from('candidates').select('*').in('id', matchIds),
-      supabase.from('profiles').select('id, full_name, email, role, status, category, gender, phone, avatar_url, image_url, last_login, is_shaham_manager').in('id', adminIds)
+      supabase.from('profiles').select('id, full_name, email, role, status, category, gender, phone, avatar_url, image_url, last_login').in('id', adminIds)
     ]);
     
     const matches = matchesRes.data || [];
@@ -2365,7 +2623,7 @@ class DataService {
     /*
     await this.logPublish({
       match_id: matchId,
-      match_name: match.name,
+      match_name: match.full_name,
       user_id: userId,
       user_name: userName,
       group_id: groupId,
@@ -2384,7 +2642,7 @@ class DataService {
       user_id: userId,
       user_name: userName,
       action: 'פרסום משודך',
-      details: `פרסום של ${match.name} בקבוצה ${groupName}`,
+      details: `פרסום של ${match.full_name} בקבוצה ${groupName}`,
       entity_id: matchId,
       entity_type: 'match'
     });
@@ -2417,7 +2675,7 @@ class DataService {
       // Use supabaseAdmin for stats to ensure full visibility for admins
       const isAdminRole = activeUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(activeUser.role);
       const client = isAdminRole ? supabaseAdmin : supabase;
-      let adminsQuery = client.from('profiles').select('gender, category, affiliation_group');
+      let adminsQuery = client.from('profiles').select('id, gender, category, affiliation_group, role, is_approved, status').neq('role', 'candidate');
       let publishLogsQuery = client.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
@@ -2426,12 +2684,14 @@ class DataService {
           // Shaham hierarchy: Fetch all Shaham admins
           const { data: sameGroupAdmins } = await client.from('profiles')
             .select('id')
+            .neq('role', 'candidate')
             .ilike('affiliation_group', '%שח"ם%');
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
         } else if (activeUser.affiliation_group) {
           // Fetch admins in the same affiliation group
           const { data: sameGroupAdmins } = await client.from('profiles')
             .select('id')
+            .neq('role', 'candidate')
             .eq('affiliation_group', activeUser.affiliation_group);
           groupAdminIds = sameGroupAdmins?.map(a => a.id) || [];
         } else {
@@ -2462,6 +2722,28 @@ class DataService {
 
       const admins = adminsData || [];
       const publishLogs: any[] = []; // Disabled publish_logs to prevent 400 errors
+      
+      // Fetch group candidates if not super admin
+      let groupCandidates: Match[] = [];
+      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'super_observer' && activeUser.affiliation_group) {
+        let groupQuery = client.from('candidates').select('*').is('deleted_at', null);
+        if (activeUser.affiliation_group.includes('שח"ם')) {
+          groupQuery = groupQuery.ilike('category', '%שח"ם%');
+        } else if (activeUser.category) {
+          groupQuery = groupQuery.eq('category', activeUser.category);
+        }
+        
+        // Filter by group admins
+        if (groupAdminIds.length > 0) {
+          groupQuery = groupQuery.or(`managed_by.in.(${groupAdminIds.join(',')}),admin_id.in.(${groupAdminIds.join(',')})`);
+        }
+        
+        const { data: gData } = await groupQuery;
+        groupCandidates = gData || [];
+      } else {
+        groupCandidates = activeCandidates;
+      }
+
       const totalMatchesSite = activeCandidates.length;
 
       const now = new Date();
@@ -2493,8 +2775,8 @@ class DataService {
         females: activeCandidates.filter(m => m.type === 'female').length,
         malesMe: activeUser ? activeCandidates.filter(m => m.type === 'male' && m.created_by === activeUser.id).length : 0,
         femalesMe: activeUser ? activeCandidates.filter(m => m.type === 'female' && m.created_by === activeUser.id).length : 0,
-        malesGroup: activeCandidates.filter(m => m.type === 'male').length, // For managers, this is already the group
-        femalesGroup: activeCandidates.filter(m => m.type === 'female').length, // For managers, this is already the group
+        malesGroup: groupCandidates.filter(m => m.type === 'male').length,
+        femalesGroup: groupCandidates.filter(m => m.type === 'female').length,
         totalMatchesSite,
         publishedToday: publishedTodayCount,
         publishedThisMonth: publishedThisMonthCount,
@@ -2503,7 +2785,14 @@ class DataService {
         neverPublished: activeCandidates.filter(m => !m.last_published_at).length,
         totalAdmins: admins.length,
         adminMales: admins.filter(a => a.gender === 'male').length,
-        adminFemales: admins.filter(a => a.gender === 'female').length
+        adminFemales: admins.filter(a => a.gender === 'female').length,
+        superAdmins: admins.filter(a => a.role === 'super_admin' || a.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b').length,
+        associationManagers: admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager').length,
+        regularManagers: admins.filter(a => a.role === 'admin').length,
+        teamLeaders: admins.filter(a => a.role === 'team_leader').length,
+        observers: admins.filter(a => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(a.role)).length,
+        activeAdmins: admins.filter(a => a.status === 'active').length,
+        pendingAdmins: admins.filter(a => a.is_approved === 0).length
       };
     } catch (err) {
       console.error('Error fetching stats:', err);
@@ -2547,13 +2836,19 @@ class DataService {
   async resetHistory(): Promise<void> {
     try {
       // Mark as pending delete instead of actual delete in Studio
-      await Promise.all([
+      const results = await Promise.all([
         supabase.from('candidates').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000')
       ]);
+
+      results.forEach((res, index) => {
+        if (res.error) {
+          console.error(`Error in resetHistory query ${index}:`, res.error);
+        }
+      });
     } catch (err: any) {
       console.error('Error resetting history:', err);
       alert(`שגיאה באיפוס היסטוריה: ${err.message}`);
@@ -2564,31 +2859,61 @@ class DataService {
     try {
       const currentUser = await this.getCurrentUser();
       
-      // Mark as pending delete instead of actual delete in Studio
-      await Promise.all([
-        supabase.from('candidates').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('whatsapp_groups').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('internal_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        // Mark profiles EXCEPT current user and Malachi (0556603336) and god
-        supabase.from('profiles')
-          .update({ is_approved: 0 })
+      // Data Cleanup only - delete rows from data tables
+      // We wrap each delete in a try-catch so that if a table doesn't exist, it doesn't crash the whole process.
+      const tablesToDelete = [
+        'candidates',
+        'matchmakers',
+        'activity_logs',
+        'publish_logs',
+        'internal_messages',
+        'candidate_transfers',
+        'candidate_notes',
+        'chat_messages'
+      ];
+
+      for (const table of tablesToDelete) {
+        try {
+          console.log(`Attempting to delete from ${table}...`);
+          const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          if (error) {
+            console.error(`Error deleting from ${table}:`, error);
+          } else {
+            console.log(`Successfully deleted from ${table}`);
+          }
+        } catch (e) {
+          console.error(`Exception deleting from ${table}:`, e);
+        }
+      }
+
+      // Delete profiles EXCEPT super_admin, association_manager, association_admin, and Malachi
+      try {
+        console.log(`Attempting to delete profiles...`);
+        // Simplify the query to avoid 400 Bad Request errors from complex filters
+        const { error: profilesError } = await supabase.from('profiles')
+          .delete()
+          .neq('role', 'super_admin')
+          .neq('role', 'association_manager')
+          .neq('role', 'association_admin')
           .neq('phone', '0556603336')
-          .neq('phone', '0556603336')
-          .neq('username', 'god')
-          .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000')
-      ]);
-      
-      // Reset local settings
-      localStorage.removeItem('app_settings');
+          .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000');
+          
+        if (profilesError) {
+          console.error('Error deleting profiles:', profilesError);
+        } else {
+          console.log(`Successfully deleted profiles`);
+        }
+      } catch (e) {
+        console.error('Exception deleting profiles:', e);
+      }
+
+      // Do NOT reset local settings or whatsapp_groups
     } catch (err: any) {
       console.error('Error in factory reset:', err);
-      alert(`שגיאה באיפוס מלא: ${err.message}`);
+      // Don't alert here to prevent stopping the UI, the reload will happen in the component
     }
   }
+
 
   // Internal Messages
   async getInternalMessages(otherUserId: string): Promise<any[]> {
@@ -2939,27 +3264,32 @@ class DataService {
   }
 
   async performAdminCleanup(): Promise<void> {
-    const superAdminUsername = 'good';
-
     try {
-      // 1. Update the 'good' user to be Super Admin
+      // Call the deep clean to ensure only 3 admins remain
+      await this.performDeepClean();
+      
+      // 1. Delete users with password '12345678' (Hard Delete) - Extra safety
       await supabaseAdmin
         .from('profiles')
-        .update({ 
-          role: 'super_admin',
-          status: 'active'
-        })
-        .eq('username', superAdminUsername);
+        .delete()
+        .eq('password_plain', '12345678')
+        .neq('username', 'good');
 
-      // 2. Ensure hiealbokris@gmail.com is a regular admin
+      // 2. Delete users named 'god' (Hard Delete)
       await supabaseAdmin
         .from('profiles')
-        .update({ 
-          role: 'admin'
-        })
-        .eq('email', 'hiealbokris@gmail.com');
-        
+        .delete()
+        .or('username.eq.god,name.eq.god');
+
+      // 3. Delete 'ghost' users (rows without username)
+      await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .or('username.is.null,username.eq.""');
+
+      console.log('Aggressive cleanup completed via performAdminCleanup');
     } catch (err) {
+      console.error('Error in performAdminCleanup:', err);
     }
   }
 

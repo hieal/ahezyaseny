@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import ObserverDashboard from './pages/ObserverDashboard';
 import ControlCenter from './pages/ControlCenter';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
@@ -307,14 +308,14 @@ function Sidebar() {
     setIsOpen(false);
   };
 
-  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' || activeUser?.role === 'super_observer') {
+  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' || activeUser?.role === 'super_observer' || activeUser?.role === 'observer_manager') {
     navItems.unshift(
       { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
       { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
     );
   }
 
-  if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer') {
+  if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer' || activeUser?.role === 'observer_manager') {
     navItems.push(
       { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
       { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
@@ -725,10 +726,10 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>{isMalachi ? 'ברוך הבא, מלאכי צוריאל - מנהל העמותה' : (user?.username === 'god' ? 'ברוך הבא,' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,'))}</span>
+          <span>{isMalachi ? 'ברוך הבא, מלאכי צוריאל - מנהל העמותה' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
           <span className="text-text-main font-bold">
-            {isMalachi ? '' : (user?.username === 'god' ? (
-              <span className="text-luxury-blue font-bold">מנהל ראשי</span>
+            {isMalachi ? '' : (user?.role === 'super_admin' ? (
+              <span className="text-luxury-blue font-bold">{user?.full_name || 'מנהל ראשי'}</span>
             ) : user?.full_name)}
           </span>
         </div>
@@ -1040,7 +1041,9 @@ export default function App() {
             <MainLayout>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/observer-dashboard" element={<ProtectedRoute><ObserverDashboard /></ProtectedRoute>} />
               <Route path="/admin-dashboard" element={<ProtectedRoute superAdminOnly><ControlCenter /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
               <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

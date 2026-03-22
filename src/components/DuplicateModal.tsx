@@ -26,7 +26,7 @@ export const DuplicateModal: React.FC<DuplicateModalProps> = ({
   }, []);
 
   const highlights = {
-    full_name: String(existingMatch.name || '').trim() === String(newMatchData.name || '').trim(),
+    full_name: String(existingMatch.full_name || '').trim() === String(newMatchData.full_name || '').trim(),
     age: String(existingMatch.age || '').trim() === String(newMatchData.age || '').trim(),
     height: String(existingMatch.height || '').trim() === String(newMatchData.height || '').trim(),
     ethnicity: String(existingMatch.ethnicity || '').trim() === String(newMatchData.ethnicity || '').trim(),
@@ -43,7 +43,7 @@ export const DuplicateModal: React.FC<DuplicateModalProps> = ({
   // Helper to map Match to Candidate for CandidateCard
   const mapMatchToCandidate = (match: Partial<Match>): any => ({
     id: match.id || 'new',
-    full_name: match.name || '',
+    full_name: match.full_name || '',
     phone: match.phone || '',
     age: match.age || 0,
     height: match.height || '',

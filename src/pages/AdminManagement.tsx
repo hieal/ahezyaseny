@@ -4,7 +4,7 @@ import { Avatar } from '../components/Avatar';
 import { User, WhatsAppGroup, ScannedAdmin } from '../types';
 import { ComparisonModal } from '../components/ComparisonModal';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check, Eye, ToggleLeft } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Shield, ShieldAlert, ShieldCheck, CheckCircle, XCircle, UserCheck, Search, Filter, MessageSquare, FileUp, Download, X, ChevronDown, ChevronLeft, ChevronRight, Phone, ExternalLink, Heart, User as UserIcon, Plus, RefreshCw, Users, Cloud, Image, Copy, Check, Eye, ToggleLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, CATEGORIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,11 +46,11 @@ const getAdminAvatarUrl = (user: any) => {
   return null;
 };
 
-const isGoodAdmin = (admin: any) => admin?.role !== 'observer';
-const isMalachiAdmin = (admin: any) => admin?.full_name === 'מלאכי צוריאל' || admin?.name === 'מלאכי צוריאל';
+const isSuperAdmin = (admin: any) => admin?.role === 'super_admin' || admin?.id?.startsWith('8ebb') || admin?.username === 'good';
+const isMalachiAdmin = (admin: any) => admin?.phone === '0556603336' || admin?.full_name?.includes('מלאכי') || admin?.role === 'association_admin';
 
 export default function AdminManagement() {
-  const { user: currentUser, loading: authLoading } = useAuth();
+  const { user: currentUser, loading: authLoading, isReadOnly } = useAuth();
   
   // Removed dynamic useEffect from here
 
@@ -63,7 +63,6 @@ export default function AdminManagement() {
   const [genderModalUser, setGenderModalUser] = useState<User | null>(null);
   const [avatarModalUser, setAvatarModalUser] = useState<User | null>(null);
   const [viewType, setViewType] = useState<'grid' | 'list' | 'cards' | 'table'>('table');
-  const [isReadOnly, setIsReadOnly] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -94,7 +93,6 @@ export default function AdminManagement() {
     phone: string;
     google_login_allowed: string;
     avatar_url: string;
-    is_shaham_manager: number;
     created_by: string;
     assigned_group_id: string;
     is_team_leader: boolean;
@@ -110,7 +108,6 @@ export default function AdminManagement() {
     phone: '', 
     google_login_allowed: 'true', 
     avatar_url: '',
-    is_shaham_manager: 0,
     created_by: '',
     assigned_group_id: '',
     is_team_leader: false
@@ -179,10 +176,15 @@ export default function AdminManagement() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const { data: usersData, error } = await supabase
+      let query = supabase
         .from('profiles')
-        .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url')
-        .order('full_name');
+        .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url, image_url');
+        
+      if (currentUser?.role !== 'super_admin') {
+        query = query.eq('affiliation_group', currentUser?.affiliation_group);
+      }
+      
+      const { data: usersData, error } = await query.order('full_name');
         
       if (error) {
         throw error;
@@ -190,20 +192,12 @@ export default function AdminManagement() {
       
       const rawUsers = (usersData as User[]) || [];
       const uniqueUsers = Array.from(new Map(rawUsers.map(u => {
-        const key = u.phone || u.id;
+        // Use ID as key to reflect actual rows in the table
+        const key = u.id;
         return [key, u];
       })).values());
 
-      const godUsers = uniqueUsers.filter(u => u.username === 'god' || u.email === 'god');
-      let filteredUsers = uniqueUsers;
-      if (godUsers.length > 1) {
-        const superAdminGod = godUsers.find(u => u.role === 'super_admin');
-        const duplicateGod = godUsers.find(u => u.id !== superAdminGod?.id);
-        if (duplicateGod) {
-          filteredUsers = uniqueUsers.filter(u => u.id !== duplicateGod.id);
-        }
-      }
-      setUsers(filteredUsers);
+      setUsers(uniqueUsers);
       
     } catch (err: any) {
       toast.error('שגיאה בטעינת נתונים');
@@ -213,11 +207,9 @@ export default function AdminManagement() {
   };
 
   useEffect(() => {
-    // Perform admin cleanup and initialization
-    dataService.performAdminCleanup().then(() => {
-      fetchUsers();
-      console.log('STABLE_BUILD_COMPLETE');
-    });
+    // Perform admin initialization
+    fetchUsers();
+    console.log('STABLE_BUILD_COMPLETE');
 
     const interval = setInterval(fetchUsers, 30000); // Fetch every 30 seconds
     return () => clearInterval(interval);
@@ -225,7 +217,7 @@ export default function AdminManagement() {
 
   useEffect(() => {
     if (users.length > 0) {
-      const malachi = users.find(u => u.full_name === 'מלאכי צוריאל' || u.name === 'מלאכי צוריאל');
+      const malachi = users.find(u => u.full_name === 'מלאכי צוריאל');
       if (malachi) {
         // No log here
       }
@@ -234,26 +226,73 @@ export default function AdminManagement() {
 
   const isEditing = !!editingUser || !!phoneModalUser || !!editingEmailUser || !!genderModalUser || !!avatarModalUser;
 
-  const uniqueUsers = Array.from(new Map(users.filter(u => !!u && u.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b').map(u => {
+  // Deduplicate all users by phone, fallback to ID
+  const deduplicatedUsers = Array.from(new Map(users.filter(u => !!u).map(u => {
     const key = u.phone || u.id;
     return [key, u];
   })).values());
 
-  const mainAdmin = users.find(u => u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b');
-  const finalUsers = mainAdmin && !uniqueUsers.find(u => u.id === mainAdmin.id) ? [mainAdmin, ...uniqueUsers] : uniqueUsers;
-  const admins = finalUsers;
+  const mainAdmin = deduplicatedUsers.find(u => u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b');
+  let malachiAdmin = deduplicatedUsers.find(u => u.email === 'malachi@tzuriel.org' || u.phone === '0556603336');
+
+  if (!malachiAdmin) {
+    malachiAdmin = {
+      id: 'malachi-placeholder-id',
+      username: 'malachi',
+      password_plain: '123456',
+      full_name: 'מלאכי צוריאל',
+      email: 'malachi@tzuriel.org',
+      role: 'association_admin',
+      status: 'active',
+      is_approved: 1,
+      gender: 'male',
+      phone: '0556603336',
+      avatar_url: null
+    } as User;
+  }
+
+  // Filter out special users from the rest of the list to avoid duplicates
+  const otherUsers = deduplicatedUsers.filter(u => u.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b' && u.id !== malachiAdmin?.id);
+
+  const specialUsers = [];
+  if (mainAdmin) specialUsers.push(mainAdmin);
+  if (malachiAdmin && (!mainAdmin || malachiAdmin.id !== mainAdmin.id)) specialUsers.push(malachiAdmin);
+
+  const finalUsers = [...specialUsers, ...otherUsers];
+  const admins = finalUsers.filter(u => {
+    const isMainAdmin = u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
+    return isMainAdmin || 
+           u.role === 'admin' || 
+           u.role === 'super_admin' || 
+           u.role === 'team_leader' || 
+           u.role === 'viewer' || 
+           u.role === 'association_admin' || 
+           u.role === 'association_manager' || 
+           u.role === 'super_observer' || 
+           u.role === 'observer' || 
+           u.role === 'observer_manager';
+  });
 
   const filteredUsers = useMemo(() => {
-    return finalUsers.filter(u => {
-      // 1. Role filter (must be some kind of admin or super_observer)
+    return admins.filter(u => {
+      // 1. Role filter (already handled by admins definition, but keeping for search/tabs)
       const isMainAdmin = u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-      const isManager = isMainAdmin || u.role === 'admin' || u.role === 'super_admin' || u.role === 'team_leader' || u.role === 'viewer' || u.role === 'super_observer';
+      const isManager = isMainAdmin || 
+                        u.role === 'admin' || 
+                        u.role === 'super_admin' || 
+                        u.role === 'team_leader' || 
+                        u.role === 'viewer' || 
+                        u.role === 'association_admin' || 
+                        u.role === 'association_manager' || 
+                        u.role === 'super_observer' || 
+                        u.role === 'observer' || 
+                        u.role === 'observer_manager';
       if (!isManager) return false;
 
       // 2. Search filter
       if (search) {
         const searchLower = search.toLowerCase();
-        const matchName = u.name?.toLowerCase().includes(searchLower) || u.full_name?.toLowerCase().includes(searchLower);
+        const matchName = u.full_name?.toLowerCase().includes(searchLower);
         const matchEmail = u.email?.toLowerCase().includes(searchLower);
         const matchPhone = u.phone?.includes(searchLower);
         if (!matchName && !matchEmail && !matchPhone) return false;
@@ -280,8 +319,8 @@ export default function AdminManagement() {
         if (roleTab === 'super_admin' && u.role !== 'super_admin') return false;
         if (roleTab === 'team_leader' && u.role !== 'team_leader') return false;
         if (roleTab === 'admin' && u.role !== 'admin') return false;
-        if (roleTab === 'super_observer' && u.role !== 'super_observer') return false;
-        if (roleTab === 'viewer' && u.role !== 'viewer') return false;
+        if (roleTab === 'association_admin' && u.role !== 'association_admin' && u.role !== 'association_manager') return false;
+        if (roleTab === 'viewer' && u.role !== 'viewer' && u.role !== 'observer') return false;
       }
 
       // 5. Selected roles filter
@@ -303,15 +342,15 @@ export default function AdminManagement() {
 
       return true;
     });
-  }, [uniqueUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, currentUser]);
+  }, [finalUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, currentUser]);
 
   const displayedAdmins = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
       if (a.role === 'super_admin' && b.role !== 'super_admin') return -1;
       if (a.role !== 'super_admin' && b.role === 'super_admin') return 1;
 
-      const aIsGood = isGoodAdmin(a);
-      const bIsGood = isGoodAdmin(b);
+      const aIsGood = isSuperAdmin(a);
+      const bIsGood = isSuperAdmin(b);
       
       if (aIsGood && !bIsGood) return -1;
       if (!aIsGood && bIsGood) return 1;
@@ -323,8 +362,8 @@ export default function AdminManagement() {
       if (!aIsMalachi && bIsMalachi) return 1;
 
       // Alphabetical order
-      const aName = a.full_name || a.name || '';
-      const bName = b.full_name || b.name || '';
+      const aName = a.full_name || '';
+      const bName = b.full_name || '';
       return aName.localeCompare(bName);
     });
   }, [filteredUsers]);
@@ -356,14 +395,13 @@ export default function AdminManagement() {
           gender: (formData.gender || undefined) as "male" | "female" | undefined,
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
-          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
+          affiliation_group: formData.affiliation_group,
           avatar_url: formData.avatar_url,
-          password_plain: formData.password || undefined,
-          name: formData.full_name
+          password_plain: formData.password || undefined
         });
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: currentUser?.name || 'System',
+          user_name: currentUser?.full_name || 'System',
           action: 'עדכון מנהל',
           details: `עדכון פרטי מנהל: ${formData.full_name}`,
           entity_type: 'user',
@@ -374,7 +412,6 @@ export default function AdminManagement() {
         // Create new user
         const newUser = await dataService.createUser({
           ...formData,
-          name: formData.full_name,
           password_plain: formData.password || '12345678',
           role: formData.is_team_leader ? "team_leader" : (formData.role as "super_admin" | "viewer" | "admin" | "team_leader"),
           status: formData.status as "active" | "inactive",
@@ -382,7 +419,7 @@ export default function AdminManagement() {
           google_login_allowed: formData.google_login_allowed as "true" | "false",
           phone: formData.phone,
           avatar_url: formData.avatar_url,
-          affiliation_group: formData.is_shaham_manager === 1 ? 'פרויקט שח"ם' : formData.affiliation_group,
+          affiliation_group: formData.affiliation_group,
           deleted_at: null,
           daily_message_template: null,
           is_approved: 1,
@@ -399,7 +436,7 @@ export default function AdminManagement() {
 
         await dataService.logActivity({
           user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-          user_name: currentUser?.name || 'System',
+          user_name: currentUser?.full_name || 'System',
           action: 'יצירת מנהל',
           details: `יצירת מנהל חדש: ${formData.full_name}`,
           entity_type: 'user',
@@ -422,13 +459,13 @@ export default function AdminManagement() {
         phone: '', 
         google_login_allowed: 'true', 
         avatar_url: '',
-        is_shaham_manager: 0,
         created_by: '',
         assigned_group_id: '',
         is_team_leader: false
       });
       await fetchUsers();
     } catch (err) {
+      console.error('Error in handleSubmit:', err);
       toast.error('שגיאה בשמירה');
     }
   };
@@ -466,7 +503,6 @@ export default function AdminManagement() {
             google_login_allowed: 'true',
             deleted_at: null,
             is_approved: 1,
-            is_shaham_manager: 0,
             missing_fields: []
           };
           
@@ -596,39 +632,45 @@ export default function AdminManagement() {
     const processingToast = toast.loading(`מייבא ${scannedAdmins.length} מנהלים...`);
     let successCount = 0;
     
-    for (const admin of scannedAdmins) {
-      try {
-        // Sanitize data: keep only allowed fields
-        const adminData: any = {
-          full_name: admin.full_name,
-          email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
-          phone: admin.phone || null,
-          affiliation_group: admin.group || null,
-          role: admin.role || 'viewer',
-          is_from_file: 1
-        };
-        
-        // Use upsertAdmin to prevent 409 Conflict with logically deleted users
-        await dataService.upsertAdmin(adminData);
-        
-        successCount++;
-      } catch (err: any) {
-        console.error('Import error:', err);
+    try {
+      for (const admin of scannedAdmins) {
+        try {
+          // Sanitize data: keep only allowed fields
+          const adminData: any = {
+            full_name: admin.full_name,
+            email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
+            phone: admin.phone || null,
+            affiliation_group: (admin as any).affiliation_group || admin.group || null,
+            role: admin.role || 'viewer',
+            is_from_file: 1
+          };
+          
+          // Use upsertAdmin to prevent 409 Conflict with logically deleted users
+          await dataService.upsertAdmin(adminData);
+          
+          successCount++;
+        } catch (err: any) {
+          console.error('Import error:', err);
+        }
       }
+      toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
+    } finally {
+      toast.dismiss(processingToast);
+      setImporting(false);
+      setShowCsvModal(false);
+      setCsvFile(null);
+      setScannedAdmins([]);
+      await fetchUsers(); // Refresh users list
     }
-
-    toast.dismiss(processingToast);
-    setImporting(false);
-    setShowCsvModal(false);
-    setCsvFile(null);
-    setScannedAdmins([]);
-    await fetchUsers(); // Refresh users list
-    toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
   };
 
   const confirmDelete = (user: User) => {
-    if (user.username === 'god' && user.role === 'super_admin') {
+    if (isSuperAdmin(user)) {
       toast.error('לא ניתן למחוק את המנהל הראשי');
+      return;
+    }
+    if (isMalachiAdmin(user)) {
+      toast.error('לא ניתן למחוק את מנהל העמותה');
       return;
     }
     if (user.id === currentUser?.id) {
@@ -657,24 +699,29 @@ export default function AdminManagement() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
-    if (userToDelete.username === 'god' && userToDelete.role === 'super_admin') {
+    if (isSuperAdmin(userToDelete)) {
       toast.error('לא ניתן למחוק מנהל זה');
+      return;
+    }
+    if (isMalachiAdmin(userToDelete)) {
+      toast.error('לא ניתן למחוק את מנהל העמותה');
       return;
     }
     try {
       const { error } = await dataService.deleteUser(userToDelete.id);
       if (error) {
+        console.error('Delete error:', error.message || error);
         if (error.message && error.message.includes('409')) {
           toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
         } else {
-          alert(`שגיאה במחיקה: ${error.message}`);
+          alert(`שגיאה במחיקה: ${error.message || JSON.stringify(error)}`);
         }
         return;
       }
       
       await dataService.logActivity({
         user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-        user_name: currentUser?.name || 'System',
+        user_name: currentUser?.full_name || 'System',
         action: 'מחיקת מנהל',
         details: `מחיקת מנהל: ${userToDelete.full_name}`,
         entity_type: 'user',
@@ -744,19 +791,18 @@ export default function AdminManagement() {
     setFormData({
       full_name: user.full_name || '',
       username: user.username || '',
-      email: user?.email,
+      email: user?.email || '',
       password: user.password_plain || '',
-      role: user.role,
-      status: user.status,
+      role: user.role || 'viewer',
+      status: user.status || 'active',
       affiliation_group: user.affiliation_group || '',
       gender: user.gender || '',
       phone: user.phone || '',
       google_login_allowed: user.google_login_allowed || 'true',
       avatar_url: user.avatar_url || '',
-      is_shaham_manager: user.is_shaham_manager || 0,
       created_by: user.created_by || '',
       assigned_group_id: user.assigned_group_id || '',
-      is_team_leader: user.role === 'team_leader'
+      is_team_leader: user.role === 'team_leader' || user.role === 'super_admin'
     });
     setShowModal(true);
   };
@@ -774,28 +820,6 @@ export default function AdminManagement() {
   const handleSuggestMatch = (user: User) => {
     setSelectedUserForMatch(user);
     setShowSuggestMatchModal(true);
-  };
-
-  const handleDelete = async () => {
-    if (!userToDelete) return;
-    try {
-      const { error } = await dataService.deleteUser(userToDelete.id);
-      if (error) {
-        if (error.message && error.message.includes('409')) {
-          toast.error('לא ניתן למחוק משתמש זה כי יש לו נתונים קשורים');
-        } else {
-          alert(`שגיאה במחיקה: ${error.message}`);
-        }
-        return;
-      }
-      toast.success('המנהל נמחק בהצלחה');
-      await fetchUsers();
-    } catch (err) {
-      toast.error('שגיאה במחיקת המנהל');
-    } finally {
-      setShowDeleteConfirm(false);
-      setUserToDelete(null);
-    }
   };
 
   const handleStatusChange = async (user: User) => {
@@ -833,7 +857,6 @@ export default function AdminManagement() {
 
   const getRowColor = (user: User) => {
     if (user.role === 'super_admin') return 'bg-yellow-50/50 border-r-4 border-r-yellow-400 shadow-[inset_0_0_10px_rgba(250,204,21,0.1)]';
-    if (user.is_shaham_manager) return 'bg-purple-50/30 border-r-4 border-r-purple-400';
     if (!user.category) return '';
     const colors: Record<string, string> = {
       '18-22': 'bg-green-50/30 border-r-4 border-r-green-400',
@@ -878,7 +901,7 @@ export default function AdminManagement() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, role, username');
+        .select('id, full_name, role, username, avatar_url, image_url');
       
       if (error) {
         throw error;
@@ -934,6 +957,7 @@ export default function AdminManagement() {
     try {
       const { data, error } = await dataService.updateUser(user.id, { gender });
       if (error) {
+        console.error('Error updating gender:', error);
         toast.error('שגיאה בעדכון המין');
         fetchUsers();
         return;
@@ -981,7 +1005,7 @@ export default function AdminManagement() {
     // Filter out protected admins
     const idsToDelete = selectedUserIds?.filter(id => {
       const user = users.find(u => u.id === id);
-      return user && !isGoodAdmin(user) && user.id !== currentUser?.id;
+      return user && !isSuperAdmin(user) && user.id !== currentUser?.id;
     });
     
     if (idsToDelete.length === 0) {
@@ -1002,7 +1026,7 @@ export default function AdminManagement() {
       
       await dataService.logActivity({
         user_id: currentUser?.id || '00000000-0000-0000-0000-000000000000',
-        user_name: currentUser?.name || 'System',
+        user_name: currentUser?.full_name || 'System',
         action: 'מחיקה מרובה של מנהלים',
         details: `נמחקו ${idsToDelete.length} מנהלים`,
         entity_type: 'user',
@@ -1015,7 +1039,7 @@ export default function AdminManagement() {
   };
 
   const toggleSelectAll = () => {
-    const selectableUsers = displayedAdmins.filter(u => !isGoodAdmin(u));
+    const selectableUsers = displayedAdmins.filter(u => !isSuperAdmin(u));
     if (selectedUserIds?.length === selectableUsers.length && selectableUsers.length > 0) {
       setSelectedUserIds([]);
     } else {
@@ -1025,7 +1049,7 @@ export default function AdminManagement() {
 
   const toggleSelectUser = (id: string) => {
     const user = users.find(u => u.id === id);
-    if (isGoodAdmin(user)) return;
+    if (isSuperAdmin(user)) return;
     setSelectedUserIds(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
@@ -1036,11 +1060,11 @@ export default function AdminManagement() {
 
   const stats = {
     total: admins.length,
-    super_admin: uniqueUsers.filter(u => u.role === 'super_admin').length,
-    team_leader: uniqueUsers.filter(u => u.role === 'team_leader').length,
-    admin: uniqueUsers.filter(u => u.role === 'admin').length,
-    super_observer: uniqueUsers.filter(u => u.role === 'super_observer').length,
-    viewer: uniqueUsers.filter(u => u.role === 'viewer').length,
+    super_admin: admins.filter(u => u.role === 'super_admin').length,
+    team_leader: admins.filter(u => u.role === 'team_leader').length,
+    admin: admins.filter(u => u.role === 'admin').length,
+    association_admin: admins.filter(u => u.role === 'association_admin' || u.role === 'association_manager').length,
+    viewer: admins.filter(u => u.role === 'viewer' || u.role === 'observer' || u.role === 'observer_manager').length,
     filtered: displayedAdmins.length
   };
 
@@ -1139,6 +1163,27 @@ export default function AdminManagement() {
             <FileUp size={20} />
             ייבוא מ-CSV
           </button>
+          {!isReadOnly && currentUser?.role === 'super_admin' && (
+            <button 
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  await dataService.performDeepClean();
+                  await fetchUsers();
+                  toast.success('ניקוי עומק בוצע בהצלחה');
+                } catch (err) {
+                  console.error('Error during Deep Clean:', err);
+                  toast.error('שגיאה בביצוע ניקוי עומק');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="bg-red-600 text-white flex items-center gap-2 px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-red-700 transition-all"
+            >
+              <Trash2 size={20} />
+              ניקוי עומק
+            </button>
+          )}
           {!isReadOnly && (
             <button 
               onClick={() => {
@@ -1155,7 +1200,6 @@ export default function AdminManagement() {
                   phone: '', 
                   google_login_allowed: 'true', 
                   avatar_url: '',
-                  is_shaham_manager: 0,
                   created_by: '',
                   assigned_group_id: '',
                   is_team_leader: false
@@ -1196,7 +1240,7 @@ export default function AdminManagement() {
               <div className="space-y-2">
                 <h3 className="text-2xl font-black text-slate-900">שיוך משודכים חזרה</h3>
                 <p className="text-slate-500 font-medium">
-                  נמצאו <strong>{orphanedCandidates.length}</strong> משודכים שהיו שייכים ל-<strong>{returningAdmin.name}</strong> בעבר.
+                  נמצאו <strong>{orphanedCandidates.length}</strong> משודכים שהיו שייכים ל-<strong>{returningAdmin.full_name}</strong> בעבר.
                   <br />
                   האם ברצונך לשייך אותם חזרה אליו כעת?
                 </p>
@@ -1215,7 +1259,7 @@ export default function AdminManagement() {
                 <button 
                   onClick={async () => {
                     try {
-                      await dataService.reassignOrphanedCandidates(returningAdmin.id, returningAdmin.name);
+                      await dataService.reassignOrphanedCandidates(returningAdmin.id, returningAdmin.full_name);
                       toast.success('המשודכים שויכו חזרה בהצלחה');
                       setShowReassignModal(false);
                       setReturningAdmin(null);
@@ -1407,7 +1451,7 @@ export default function AdminManagement() {
               <div className="p-6 space-y-4">
                 <div className="flex justify-center mb-4">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50">
-                    <Avatar name={avatarModalUser?.full_name || avatarModalUser?.name} url={tempAvatarUrl} size="lg" className="w-24 h-24" />
+                    <Avatar name={avatarModalUser?.full_name} url={tempAvatarUrl} size="lg" className="w-24 h-24" />
                   </div>
                 </div>
                 
@@ -1496,7 +1540,7 @@ export default function AdminManagement() {
         <div className="bg-yellow-100 p-4 rounded-2xl border border-yellow-200 shadow-sm flex flex-col items-center justify-center">
           <span className="text-[10px] font-bold text-yellow-800 uppercase tracking-wider mb-1">מנהל ראשי</span>
           <span className="text-sm font-black text-yellow-900">
-            {uniqueUsers.find(u => u.role === 'super_admin')?.full_name || 'לא נמצא'}
+            {finalUsers.find(u => u.role === 'super_admin')?.full_name || 'לא נמצא'}
           </span>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center">
@@ -1505,24 +1549,26 @@ export default function AdminManagement() {
           <span className="text-[10px] font-bold text-slate-500 mt-1">מוצגים: {stats.filtered}</span>
         </div>
         <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהלי על</span>
+          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהל ראשי</span>
           <span className="text-2xl font-black text-yellow-700">{stats.super_admin}</span>
         </div>
-        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-1">ראשי צוות</span>
-          <span className="text-2xl font-black text-indigo-700">{stats.team_leader}</span>
+        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 shadow-sm flex flex-col items-center justify-center ring-1 ring-amber-300">
+          <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+            ★ מנהל העמותה
+          </span>
+          <span className="text-2xl font-black text-amber-800">{stats.association_admin}</span>
         </div>
         <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">מנהלים</span>
+          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">מנהל רגיל</span>
           <span className="text-2xl font-black text-blue-700">{stats.admin}</span>
         </div>
-        <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">מנהלי עמותה</span>
-          <span className="text-2xl font-black text-yellow-700">{stats.super_observer}</span>
+        <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider mb-1">ראש צוות</span>
+          <span className="text-2xl font-black text-purple-700">{stats.team_leader}</span>
         </div>
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center">
-          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">צופים</span>
-          <span className="text-2xl font-black text-slate-700">{stats.viewer}</span>
+        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">צופה</span>
+          <span className="text-2xl font-black text-slate-600">{stats.viewer}</span>
         </div>
       </div>
 
@@ -1634,13 +1680,13 @@ export default function AdminManagement() {
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <Avatar name={u.full_name || u.name} url={getAdminAvatarUrl(u)} size="md" className="w-10 h-10" />
+                      <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-10 h-10" />
                       {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-800 text-sm">{u.full_name || u.name || u.email || 'מנהל מערכת'}</p>
+                      <p className="font-bold text-slate-800 text-sm">{u.full_name || u.email || 'מנהל מערכת'}</p>
                       <p className="text-[10px] text-slate-500">
-                        {isGoodAdmin(u) ? (
+                        {isSuperAdmin(u) ? (
                           <span className="font-bold text-[#D4AF37]">מנהל העמותה</span>
                         ) : (u.role === 'super_admin' ? 'מנהל על' : u.category || 'ללא קטגוריה')}
                       </p>
@@ -1673,31 +1719,31 @@ export default function AdminManagement() {
               onClick={() => setRoleTab('all')}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'all' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              הכל
+              הכל ({stats.total})
             </button>
             <button 
               onClick={() => setRoleTab('super_admin')}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'super_admin' ? 'bg-blue-700 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              מנהלי על
+              מנהלי על ({stats.super_admin})
             </button>
             <button 
-              onClick={() => setRoleTab('super_observer')}
-              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'super_observer' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+              onClick={() => setRoleTab('association_admin')}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'association_admin' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              מנהלי עמותה
+              מנהלי עמותה ({stats.association_admin})
             </button>
             <button 
               onClick={() => setRoleTab('admin')}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'admin' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              מנהלים
+              מנהלים ({stats.admin})
             </button>
             <button 
               onClick={() => setRoleTab('viewer')}
               className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${roleTab === 'viewer' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              צופים
+              צופים ({stats.viewer})
             </button>
           </div>
         </div>
@@ -1888,7 +1934,7 @@ export default function AdminManagement() {
                         </div>
                         {displayChunk.map(u => (
                           <div key={u.id} className={`bg-white p-4 rounded-2xl border-2 shadow-sm hover:shadow-md transition-all group/card ${
-                            isGoodAdmin(u) ? 'border-luxury-blue bg-luxury-blue/5' : 
+                            isSuperAdmin(u) ? 'border-luxury-blue bg-luxury-blue/5' : 
                             u.gender === 'male' ? 'border-blue-400 bg-blue-50/10' : 
                             u.gender === 'female' ? 'border-pink-400 bg-pink-50/10' : 
                             'border-slate-300 bg-slate-50/10'
@@ -1896,7 +1942,7 @@ export default function AdminManagement() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-white relative shadow-lg group-hover/card:scale-105 transition-transform duration-500">
-                                  <Avatar name={u.full_name || u.name} url={getAdminAvatarUrl(u)} size="md" className="w-full h-full" />
+                                  <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-full h-full" />
                                   <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
                                   
                                   {/* Affiliation Badge - Upgraded */}
@@ -1905,7 +1951,7 @@ export default function AdminManagement() {
                                   </div>
                                 </div>
                                 <div className="flex flex-col">
-                                  <p className="font-black text-lg leading-tight text-slate-900 tracking-tight">{u.full_name || u.name}</p>
+                                  <p className="font-black text-lg leading-tight text-slate-900 tracking-tight">{u.full_name}</p>
                                   
                                   {/* WhatsApp Group Chips - Upgraded */}
                                   <div className="flex flex-wrap gap-1.5 mt-2">
@@ -1936,7 +1982,7 @@ export default function AdminManagement() {
                               <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
                                 <button onClick={() => handleEdit(u)} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl"><Edit2 size={16} /></button>
                                 <button onClick={() => { setAvatarModalUser(u); setTempAvatarUrl(u.avatar_url || ''); }} disabled={isReadOnly} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-xl" title="ערוך תמונה"><Image size={16} /></button>
-                                {!(u.username === 'god' && u.role === 'super_admin') && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
+                                {!(u.username === 'good' || u.phone === '0556603336') && <button onClick={() => confirmDelete(u)} disabled={isReadOnly} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16} /></button>}
                               </div>
                             </div>
                             
@@ -1960,10 +2006,10 @@ export default function AdminManagement() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className={`px-3 py-1 rounded-full text-[10px] font-black w-fit shadow-sm ${
                                     u.role === 'super_admin' ? 'bg-yellow-400 text-black' : 
-                                    u.role === 'super_observer' ? 'bg-[#D4AF37] text-white' :
+                                    u.role === 'association_admin' ? 'bg-[#D4AF37] text-white' :
                                     u.role === 'team_leader' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
                                   }`}>
-                                    {u.role === 'super_observer' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                                    {u.role === 'association_admin' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
                                   </span>
                                   {u.role !== 'super_admin' && (
                                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
@@ -2078,7 +2124,7 @@ export default function AdminManagement() {
                   <input 
                     type="checkbox" 
                     className="w-4 h-4 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue cursor-pointer"
-                    checked={selectedUserIds?.length > 0 && selectedUserIds?.length === displayedAdmins.filter(u => !isGoodAdmin(u)).length}
+                    checked={selectedUserIds?.length > 0 && selectedUserIds?.length === displayedAdmins.filter(u => !isSuperAdmin(u)).length}
                     onChange={toggleSelectAll}
                   />
                 </th>
@@ -2102,10 +2148,10 @@ export default function AdminManagement() {
                   </td>
                 </tr>
               ) : (
-                displayUsers.slice(0, effectiveScrollThreshold).map((u) => (
-                  <tr key={u.id} className={`hover:bg-slate-50/50 transition-colors ${isGoodAdmin(u) ? 'bg-luxury-blue/5 border-l-4 border-luxury-blue font-bold' : getRowColor(u)} ${selectedUserIds?.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
+                displayUsers.slice(0, effectiveScrollThreshold).map((u, index) => (
+                  <tr key={u.id || index} className={`hover:bg-slate-50/50 transition-colors ${isSuperAdmin(u) ? 'bg-luxury-blue/5 border-l-4 border-luxury-blue font-bold' : getRowColor(u)} ${selectedUserIds?.includes(u.id) ? 'bg-blue-50/50' : ''}`}>
                     <td className="px-4 py-4">
-                      {!isGoodAdmin(u) && (
+                      {!isSuperAdmin(u) && (
                         <input 
                           type="checkbox" 
                           className="w-4 h-4 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue cursor-pointer"
@@ -2130,18 +2176,18 @@ export default function AdminManagement() {
                               src={u.avatar_url} 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer"
-                              alt={u.full_name || u.name || 'מנהל'}
+                              alt={u.full_name || 'מנהל'}
                             />
                           ) : u.avatar_url && !u.avatar_url.includes('airtable') ? (
                             <img 
                               src={u.avatar_url} 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer"
-                              alt={u.full_name || u.name || 'מנהל'}
+                              alt={u.full_name || 'מנהל'}
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-luxury-blue text-white font-bold">
-                              {getAvatarFallback(u.full_name || u.name || '?')}
+                              {getAvatarFallback(u.full_name || '?')}
                             </div>
                           )}
                         </div>
@@ -2149,7 +2195,7 @@ export default function AdminManagement() {
                           <Edit2 size={16} className="text-white" />
                         </div>
                       </div>
-                      <span className="font-bold text-sm text-slate-900">{u.full_name || u.name || u.email || 'מנהל מערכת'}</span>
+                      <span className="font-bold text-sm text-slate-900">{u.full_name || u.email || 'מנהל מערכת'}</span>
                     </div>
                   </td>
                   <td className="px-3 py-4">
@@ -2163,7 +2209,7 @@ export default function AdminManagement() {
                     )}
                   </td>
                   <td className="px-3 py-4 text-sm font-medium text-slate-600">
-                    {u.role === 'super_admin' ? '-' : ((!u.username || u.username === u.phone) ? '-' : u.username)}
+                    {isSuperAdmin(u) ? 'good' : ((!u.username || u.username === u.phone) ? '-' : u.username)}
                   </td>
                   <td className="px-3 py-4">
                     <button 
@@ -2176,7 +2222,7 @@ export default function AdminManagement() {
                       {u.email ? (
                         <span className="text-sm group-hover:text-luxury-blue text-slate-600">{u.email}</span>
                       ) : (
-                        <span style={{ color: 'red' }}>חסר</span>
+                        <span className="text-sm text-slate-400">-</span>
                       )}
                     </button>
                   </td>
@@ -2248,28 +2294,24 @@ export default function AdminManagement() {
                     <div className="flex flex-col gap-1">
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
                         u.role === 'super_admin' ? 'bg-yellow-400 text-black border border-yellow-600 shadow-md font-black' :
-                        u.role === 'super_observer' ? 'bg-[#D4AF37] text-white border-yellow-800 shadow-md' :
+                        (u.role === 'association_admin' || isMalachiAdmin(u)) ? 'bg-yellow-500 text-white border-yellow-700 shadow-md' :
                         u.role === 'team_leader' ? 'bg-indigo-100 text-indigo-700' :
-                        u.role === 'viewer' ? 'bg-slate-100 text-slate-700' :
+                        (u.role === 'viewer' || u.role === 'observer') ? 'bg-slate-100 text-slate-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
-                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : <Shield size={14} />}
-                        {u.role === 'super_observer' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : 
+                        {u.role === 'super_admin' ? <ShieldAlert size={14} /> : (u.role === 'association_admin' || isMalachiAdmin(u)) ? <ShieldCheck size={14} /> : <Shield size={14} />}
+                        {(u.role === 'association_admin' || isMalachiAdmin(u)) ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : 
                          u.role === 'team_leader' ? 'ראש צוות' :
-                         u.role === 'viewer' ? 'צופה' : 'מנהל'}
+                         (u.role === 'viewer' || u.role === 'observer') ? 'צופה' : 'מנהל'}
                       </span>
-                      {u.is_shaham_manager === 1 && (
-                        <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 px-2 py-1 rounded-full border border-purple-200 text-center shadow-sm">
-                          מנהל רוחבי
-                        </span>
-                      )}
+                      {/* Removed is_shaham_manager */}
                     </div>
                   </td>
                   {viewType !== 'list' && (
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-slate-500">
-                          {showPassword === u.id ? (u.password_plain || '12345678') : '******'}
+                          {showPassword === u.id ? (u.password_plain || (isSuperAdmin(u) ? 'good' : isMalachiAdmin(u) ? '123456' : '12345678')) : '******'}
                         </span>
                         {currentUser?.role === 'super_admin' && (
                           <button 
@@ -2283,40 +2325,37 @@ export default function AdminManagement() {
                     </td>
                   )}
                   <td className="px-3 py-4">
-                    <button 
-                      onClick={() => handleStatusChange(u)}
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
+                      <button disabled={isReadOnly} onClick={() => handleStatusChange(u)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
                         u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {u.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                      {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-4 text-left min-w-[200px]">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
+                      } ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        {u.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                        {u.status === 'active' ? 'פעיל' : 'לא פעיל'}
                       </button>
-                      <button onClick={() => openChat(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעה">
-                        <MessageSquare size={16} />
-                      </button>
-                      <button onClick={() => handleSuggestMatch(u)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="הצע משודך">
-                        <Heart size={16} />
-                      </button>
-                      {currentUser?.role === 'super_admin' && (
-                        <button onClick={() => handleImpersonate(u)} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg" title="התחזה למנהל">
-                          <ShieldAlert size={16} />
+                    </td>
+                    <td className="px-3 py-4 text-left min-w-[200px]">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => u.phone && window.open(`https://wa.me/${u.phone.replace(/\D/g, '')}`)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="שלח וואטסאפ">
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.396.015 12.03c0 2.123.554 4.197 1.608 6.041L0 24l6.117-1.605a11.821 11.821 0 005.93 1.587h.005c6.634 0 12.032-5.396 12.035-12.03a11.85 11.85 0 00-3.527-8.511z"/></svg>
                         </button>
-                      )}
-                      <button onClick={() => handleEdit(u)} className="p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all" title="ערוך מנהל">
-                        <Edit2 size={16} />
-                      </button>
-                      {!(u.username === 'god' && u.role === 'super_admin') && (
-                        <button onClick={() => confirmDelete(u)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="מחק מנהל">
-                          <Trash2 size={16} />
+                        <button onClick={() => openChat(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="שלח הודעה">
+                          <MessageSquare size={16} />
                         </button>
-                      )}
+                        <button disabled={isReadOnly} onClick={() => handleSuggestMatch(u)} className={`p-2 text-purple-600 hover:bg-purple-50 rounded-lg ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`} title="הצע משודך">
+                          <Heart size={16} />
+                        </button>
+                        {currentUser?.role === 'super_admin' && (
+                          <button disabled={isReadOnly} onClick={() => handleImpersonate(u)} className={`p-2 text-slate-600 hover:bg-slate-50 rounded-lg ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`} title="התחזה למנהל">
+                            <ShieldAlert size={16} />
+                          </button>
+                        )}
+                        <button disabled={isReadOnly} onClick={() => handleEdit(u)} className={`p-2 text-luxury-blue hover:bg-blue-50 rounded-lg transition-all ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`} title="ערוך מנהל">
+                          <Edit2 size={16} />
+                        </button>
+                        {!isSuperAdmin(u) && !isMalachiAdmin(u) && (
+                          <button disabled={isReadOnly} onClick={() => confirmDelete(u)} className={`p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`} title="מחק מנהל">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                     </div>
                   </td>
                 </tr>
@@ -2560,9 +2599,9 @@ export default function AdminManagement() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="card w-full max-w-2xl p-8 space-y-6 shadow-2xl border-none max-h-[90vh] overflow-y-auto"
+              className="card w-full max-w-2xl shadow-2xl border-none max-h-[90vh] flex flex-col"
             >
-              <div className="flex items-center justify-between">
+              <div className="p-8 pb-4 border-b border-slate-50 flex items-center justify-between">
                 <h2 className="text-2xl font-extrabold text-text-main">ייבוא מנהלים מקבצים</h2>
                 <button onClick={() => {
                   setShowCsvModal(false);
@@ -2573,7 +2612,7 @@ export default function AdminManagement() {
                 </button>
               </div>
 
-              <div className="space-y-6">
+              <div className="flex-1 overflow-y-auto p-8 pt-4 space-y-6">
                 <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center gap-4">
                   <FileUp size={40} className="text-slate-300" />
                   <div className="text-center">
@@ -2605,7 +2644,7 @@ export default function AdminManagement() {
                         <option value="admin">מנהל רגיל</option>
                         <option value="viewer">צופה</option>
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
-                        <option value="super_observer">מנהל עמותה</option>
+                        <option value="association_admin">מנהל עמותה</option>
                       </select>
                     </div>
 
@@ -2662,7 +2701,7 @@ export default function AdminManagement() {
 
                 {scannedAdmins?.length > 0 && (
                   viewMode === 'table' ? (
-                    <div className="mt-4 max-h-[400px] overflow-y-auto border border-slate-200 rounded-xl relative">
+                    <div className="mt-4 max-h-[400px] overflow-y-auto border border-slate-200 rounded-xl relative pb-10">
                       <table className="w-full text-xs">
                         <thead className="bg-slate-100 sticky top-0 z-10">
                           <tr>
@@ -2714,7 +2753,7 @@ export default function AdminManagement() {
                       </table>
                     </div>
                   ) : (
-                    <div className="mt-4 max-h-[400px] overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
+                    <div className="mt-4 max-h-[400px] overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 p-2 pb-10">
                       {scannedAdmins.map((admin, idx) => (
                         <div key={idx} className={`p-4 rounded-xl border ${admin.existingUser ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'} space-y-2`}>
                           <div className="flex items-center gap-2">
@@ -2761,7 +2800,9 @@ export default function AdminManagement() {
                   />
                 )}
 
-                <div className="flex justify-end gap-3 pt-4">
+                </div>
+
+                <div className="p-8 pt-4 border-t border-slate-50 flex justify-end gap-3">
                   <button type="button" onClick={() => {
                     setShowCsvModal(false);
                     setCsvFiles([]);
@@ -2788,83 +2829,8 @@ export default function AdminManagement() {
 
                         for (let fIdx = 0; fIdx < csvFiles.length; fIdx++) {
                           const file = csvFiles[fIdx];
-                          const text = await file.text();
-                          const lines = text.split('\n').filter(line => line.trim());
-                          const headers = lines[0].split(',').map(h => h.trim());
-                          
-                          for (let i = 1; i < lines.length; i++) {
-                            const values = lines[i].split(',').map(v => v.trim());
-                            const admin: any = {
-                              category: csvCategory,
-                              selected_group: csvCategory,
-                              password: '12345678',
-                              is_from_file: 1,
-                              role: csvRole,
-                              status: 'active',
-                              google_login_allowed: 'true',
-                              is_approved: 1
-                            };
-                            let hasEmail = false;
-                            headers.forEach((header, j) => {
-                              const val = values[j];
-                              if (!val) return;
-                              if (header === 'שם' || header === 'שם מלא' || header === 'name' || header.includes('שם וטלפון')) {
-                                admin.full_name = val;
-                                if (val.includes(' - ')) {
-                                  const parts = val.split(' - ');
-                                  admin.phone = parts[0].trim();
-                                  admin.name = parts[1].trim();
-                                  admin.full_name = parts[1].trim();
-                                  admin.username = parts[0].trim();
-                                } else {
-                                  admin.name = val;
-                                  admin.full_name = val;
-                                }
-                              }
-                              if (header === 'שם משתמש' || header === 'username') admin.username = val;
-                              if (header === 'אימייל' || header === 'email' || header.includes('אימייל')) {
-                                admin.email = val;
-                                hasEmail = true;
-                              }
-                              if (header === 'תמונה' || header === 'image' || header === 'avatar') {
-                                admin.avatar_url = val;
-                              }
-                              if (header === 'טלפון' || header === 'phone') admin.phone = val;
-                              if (header === 'תפקיד' || header === 'role') {
-                                if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
-                                else if (val === 'צופה' || val === 'viewer') admin.role = 'viewer';
-                                else if (val === 'מנהל על' || val === 'super_admin') admin.role = 'super_admin';
-                              }
-                              if (header === 'מין' || header === 'gender' || header.includes('מין')) {
-                                if (val === 'בת' || val === 'נקבה' || val.toLowerCase() === 'female') admin.gender = 'female';
-                                else if (val === 'בן' || val === 'זכר' || val.toLowerCase() === 'male') admin.gender = 'male';
-                                else admin.gender = null;
-                              }
-                              if (header === 'תמונה' || header === 'avatar' || header === 'image' || header.includes('תמונה')) {
-                                const match = val.match(/\((https?:\/\/[^\)]+)\)/);
-                                if (match) admin.avatar_url = match[1];
-                                else if (val.trim().startsWith('http')) admin.avatar_url = val.trim();
-                              }
-                              if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
-                                const tl = users.find(u => 
-                                  (u.role === 'team_leader' || u.role === 'super_admin') && 
-                                  (u.full_name === val || u.username === val || u.email === val)
-                                );
-                                if (tl) {
-                                  admin.created_by = tl.id;
-                                  admin.creator_name = tl.full_name || tl.username;
-                                }
-                              }
-                            });
-
-                            if (!hasEmail || !admin.email) {
-                              const tempPhone = admin.phone || Math.random().toString(36).substring(7);
-                              admin.email = `temp_email_${tempPhone}@missing.com`;
-                            }
-
-                            if (!admin.username && admin.phone) admin.username = admin.phone;
-                            allAdmins.push(admin);
-                          }
+                          const parsed = await dataService.parseAdminsCSV(file, csvCategory, csvRole, users);
+                          allAdmins.push(...parsed);
                           setScanProgress(Math.round(((fIdx + 1) / csvFiles.length) * 100));
                         }
                         setScannedAdmins(allAdmins);
@@ -2878,7 +2844,6 @@ export default function AdminManagement() {
                     </button>
                   )}
                 </div>
-              </div>
             </motion.div>
           </div>
         )}
@@ -2969,22 +2934,22 @@ export default function AdminManagement() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם מלא {(!editingUser || !isGoodAdmin(editingUser)) && '*'}</label>
-                    <input type="text" required={!editingUser || !isGoodAdmin(editingUser)} className="input-field" value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} />
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם מלא {(!editingUser || !isSuperAdmin(editingUser)) && '*'}</label>
+                    <input type="text" required={!editingUser || !isSuperAdmin(editingUser)} className="input-field" value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם משתמש {(!editingUser || !isGoodAdmin(editingUser)) && '*'}</label>
-                    <input type="text" required={!editingUser || !isGoodAdmin(editingUser)} className="input-field" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} />
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שם משתמש {(!editingUser || !isSuperAdmin(editingUser)) && '*'}</label>
+                    <input type="text" required={!editingUser || !isSuperAdmin(editingUser)} className="input-field" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">אימייל (גוגל) {(!editingUser || !isGoodAdmin(editingUser)) && '*'}</label>
-                    <input type="email" required={!editingUser || !isGoodAdmin(editingUser)} className="input-field" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                    <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">אימייל (גוגל) {(!editingUser || !isSuperAdmin(editingUser)) && '*'}</label>
+                    <input type="email" required={!editingUser || !isSuperAdmin(editingUser)} className="input-field" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">
-                      סיסמה {editingUser && '(השאר ריק כדי לא לשנות)'} {(!editingUser && !isGoodAdmin(editingUser)) && '*'}
+                      סיסמה {editingUser && '(השאר ריק כדי לא לשנות)'} {(!editingUser && !isSuperAdmin(editingUser)) && '*'}
                     </label>
-                    <input type="password" required={!editingUser && !isGoodAdmin(editingUser)} className="input-field" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
+                    <input type="password" required={!editingUser && !isSuperAdmin(editingUser)} className="input-field" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">שיוך (קבוצה)</label>
@@ -3048,21 +3013,7 @@ export default function AdminManagement() {
                       <span className="text-sm font-bold text-text-main">ראש צוות (Team Leader)</span>
                     </label>
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <div>
-                      <p className="text-sm font-bold text-text-main">מנהל קבוצת שח"ם</p>
-                      <p className="text-[10px] text-text-secondary">ניהול שתי הקבוצות במקביל</p>
-                    </div>
-                    <div className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer"
-                        checked={formData.is_shaham_manager === 1}
-                        onChange={(e) => setFormData({...formData, is_shaham_manager: e.target.checked ? 1 : 0})}
-                      />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-luxury-blue"></div>
-                    </div>
-                  </div>
+                  {/* Removed is_shaham_manager */}
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div>
                       <p className="text-sm font-bold text-text-main">סטטוס מנהל</p>
@@ -3083,7 +3034,8 @@ export default function AdminManagement() {
                         <option value="admin">מנהל רגיל</option>
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="viewer">צופה</option>
-                        <option value="super_observer">מנהל עמותה</option>
+                        <option value="association_admin">מנהל עמותה</option>
+                        <option value="association_manager">רכז עמותה</option>
                         <option value="super_admin">מנהל על</option>
                       </select>
                     </div>
