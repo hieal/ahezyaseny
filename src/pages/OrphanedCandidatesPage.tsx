@@ -20,7 +20,7 @@ const OrphanedCandidatesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    if (activeUser?.role === 'super_admin') {
+    if (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager') {
       loadData();
       console.log('UNASSIGNED VIEW UPDATED WITH HISTORY FIELDS');
     }

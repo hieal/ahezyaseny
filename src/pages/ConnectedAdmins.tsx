@@ -47,7 +47,7 @@ export default function ConnectedAdmins() {
             password_plain: '123456',
             full_name: 'מלאכי צוריאל',
             email: 'malachi@tzuriel.org',
-            role: 'super_observer',
+            role: 'association_manager',
             status: 'active',
             is_approved: 1,
             gender: 'male',
@@ -73,13 +73,13 @@ export default function ConnectedAdmins() {
     
     // 2. Role/Name filtering (Category independent)
     const role = admin.role?.toLowerCase() || '';
-    const isTargetRole = ['admin', 'super_admin', 'manager', 'owner'].includes(role);
+    const isTargetRole = ['admin', 'super_admin', 'association_manager', 'manager', 'owner'].includes(role);
     const isMalachi = admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל');
     
     const matchesSearch = (admin.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           admin.phone?.includes(searchTerm));
     const matchesRole = roleFilter === 'all' || 
-                        (roleFilter === 'admin' && (role === 'admin' || role === 'super_admin' || role === 'manager' || role === 'owner')) || 
+                        (roleFilter === 'admin' && (role === 'admin' || role === 'super_admin' || role === 'association_manager' || role === 'manager' || role === 'owner')) || 
                         role === roleFilter.toLowerCase();
     
     // 3. Status filtering (Exclusive)
@@ -361,14 +361,14 @@ export default function ConnectedAdmins() {
                           </span>
                         ) : (
                           <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
-                            admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                            (admin.role === 'super_admin' || admin.role === 'association_manager') ? 'bg-amber-100 text-amber-700' : 
                             (!!admin.is_team_leader || admin.role === 'team_leader') ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                           }`}>
                             {(!!admin.is_team_leader || admin.role === 'team_leader') ? 'ראש צוות' : 
-                             admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
+                             (admin.role === 'super_admin' || admin.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל'}
                           </span>
                         )}
-                        {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'owner', 'manager'].includes(admin.role || '') && (
+                        {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'association_manager', 'owner', 'manager'].includes(admin.role || '') && (
                           <span className="text-[10px] text-slate-400 cursor-help" title="משמש גם כמנהל">+</span>
                         )}
                         {isOnline ? (
@@ -459,14 +459,14 @@ export default function ConnectedAdmins() {
                               </span>
                             ) : (
                               <span className={`px-4 py-1.5 rounded-full text-xs font-black ${
-                                admin.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                                (admin.role === 'super_admin' || admin.role === 'association_manager') ? 'bg-amber-100 text-amber-700' : 
                                 (!!admin.is_team_leader || admin.role === 'team_leader') ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                               }`}>
                                 {(!!admin.is_team_leader || admin.role === 'team_leader') ? 'ראש צוות' : 
-                                 admin.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל'}
+                                 (admin.role === 'super_admin' || admin.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל'}
                               </span>
                             )}
-                            {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'owner', 'manager'].includes(admin.role || '') && (
+                            {(!!admin.is_team_leader || admin.role === 'team_leader') && ['admin', 'super_admin', 'association_manager', 'owner', 'manager'].includes(admin.role || '') && (
                               <span className="text-xs text-slate-400 cursor-help" title="משמש גם כמנהל">+</span>
                             )}
                             <span className="text-sm font-bold text-slate-400">{admin.affiliation_group || 'ללא קבוצה'}</span>

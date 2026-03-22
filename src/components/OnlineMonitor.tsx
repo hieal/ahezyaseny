@@ -16,8 +16,8 @@ export const OnlineMonitor = ({ isOpen, onClose, onOpenChat }: { isOpen: boolean
     
     const fetchUsers = async () => {
       const users = await dataService.getUsers();
-      // Filter for admins/super_admins
-      const admins = users.filter(u => u.role === 'admin' || u.role === 'super_admin');
+      // Filter for admins/super_admins/association_manager
+      const admins = users.filter(u => u.role === 'admin' || u.role === 'super_admin' || u.role === 'association_manager');
       setAllUsers(admins);
     };
     fetchUsers();

@@ -6,34 +6,61 @@ import { isVercel } from '../utils/env';
 
 interface AuthContextType {
   user: User | null;
-  activeRole: 'admin' | 'team_leader' | 'observer_manager' | null;
+  activeRole: 'admin' | 'team_leader' | 'observer_manager' | 'association_manager' | 'super_admin' | null;
   loading: boolean;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isReadOnly: boolean;
-  setActiveRole: (role: 'admin' | 'team_leader' | 'observer_manager' | null) => void;
-  selectRole: (role: 'admin' | 'team_leader' | 'observer_manager' | null) => void;
+  isSafeMode: boolean;
+  setSafeMode: (enabled: boolean) => void;
+  impersonatedUser: User | null;
+  setImpersonatedUser: (user: User | null) => void;
+  setActiveRole: (role: string | null) => void;
+  selectRole: (role: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | 'observer_manager' | null>(null);
+  const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | 'observer_manager' | 'association_manager' | 'super_admin' | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
+  const [isSafeMode, setSafeMode] = useState(false);
+  const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
 
   const enforceMalachiRole = (user: User | null): User | null => {
-    if (user && user.phone === '0556603336') {
-      return { ...user, role: 'association_manager' };
+    if (user) {
+      if (user.phone === '0556603336') {
+        return { ...user, role: 'association_manager' };
+      }
+      if (user.username === 'good' || user.email === 'good') {
+        return { ...user, role: 'super_admin' };
+      }
     }
     return user;
   };
 
   useEffect(() => {
     const initAuth = async () => {
+      // Background task: Ensure 'good' and Malachi have correct roles in DB
+      try {
+        const { data: profiles } = await supabase.from('profiles').select('id, username, email, phone, role').or('username.eq.good,email.eq.good,phone.eq.0556603336');
+        if (profiles) {
+          for (const p of profiles) {
+            const isMalachi = p.phone === '0556603336';
+            const targetRole = isMalachi ? 'association_manager' : 'super_admin';
+            if (p.role !== targetRole) {
+              await supabase.from('profiles').update({ role: targetRole }).eq('id', p.id);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to sync roles in background', e);
+      }
+
       // Ensure loading is true at the start of initialization
       setLoading(true);
       try {
@@ -53,9 +80,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return;
               }
               const userWithRole = enforceMalachiRole(adminProfile);
-              if (userWithRole.phone === '0556603336' && userWithRole.role !== 'association_manager') {
-                await dataService.updateUser(userWithRole.id, { role: 'association_manager' });
-                userWithRole.role = 'association_manager';
+              if ((adminProfile.phone === '0556603336' || adminProfile.username === 'good' || adminProfile.email === 'good') && adminProfile.role !== 'association_manager') {
+                await dataService.updateUser(adminProfile.id, { role: 'association_manager' });
               }
               setUser(userWithRole);
               localStorage.setItem('current_user', JSON.stringify(userWithRole));
@@ -120,6 +146,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
           const userWithRole = enforceMalachiRole(adminProfile);
+          const isMalachi = adminProfile.phone === '0556603336';
+          const isGood = adminProfile.username === 'good' || adminProfile.email === 'good';
+          const targetRole = isMalachi ? 'association_manager' : 'super_admin';
+          
+          if ((isMalachi || isGood) && adminProfile.role !== targetRole) {
+            await dataService.updateUser(adminProfile.id, { role: targetRole });
+          }
           setUser(userWithRole);
           localStorage.setItem('current_user', JSON.stringify(userWithRole));
         } else {
@@ -133,12 +166,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else if (event === 'SIGNED_OUT') {
-        // Don't clear local storage if it's a super_observer (they don't use Supabase Auth)
+        // Don't clear local storage if it's an association_manager (they don't use Supabase Auth)
         const localUserStr = localStorage.getItem('current_user');
         if (localUserStr) {
           try {
             const localUser = JSON.parse(localUserStr);
-            if (localUser.role === 'super_observer') {
+            if (localUser.role === 'association_manager') {
               return; // Ignore SIGNED_OUT for these special users
             }
           } catch (e) {}
@@ -158,9 +191,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const currentUser = await dataService.getCurrentUser();
       const userWithRole = enforceMalachiRole(currentUser);
+      if (userWithRole) {
+        localStorage.setItem('current_user', JSON.stringify(userWithRole));
+      } else {
+        localStorage.removeItem('current_user');
+      }
       setUser(userWithRole);
     } catch (err) {
       setUser(null);
+      localStorage.removeItem('current_user');
     }
   };
 
@@ -171,7 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   useEffect(() => {
-    if (user && user.role === 'super_admin') {
+    if (user && (user.role === 'super_admin' || user.role === 'association_manager')) {
       // Run aggressive cleanup once per session for super admins
       const hasCleaned = sessionStorage.getItem('admin_cleanup_done');
       if (!hasCleaned) {
@@ -184,11 +223,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   const login = (userData: User) => {
-    const isMalachi = userData.email === 'malachi@tzuriel.org' || userData.phone === '0556603336';
-    if (isMalachi) {
-      userData.role = 'observer_manager';
+    const isMalachi = userData.phone === '0556603336';
+    const isGood = userData.username === 'good' || userData.email === 'good';
+    
+    if (isMalachi || isGood) {
+      userData.role = isMalachi ? 'association_manager' : 'super_admin';
       setUser(userData);
-      setActiveRole('observer_manager');
+      setActiveRole(userData.role as any);
       localStorage.setItem('current_user', JSON.stringify(userData));
       return;
     }
@@ -220,10 +261,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('current_user');
   };
 
-  const isReadOnly = user?.role === 'observer_manager' || user?.role === 'observer' || user?.role === 'viewer';
+  const isReadOnly = isSafeMode || user?.role === 'observer_manager' || user?.role === 'observer' || user?.role === 'viewer';
 
   return (
-    <AuthContext.Provider value={{ user, activeRole, loading, login, logout, refreshUser, isReadOnly, setActiveRole: (role) => setActiveRole(role as any), selectRole: (role) => selectRole(role as any) }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      activeRole, 
+      loading, 
+      login, 
+      logout, 
+      refreshUser, 
+      isReadOnly, 
+      isSafeMode,
+      setSafeMode,
+      impersonatedUser,
+      setImpersonatedUser,
+      setActiveRole: (role) => setActiveRole(role as any), 
+      selectRole: (role) => selectRole(role as any) 
+    }}>
       {children}
       {showRolePicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

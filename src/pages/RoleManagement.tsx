@@ -4,8 +4,8 @@ import { motion } from 'motion/react';
 
 const roles = [
   {
-    id: 'super_observer',
-    name: 'מנהל העמותה (Super Observer)',
+    id: 'association_manager',
+    name: 'מנהל העמותה (Association Manager)',
     description: 'תפקיד ייחודי למנהל העמותה. גישה מלאה לכל חלקי המערכת עם חסינות מלאה ממחיקה ואיפוס.',
     permissions: [
       'ניהול מלא של כל המשודכים',
@@ -90,7 +90,7 @@ export default function RoleManagement() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">{role.name}</h2>
-              {role.id === 'super_admin' ? <UserCog size={24} /> : role.id === 'viewer' ? <Eye size={24} /> : <Users size={24} />}
+              {(role.id === 'super_admin' || role.id === 'association_manager') ? <UserCog size={24} /> : role.id === 'viewer' ? <Eye size={24} /> : <Users size={24} />}
             </div>
             
             <p className="text-sm mb-6 opacity-90 leading-relaxed font-medium">

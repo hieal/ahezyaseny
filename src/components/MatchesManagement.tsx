@@ -35,7 +35,7 @@ export default function MatchesManagement() {
   const fetchManagers = async () => {
     try {
       const data = await dataService.getUsers();
-      setManagers(data.filter(u => u.is_approved === 1 && ['admin', 'super_admin', 'team_leader'].includes(u.role)));
+      setManagers(data.filter(u => u.is_approved === 1 && ['admin', 'super_admin', 'association_manager', 'team_leader'].includes(u.role)));
     } catch (err) {
       console.error('Failed to fetch managers:', err);
     }

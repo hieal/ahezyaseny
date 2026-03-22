@@ -12,7 +12,7 @@ export const ActiveManagersWidget: React.FC = () => {
   const [isCarouselMode, setIsCarouselMode] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
 
-  if (!user || (user.role !== 'super_admin' && user.role !== 'super_observer')) {
+  if (!user || (user.role !== 'super_admin' && user.role !== 'association_manager')) {
     return null;
   }
 

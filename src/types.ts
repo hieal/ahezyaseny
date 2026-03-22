@@ -15,7 +15,7 @@ export interface User {
   full_name: string;
   username?: string;
   email: string;
-  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate' | 'super_observer' | 'association_admin' | 'association_manager' | 'observer_manager' | 'observer';
+  role: 'super_admin' | 'admin' | 'team_leader' | 'viewer' | 'candidate' | 'association_admin' | 'association_manager' | 'observer_manager' | 'observer';
   status: 'active' | 'inactive';
   category?: string | null;
   secondary_category?: string | null;

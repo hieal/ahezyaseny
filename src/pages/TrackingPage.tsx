@@ -66,7 +66,7 @@ export default function TrackingPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const data = await dataService.getActivityLogs(filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id));
+      const data = await dataService.getActivityLogs(filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id));
       setLogs(data);
     } catch (err) {
       toast.error('שגיאה בטעינת מעקב פעולות');
@@ -76,7 +76,7 @@ export default function TrackingPage() {
   };
 
   const fetchUsers = async () => {
-    if (activeUser?.role !== 'super_admin' && activeUser?.role !== 'team_leader') return;
+    if (activeUser?.role !== 'super_admin' && activeUser?.role !== 'association_manager' && activeUser?.role !== 'team_leader') return;
     try {
       const data = await dataService.getUsers();
       if (activeUser?.role === 'team_leader' && activeUser.affiliation_group) {
@@ -91,7 +91,7 @@ export default function TrackingPage() {
 
   const fetchPublishLogs = async () => {
     try {
-      const data = await dataService.getPublishLogs(undefined, filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id)) || [];
+      const data = await dataService.getPublishLogs(undefined, filters.userId || (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || activeUser?.role === 'team_leader' ? undefined : activeUser?.id)) || [];
       setPublishLogs(data);
     } catch (err) {
       console.error('Error fetching publish logs:', err);
@@ -230,7 +230,7 @@ export default function TrackingPage() {
           {/* Filters */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(user?.role === 'super_admin' || user?.role === 'team_leader') && (
+              {(user?.role === 'super_admin' || user?.role === 'association_manager' || user?.role === 'team_leader') && (
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2 pr-1">סנן לפי מנהל</label>
                   <div className="relative">

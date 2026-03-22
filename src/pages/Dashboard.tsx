@@ -172,8 +172,8 @@ export default function Dashboard() {
 
   const validAdmins = useMemo(() => {
     return allUsers.filter(u => {
-      const isMainAdmin = u.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b';
-      return isMainAdmin || u.id === activeUser?.id || ['admin', 'super_admin', 'team_leader', 'viewer', 'super_observer', 'observer', 'observer_manager', 'association_admin', 'association_manager'].includes(u.role);
+      const isMainAdmin = u.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1';
+      return isMainAdmin || u.id === activeUser?.id || ['admin', 'super_admin', 'team_leader', 'viewer', 'observer', 'observer_manager', 'association_admin', 'association_manager'].includes(u.role);
     });
   }, [allUsers]);
 
@@ -183,7 +183,7 @@ export default function Dashboard() {
     try {
       let query = supabase.from('profiles').select('*');
 
-      if (activeUser?.role === 'super_admin') {
+      if (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager') {
         query = query.in('role', ['admin', 'association_manager', 'super_admin', 'team_leader', 'observer']);
       } else if (activeUser?.affiliation_group) {
         query = query.eq('affiliation_group', activeUser.affiliation_group);
@@ -293,7 +293,7 @@ export default function Dashboard() {
   };
 
   const handleDeleteNote = async (noteId: string, noteUserId: string) => {
-    if (activeUser?.id !== noteUserId && activeUser?.role !== 'super_admin') {
+    if (activeUser?.id !== noteUserId && activeUser?.role !== 'super_admin' && activeUser?.role !== 'association_manager') {
       toast.error('רק המנהל שכתב את ההערה יכול למחוק אותה');
       return;
     }
@@ -1273,7 +1273,7 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {user?.role === 'super_admin' && (
+          {(user?.role === 'super_admin' || user?.role === 'association_manager') && (
             <button 
               onClick={async () => {
                 try {
@@ -1985,7 +1985,7 @@ export default function Dashboard() {
                   const now = new Date();
                   const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
                   
-                  const isOwner = (m: Match) => activeUser?.role === 'super_admin' || 
+                  const isOwner = (m: Match) => activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || 
                                          activeUser?.role === 'team_leader' ||
                                          m.created_by === activeUser?.id || 
                                          (activeUser?.category && m.creator_category === activeUser.category);
@@ -2073,7 +2073,7 @@ export default function Dashboard() {
       {/* Stats */}
       {!type && (
         <div className="space-y-4">
-          {user?.role !== 'super_admin' && (
+          {(user?.role !== 'super_admin' && user?.role !== 'association_manager') && (
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
                 <button 
@@ -2121,21 +2121,21 @@ export default function Dashboard() {
             <div className="cursor-pointer" onClick={() => { setStatsModalType('males'); setShowStatsModal(true); }}>
               <StatCard 
                 icon={<UserCheck className="text-luxury-blue" />} 
-                label={user?.role === 'super_admin' ? "סה״כ בנים" : (statsViewMode === 'me' ? "הבנים שלי" : (user?.affiliation_group ? `בנים ב-${user.affiliation_group}` : "בנים בקבוצה"))} 
-                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.malesMe || 0) : (stats?.malesGroup || 0)))} 
+                label={(user?.role === 'super_admin' || user?.role === 'association_manager') ? "סה״כ בנים" : (statsViewMode === 'me' ? "הבנים שלי" : (user?.affiliation_group ? `בנים ב-${user.affiliation_group}` : "בנים בקבוצה"))} 
+                value={loading && !stats ? 'טוען...' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (stats?.males || 0) : (statsViewMode === 'me' ? (stats?.malesMe || 0) : (stats?.malesGroup || 0)))} 
                 color="border-blue-100 bg-blue-50/30"
               />
             </div>
             <div className="cursor-pointer" onClick={() => { setStatsModalType('females'); setShowStatsModal(true); }}>
               <StatCard 
                 icon={<Heart className="text-pink-600" fill="currentColor" />} 
-                label={user?.role === 'super_admin' ? "סה״כ בנות" : (statsViewMode === 'me' ? "הבנות שלי" : (user?.affiliation_group ? `בנות ב-${user.affiliation_group}` : "בנות בקבוצה"))} 
-                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.femalesMe || 0) : (stats?.femalesGroup || 0)))} 
+                label={(user?.role === 'super_admin' || user?.role === 'association_manager') ? "סה״כ בנות" : (statsViewMode === 'me' ? "הבנות שלי" : (user?.affiliation_group ? `בנות ב-${user.affiliation_group}` : "בנות בקבוצה"))} 
+                value={loading && !stats ? 'טוען...' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (stats?.females || 0) : (statsViewMode === 'me' ? (stats?.femalesMe || 0) : (stats?.femalesGroup || 0)))} 
                 color="border-pink-100 bg-pink-50/30"
               />
             </div>
             <div className="cursor-pointer" onClick={() => { 
-              if (user?.role === 'super_admin') {
+              if (user?.role === 'super_admin' || user?.role === 'association_manager') {
                 setStatsModalType('publishedToday'); 
                 setShowStatsModal(true); 
               } else {
@@ -2145,8 +2145,8 @@ export default function Dashboard() {
             }}>
               <StatCard 
                 icon={<Send className="text-green-600" />} 
-                label={user?.role === 'super_admin' ? "פורסמו החודש" : (statsViewMode === 'me' ? "פרסומים שלי" : "פרסומי הקבוצה")} 
-                value={loading && !stats ? 'טוען...' : (user?.role === 'super_admin' ? (stats?.publishedThisMonth || 0) : (statsViewMode === 'me' ? (stats?.publishedThisMonthMe || 0) : (stats?.publishedThisMonthGroup || 0)))} 
+                label={(user?.role === 'super_admin' || user?.role === 'association_manager') ? "פורסמו החודש" : (statsViewMode === 'me' ? "פרסומים שלי" : "פרסומי הקבוצה")} 
+                value={loading && !stats ? 'טוען...' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (stats?.publishedThisMonth || 0) : (statsViewMode === 'me' ? (stats?.publishedThisMonthMe || 0) : (stats?.publishedThisMonthGroup || 0)))} 
                 color="border-green-100 bg-green-50/30"
               />
             </div>
@@ -2164,7 +2164,7 @@ export default function Dashboard() {
             >
               <StatCard 
                 icon={<Users className="text-purple-600" />} 
-                label={user?.role === 'super_admin' ? "סה״כ מנהלים" : (user?.affiliation_group ? `מנהלים ב-${user.affiliation_group}` : "מנהלים בקבוצה שלי")} 
+                label={(user?.role === 'super_admin' || user?.role === 'association_manager') ? "סה״כ מנהלים" : (user?.affiliation_group ? `מנהלים ב-${user.affiliation_group}` : "מנהלים בקבוצה שלי")} 
                 value={loading && !stats ? 'טוען...' : (stats?.totalAdmins || 0)} 
                 color="border-purple-100 bg-purple-50/30"
               />
@@ -2245,7 +2245,7 @@ export default function Dashboard() {
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${sortByDate ? 'left-5.5' : 'left-0.5'}`} />
               </button>
             </div>
-            {user?.role === 'super_admin' && (
+            {(user?.role === 'super_admin' || user?.role === 'association_manager') && (
               <>
                 <select 
                   className="input-field py-3 px-4 font-bold"
@@ -2307,7 +2307,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {user?.role === 'super_admin' && (
+        {(user?.role === 'super_admin' || user?.role === 'association_manager') && (
           <div className="flex flex-wrap gap-4 pt-4 border-t border-slate-50">
             <div className="space-y-2">
               <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">סינון לפי קבוצה</label>
@@ -2391,7 +2391,7 @@ export default function Dashboard() {
                 <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">סינון לפי מנהלים (קבוצת {selectedGroupType})</label>
                 <div className="flex flex-wrap gap-2">
                   {allUsers
-                    .filter(u => (u.role === 'admin' || u.role === 'super_admin') && u.category === selectedGroupType)
+                    .filter(u => (u.role === 'admin' || u.role === 'super_admin' || u.role === 'association_manager') && u.category === selectedGroupType)
                     .map(admin => (
                       <button
                         key={admin.id}
@@ -2414,7 +2414,7 @@ export default function Dashboard() {
                         {admin.full_name}
                       </button>
                     ))}
-                  {allUsers.filter(u => (u.role === 'admin' || u.role === 'super_admin') && u.category === selectedGroupType).length === 0 && (
+                  {allUsers.filter(u => (u.role === 'admin' || u.role === 'super_admin' || u.role === 'association_manager') && u.category === selectedGroupType).length === 0 && (
                     <span className="text-xs text-slate-400 italic">אין מנהלים רשומים לקבוצה זו</span>
                   )}
                 </div>
@@ -2591,7 +2591,7 @@ export default function Dashboard() {
                     generateDesignedImage(m);
                     setShowDesignedCardModal(true);
                   }}
-                  showCreator={user?.role === 'super_admin'}
+                  showCreator={user?.role === 'super_admin' || user?.role === 'association_manager'}
                   selected={selectedMatchIds.includes(match.id)}
                   onSelect={handleSelectMatch}
                 />
@@ -3004,8 +3004,8 @@ export default function Dashboard() {
                   generateDesignedImage(m);
                   setShowDesignedCardModal(true);
                 }}
-                showCreator={user?.role === 'super_admin'}
-                isViewer={user?.role !== 'super_admin' && viewingMatch.created_by !== user?.id}
+                showCreator={user?.role === 'super_admin' || user?.role === 'association_manager'}
+                isViewer={user?.role !== 'super_admin' && user?.role !== 'association_manager' && viewingMatch.created_by !== user?.id}
                 minimal={false}
               />
               <div className="mt-4 flex justify-center">
@@ -3320,7 +3320,7 @@ export default function Dashboard() {
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${note.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                             {note.is_available ? 'פנוי לפרסום' : 'לא פנוי'}
                           </span>
-                          {(user?.id === note.user_id || user?.role === 'super_admin') && (
+                          {(user?.id === note.user_id || user?.role === 'super_admin' || user?.role === 'association_manager') && (
                             <button 
                               onClick={() => handleDeleteNote(note.id, note.user_id)}
                               className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
@@ -3411,7 +3411,7 @@ export default function Dashboard() {
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-2xl font-black text-slate-900">
-                  {user?.role === 'super_admin' ? "כל המנהלים במערכת" : "מנהלים בקבוצות שלי"}
+                  {(user?.role === 'super_admin' || user?.role === 'association_manager') ? "כל המנהלים במערכת" : "מנהלים בקבוצות שלי"}
                 </h3>
                 <button onClick={() => { setShowSameGroupsAdminsModal(false); setSelectedAdminRole(null); }} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                   <X size={24} className="text-slate-400" />
@@ -3510,7 +3510,7 @@ export default function Dashboard() {
         )}
 
         {/* Admins Section */}
-        {user?.role === 'super_admin' && (
+        {(user?.role === 'super_admin' || user?.role === 'association_manager') && (
           <button 
             onClick={() => setShowMatchesManagement(true)}
             className="bg-luxury-blue text-white px-4 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all mb-4"
@@ -3547,10 +3547,10 @@ export default function Dashboard() {
                 )}
 
                 {/* Viewers Section */}
-                {(!selectedAdminRole || selectedAdminRole === 'viewer') && dashboardAdmins.filter(u => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(u.role)).length > 0 && (
+                {(!selectedAdminRole || selectedAdminRole === 'viewer') && dashboardAdmins.filter(u => ['observer', 'association_manager', 'observer_manager', 'viewer'].includes(u.role)).length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-sm font-black text-purple-400 uppercase tracking-widest border-b border-purple-100 pb-2">צופים</h4>
-                    {dashboardAdmins.filter(u => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(u.role)).map(u => (
+                    {dashboardAdmins.filter(u => ['observer', 'association_manager', 'observer_manager', 'viewer'].includes(u.role)).map(u => (
                       <div key={u.id} className="flex items-center justify-between p-4 bg-purple-50/30 rounded-2xl border border-purple-100">
                         <div className="flex items-center gap-3">
                           <div className={`w-3 h-3 rounded-full ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`}></div>
@@ -3647,7 +3647,7 @@ export default function Dashboard() {
                      statsModalType === 'joinedLastWeek' ? 'הצטרפו בשבוע האחרון' : 'הצטרפו בחודש האחרון'}
                   </h2>
                 </div>
-                {user?.role !== 'super_admin' && (statsModalType === 'publishedThisMonthMe' || statsModalType === 'publishedThisMonthGroup') && (
+                {(user?.role !== 'super_admin' && user?.role !== 'association_manager') && (statsModalType === 'publishedThisMonthMe' || statsModalType === 'publishedThisMonthGroup') && (
                   <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
                     <button 
                       onClick={() => {
@@ -3694,14 +3694,14 @@ export default function Dashboard() {
                         const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
                         if (statsModalType === 'males') {
-                          if (user?.role !== 'super_admin') {
+                          if (user?.role !== 'super_admin' && user?.role !== 'association_manager') {
                             const myCategories = [user?.category, user?.secondary_category].filter(Boolean);
                             return m.type === 'male' && m.creator_category && myCategories.includes(m.creator_category);
                           }
                           return m.type === 'male';
                         }
                         if (statsModalType === 'females') {
-                          if (user?.role !== 'super_admin') {
+                          if (user?.role !== 'super_admin' && user?.role !== 'association_manager') {
                             const myCategories = [user?.category, user?.secondary_category].filter(Boolean);
                             return m.type === 'female' && m.creator_category && myCategories.includes(m.creator_category);
                           }
@@ -3726,7 +3726,7 @@ export default function Dashboard() {
                           return true;
                         }
                         if (statsModalType === 'neverPublished') {
-                          const isOwner = activeUser?.role === 'super_admin' || 
+                          const isOwner = activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || 
                                          activeUser?.role === 'team_leader' ||
                                          m.created_by === activeUser?.id || 
                                          (activeUser?.category && m.creator_category === activeUser.category);

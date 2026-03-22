@@ -522,7 +522,7 @@ export default function MatchForm() {
             <p className="text-text-secondary font-medium">הזן את פרטי המשודך/ת למערכת {APP_NAME}</p>
           </div>
         </div>
-        {!isEdit && user?.role === 'super_admin' && (
+        {!isEdit && (user?.role === 'super_admin' || user?.role === 'association_manager') && (
           <button 
             onClick={async () => {
               try {

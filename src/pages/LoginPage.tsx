@@ -37,7 +37,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/');
+      if (user.phone === '0556603336') {
+        navigate('/lobby');
+      } else {
+        navigate('/');
+      }
     }
   }, [user, authLoading, navigate]);
 
@@ -163,7 +167,7 @@ export default function LoginPage() {
 
       if (user) {
         const isMalachi = user.email === 'malachi@tzuriel.org' || user.phone === '0556603336';
-        const isSuperAdmin = user.role === 'super_admin';
+        const isSuperAdmin = user.role === 'super_admin' || user.role === 'association_manager';
 
         // VIP Access: Malachi and Super Admin can enter through any door
         if (!isMalachi && !isSuperAdmin) {
@@ -184,8 +188,8 @@ export default function LoginPage() {
         } else {
           toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
         }
-        if (user.role === 'super_observer') {
-          navigate('/identity-selector');
+        if (user.role === 'association_manager') {
+          navigate('/lobby');
         } else if (user.role === 'super_admin') {
           navigate('/dashboard');
         } else if (user.role === 'candidate') {

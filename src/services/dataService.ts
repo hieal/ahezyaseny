@@ -285,7 +285,7 @@ ALTER ROLE authenticator SET auth.jwt_expiry = 86400;
 -- וודא שהמנהל שלך מסומן כפעיל תמיד
 UPDATE public.profiles 
 SET last_seen = NOW(), is_online = true
-WHERE role = 'super_admin';
+WHERE role = 'super_admin' OR role = 'association_manager';
 
 -- Initialize portal settings
 INSERT INTO public.portal_settings (id, memory_game_images, is_speed_date_active)
@@ -310,7 +310,7 @@ class DataService {
       console.log('Starting Aggressive Deep Clean...');
       
       // Fetch all profiles
-      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, email');
+      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, email, phone, full_name');
       if (error || !allProfiles) {
         console.error('Deep Clean failed to fetch profiles:', error);
         return;
@@ -318,25 +318,24 @@ class DataService {
 
       let goodId: string | null = null;
       let malachiId: string | null = null;
-      let noamRuthId: string | null = null;
       const idsToDelete: string[] = [];
 
       for (const profile of allProfiles) {
-        // 1. Identify Super Admin (good) - By ID or Username
-        if ((profile.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b' || profile.username === 'good') && !goodId) {
+        // 1. Identify Super Admin (good) - By Username or Email
+        if ((profile.username === 'good' || profile.email === 'good') && !goodId) {
           goodId = profile.id;
-          continue;
         }
         
         // 2. Identify Malachi Tzuriel (0556603336)
         if (profile.phone === '0556603336' && !malachiId) {
           malachiId = profile.id;
-          continue;
         }
 
-        // 3. Identify Noam Ruth (נועם רות)
-        if (profile.full_name?.includes('נועם רות') && !noamRuthId) {
-          noamRuthId = profile.id;
+        // 0. Protect ONLY the 2 special users
+        if (
+          profile.id === goodId ||
+          profile.id === malachiId
+        ) {
           continue;
         }
 
@@ -344,56 +343,57 @@ class DataService {
         idsToDelete.push(profile.id);
       }
 
+      // Total Wipe of specified tables
+      const tablesToWipe = [
+        'candidates',
+        'matchmakers',
+        'whatsapp_groups',
+        'leads',
+        'activity_logs',
+        'candidate_transfers',
+        'candidate_notes',
+        'publish_logs',
+        'internal_messages',
+        'chat_messages',
+        'candidate_chat_messages',
+        'speed_date_sessions',
+        'game_sessions',
+        'blacklist'
+      ];
+
+      for (const table of tablesToWipe) {
+        try {
+          const { error: checkError } = await supabaseAdmin.from(table).select('id').limit(1);
+          if (checkError && (checkError.code === '42P01' || checkError.message?.includes('does not exist'))) {
+            continue;
+          }
+          await supabaseAdmin.from(table).delete().not('id', 'is', null);
+        } catch (e) {
+          console.error(`Error wiping ${table}:`, e);
+        }
+      }
+
       if (idsToDelete.length > 0) {
-        console.log(`Deep Clean: Deleting ${idsToDelete.length} profiles to keep only the 3 required ones...`);
+        console.log(`Deep Clean: Deleting ${idsToDelete.length} profiles to keep only Malachi and Good...`);
         
         // Sequential await for strict order and to avoid blocking
         const chunkSize = 20;
         for (let i = 0; i < idsToDelete.length; i += chunkSize) {
           const chunk = idsToDelete.slice(i, i + chunkSize);
           
-          // 1. Update candidates (nullable handling)
-          await supabaseAdmin.from('candidates').update({ created_by: goodId || null }).in('created_by', chunk);
-          await supabaseAdmin.from('candidates').update({ managed_by: goodId || null }).in('managed_by', chunk);
-          await supabaseAdmin.from('candidates').update({ admin_id: goodId || null }).in('admin_id', chunk);
-          await supabaseAdmin.from('candidates').update({ target_admin_id: null }).in('target_admin_id', chunk);
-          
-          // 2. Delete residuals from all tables
-          await supabaseAdmin.from('candidate_transfers').delete().in('sender_id', chunk);
-          await supabaseAdmin.from('candidate_transfers').delete().in('receiver_id', chunk);
-          await supabaseAdmin.from('candidate_notes').delete().in('user_id', chunk);
-          await supabaseAdmin.from('internal_messages').delete().in('sender_id', chunk);
-          await supabaseAdmin.from('internal_messages').delete().in('receiver_id', chunk);
-          await supabaseAdmin.from('activity_logs').delete().in('user_id', chunk);
-          await supabaseAdmin.from('publish_logs').delete().in('user_id', chunk);
-          await supabaseAdmin.from('whatsapp_groups').update({ created_by: goodId || null }).in('created_by', chunk);
-          await supabaseAdmin.from('candidate_chat_messages').delete().in('sender_id', chunk);
-          await supabaseAdmin.from('speed_date_sessions').delete().in('male_id', chunk);
-          await supabaseAdmin.from('speed_date_sessions').delete().in('female_id', chunk);
-          await supabaseAdmin.from('game_sessions').delete().in('player1_id', chunk);
-          await supabaseAdmin.from('game_sessions').delete().in('player2_id', chunk);
-          await supabaseAdmin.from('blacklist').delete().in('created_by', chunk);
-
-          // 3. Finally delete the profiles
+          // Finally delete the profiles
           await supabaseAdmin.from('profiles').delete().in('id', chunk);
-          
-          // 4. Also try to delete from admins table if it exists
-          try {
-            await supabaseAdmin.from('admins').delete().in('id', chunk);
-          } catch (e) {
-            console.log('Admins table might be a view or not exist, skipping delete from admins');
-          }
         }
       }
 
-      // Ensure the 3 kept users have correct roles and credentials
+      // Ensure the 2 kept users have correct roles and credentials
       if (goodId) {
         await supabaseAdmin.from('profiles').update({
-          full_name: 'מנהל ראשי',
+          full_name: 'המנהל הראשי',
           username: 'good',
           password_plain: 'good',
           password: 'good',
-          role: 'super_admin',
+          role: 'association_manager',
           status: 'active',
           is_approved: 1
         }).eq('id', goodId);
@@ -402,21 +402,13 @@ class DataService {
       if (malachiId) {
         await supabaseAdmin.from('profiles').update({
           full_name: 'מלאכי צוריאל',
-          role: 'admin',
+          role: 'association_manager',
           status: 'active',
           is_approved: 1
         }).eq('id', malachiId);
       }
 
-      if (noamRuthId) {
-        await supabaseAdmin.from('profiles').update({
-          role: 'admin',
-          status: 'active',
-          is_approved: 1
-        }).eq('id', noamRuthId);
-      }
-
-      console.log('Deep Clean Completed Successfully.');
+      console.log('Clean State: Only Malachi & Good Preserved.');
     } catch (err) {
       console.error('Error during Aggressive Deep Clean:', err);
     }
@@ -613,7 +605,7 @@ class DataService {
     try {
       const user = JSON.parse(userJson);
       // Don't update for the fallback "מנהל ראשי"
-      if (user.id && user.id !== 'b724069c-2a51-4c99-9dcb-178e488d6b4b') {
+      if (user.id && user.id !== '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
         // Use update to update last_seen
         const { error } = await supabase
           .from('profiles')
@@ -661,7 +653,7 @@ class DataService {
       }
       
       const u = data as any;
-      const fallbackName = u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם';
+      const fallbackName = (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם';
       const updatedUser: User = {
         ...u,
         full_name: u.full_name || u.email?.split('@')[0] || u.username || fallbackName
@@ -683,9 +675,9 @@ class DataService {
         id: '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1',
         username: 'good',
         password_plain: 'good',
-        full_name: 'מנהל ראשי',
+        full_name: 'המנהל הראשי',
         email: 'admin@example.com',
-        role: 'super_admin',
+        role: 'association_manager',
         status: 'active',
         is_approved: 1,
         gender: 'male',
@@ -723,7 +715,7 @@ class DataService {
               password: '123456',
               full_name: 'מלאכי צוריאל',
               email: 'malachi@tzuriel.org',
-              role: 'super_observer',
+              role: 'association_manager',
               status: 'active',
               is_approved: 1,
               gender: 'male',
@@ -753,7 +745,7 @@ class DataService {
         // Special handling for Malachi
         if (user.phone === '0556603336' || user.email === 'malachi@tzuriel.org' || user.username === 'malachi') {
           if (password_plain === '123456') {
-            return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_manager' } as User;
           }
         }
 
@@ -1162,7 +1154,7 @@ class DataService {
     const effectiveUserId = user?.id;
 
     // Use supabaseAdmin for admin/team_leader to bypass RLS as requested
-    const client = (activeUser && (activeUser.role === 'admin' || activeUser.role === 'team_leader' || activeUser.role === 'super_admin')) 
+    const client = (activeUser && (activeUser.role === 'admin' || activeUser.role === 'team_leader' || activeUser.role === 'super_admin' || activeUser.role === 'association_manager')) 
       ? supabaseAdmin 
       : supabase;
 
@@ -1207,7 +1199,7 @@ class DataService {
         if (effectiveUserId) {
           query = query.or(`managed_by.eq.${effectiveUserId},admin_id.eq.${effectiveUserId}`);
         }
-      } else if (effectiveUserId && activeUser.role !== 'super_admin') {
+      } else if (effectiveUserId && activeUser.role !== 'super_admin' && activeUser.role !== 'association_manager') {
         query = query.or(`managed_by.eq.${effectiveUserId},admin_id.eq.${effectiveUserId}`);
       }
     }
@@ -1546,7 +1538,7 @@ class DataService {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .in('role', ["admin", "super_observer", "team_leader"]);
+        .in('role', ["admin", "association_manager", "team_leader"]);
       
       console.log('Clean Query - No Last Seen Filter');
       
@@ -1587,7 +1579,7 @@ class DataService {
     if (currentUser?.role === 'candidate') return [];
 
     try {
-      const isAdminRole = currentUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(currentUser.role);
+      const isAdminRole = currentUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'association_manager'].includes(currentUser.role);
       const client = isAdminRole ? supabaseAdmin : supabase;
 
       // Try to select all relevant columns
@@ -1596,7 +1588,7 @@ class DataService {
         .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain, category, secondary_category, is_approved')
         .order('full_name');
       
-      if (currentUser.role !== 'super_admin' && currentUser.role !== 'super_observer') {
+      if (currentUser.role !== 'super_admin' && currentUser.role !== 'association_manager') {
         if (currentUser.affiliation_group?.includes('שח"ם')) {
           query = query.ilike('affiliation_group', '%שח"ם%');
         } else if (currentUser.affiliation_group) {
@@ -1618,7 +1610,7 @@ class DataService {
           .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group')
           .order('full_name');
 
-        if (currentUser.role !== 'super_admin' && currentUser.role !== 'super_observer') {
+        if (currentUser.role !== 'super_admin' && currentUser.role !== 'association_manager') {
           if (currentUser.affiliation_group?.includes('שח"ם')) {
             basicQuery = basicQuery.ilike('affiliation_group', '%שח"ם%');
           } else if (currentUser.affiliation_group) {
@@ -1646,13 +1638,13 @@ class DataService {
             gender: u.gender,
             password_plain: '',
             role: safeMap(u.role, 'viewer'),
-            full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם')
+            full_name: safeMap(u.full_name, (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם')
           };
           if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
-            return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+            return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
           }
           if (user.phone === '0556603336') {
-            return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_manager' };
           }
           return user;
         }) as User[];
@@ -1663,21 +1655,21 @@ class DataService {
           ...u,
           avatar_url: u.image_url || u.avatar_url || null,
           role: safeMap(u.role, 'viewer'),
-          full_name: safeMap(u.full_name, u.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל ללא שם'),
+          full_name: safeMap(u.full_name, (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם'),
           username: u.username,
           affiliation_group: u.affiliation_group
         };
         if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
-          return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+          return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
         }
         if (user.phone === '0556603336') {
-          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
+          return { ...user, full_name: 'מלאכי צוריאל', role: 'association_manager' };
         }
         return user;
       }) as User[];
 
       const rolePriority: Record<string, number> = {
-        'super_observer': 1,
+        'association_manager': 1,
         'super_admin': 2,
         'team_leader': 3,
         'admin': 4,
@@ -1723,10 +1715,10 @@ class DataService {
       } as User;
 
       if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
-        return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+        return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
       }
       if (user.phone === '0556603336') {
-        return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_manager' };
       }
       return user;
     }
@@ -1746,7 +1738,7 @@ class DataService {
     
     if (data) {
       const u = data as any;
-      const fallbackName = (u.role === 'super_admin') ? 'מנהל ראשי' : 'מנהל ללא שם';
+      const fallbackName = (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם';
       const user = {
         ...u,
         affiliation_group: u.affiliation_group || null,
@@ -1756,10 +1748,10 @@ class DataService {
       } as User;
 
       if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
-        return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
+        return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
       }
       if (user.phone === '0556603336') {
-        return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_manager' };
       }
       return user;
     }
@@ -1817,7 +1809,7 @@ class DataService {
         if (header === 'תפקיד' || header === 'role') {
           if (val === 'ראש צוות' || val === 'team_leader') admin.role = 'team_leader';
           else if (val === 'צופה' || val === 'viewer' || val === 'observer') admin.role = 'observer';
-          else if (val === 'מנהל על' || val === 'super_admin') admin.role = 'super_admin';
+          else if (val === 'מנהל על' || val === 'super_admin' || val === 'association_manager') admin.role = 'super_admin';
           else if (val === 'מנהל' || val === 'admin') admin.role = 'admin';
         }
         if (header === 'מין' || header === 'gender' || header.includes('מין')) {
@@ -1832,7 +1824,7 @@ class DataService {
         }
         if (header === 'ראש צוות' || header === 'team_leader' || header.includes('ראש צוות')) {
           const tl = users.find(u => 
-            (u.role === 'team_leader' || u.role === 'super_admin') && 
+            (u.role === 'team_leader' || u.role === 'super_admin' || u.role === 'association_manager') && 
             (u.full_name === val || u.username === val || u.email === val)
           );
           if (tl) {
@@ -2492,7 +2484,7 @@ class DataService {
           const userIds = groupUsers.map(u => u.id);
           query = query.in('user_id', userIds);
         }
-      } else if (activeUser.role !== 'super_admin') {
+      } else if (activeUser.role !== 'super_admin' && activeUser.role !== 'association_manager') {
         query = query.eq('user_id', activeUser.id);
       }
     }
@@ -2686,13 +2678,13 @@ class DataService {
       );
 
       // Use supabaseAdmin for stats to ensure full visibility for admins
-      const isAdminRole = activeUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'super_observer'].includes(activeUser.role);
+      const isAdminRole = activeUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'association_manager'].includes(activeUser.role);
       const client = isAdminRole ? supabaseAdmin : supabase;
       let adminsQuery = client.from('profiles').select('id, gender, category, affiliation_group, role, is_approved, status').neq('role', 'candidate');
       let publishLogsQuery = client.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
-      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'super_observer') {
+      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'association_manager') {
         if (activeUser.affiliation_group?.includes('שח"ם')) {
           // Shaham hierarchy: Fetch all Shaham admins
           const { data: sameGroupAdmins } = await client.from('profiles')
@@ -2738,7 +2730,7 @@ class DataService {
       
       // Fetch group candidates if not super admin
       let groupCandidates: Match[] = [];
-      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'super_observer' && activeUser.affiliation_group) {
+      if (activeUser && activeUser.role !== 'super_admin' && activeUser.role !== 'association_manager' && activeUser.affiliation_group) {
         let groupQuery = client.from('candidates').select('*').is('deleted_at', null);
         if (activeUser.affiliation_group.includes('שח"ם')) {
           groupQuery = groupQuery.ilike('category', '%שח"ם%');
@@ -2799,11 +2791,11 @@ class DataService {
         totalAdmins: admins.length,
         adminMales: admins.filter(a => a.gender === 'male').length,
         adminFemales: admins.filter(a => a.gender === 'female').length,
-        superAdmins: admins.filter(a => a.role === 'super_admin' || a.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b').length,
-        associationManagers: admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager' || a.role === 'super_observer' || a.phone === '0556603336').length,
+        superAdmins: admins.filter(a => a.role === 'super_admin').length,
+        associationManagers: Math.max(1, admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager' || a.phone === '0556603336').length),
         regularManagers: admins.filter(a => a.role === 'admin' && a.phone !== '0556603336').length,
         teamLeaders: admins.filter(a => a.role === 'team_leader').length,
-        observers: admins.filter(a => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(a.role)).length,
+        observers: admins.filter(a => ['observer', 'association_manager', 'observer_manager', 'viewer'].includes(a.role)).length,
         activeAdmins: admins.filter(a => a.status === 'active').length,
         pendingAdmins: admins.filter(a => a.is_approved === 0).length
       };
@@ -2850,11 +2842,11 @@ class DataService {
     try {
       // Mark as pending delete instead of actual delete in Studio
       const results = await Promise.all([
-        supabase.from('candidates').update({ is_approved: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('publish_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('candidate_transfers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('candidate_notes').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+        supabase.from('candidates').update({ is_approved: 0 }).not('id', 'is', null),
+        supabase.from('activity_logs').delete().not('id', 'is', null),
+        supabase.from('publish_logs').delete().not('id', 'is', null),
+        supabase.from('candidate_transfers').delete().not('id', 'is', null),
+        supabase.from('candidate_notes').delete().not('id', 'is', null)
       ]);
 
       results.forEach((res, index) => {
@@ -2870,61 +2862,118 @@ class DataService {
 
   async factoryReset(): Promise<void> {
     try {
-      const currentUser = await this.getCurrentUser();
+      console.log('Starting Factory Reset (Deep Force Clear)...');
       
-      // Data Cleanup only - delete rows from data tables
-      // We wrap each delete in a try-catch so that if a table doesn't exist, it doesn't crash the whole process.
-      const tablesToDelete = [
+      // Fetch all profiles
+      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, email, phone, full_name');
+      if (error || !allProfiles) {
+        console.error('Factory Reset failed to fetch profiles:', error);
+        return;
+      }
+
+      let goodId: string | null = null;
+      let malachiId: string | null = null;
+      const idsToDelete: string[] = [];
+
+      for (const profile of allProfiles) {
+        // 1. Identify Super Admin (good) - By Username or Email
+        if ((profile.username === 'good' || profile.email === 'good') && !goodId) {
+          goodId = profile.id;
+        }
+        
+        // 2. Identify Malachi Tzuriel (0556603336)
+        if (profile.phone === '0556603336' && !malachiId) {
+          malachiId = profile.id;
+        }
+
+        // 0. Protect ONLY the 2 special users
+        if (
+          profile.id === goodId ||
+          profile.id === malachiId
+        ) {
+          continue;
+        }
+
+        // Everything else goes to the delete list
+        idsToDelete.push(profile.id);
+      }
+
+      // Total Wipe of specified tables
+      const tablesToWipe = [
         'candidates',
         'matchmakers',
+        'whatsapp_groups',
+        'leads',
         'activity_logs',
-        'publish_logs',
-        'internal_messages',
         'candidate_transfers',
         'candidate_notes',
-        'chat_messages'
+        'publish_logs',
+        'internal_messages',
+        'chat_messages',
+        'candidate_chat_messages',
+        'speed_date_sessions',
+        'game_sessions',
+        'blacklist'
       ];
 
-      for (const table of tablesToDelete) {
+      for (const table of tablesToWipe) {
         try {
-          console.log(`Attempting to delete from ${table}...`);
-          const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
-          if (error) {
-            console.error(`Error deleting from ${table}:`, error);
-          } else {
-            console.log(`Successfully deleted from ${table}`);
+          const { error: checkError } = await supabaseAdmin.from(table).select('id').limit(1);
+          if (checkError && (checkError.code === '42P01' || checkError.message?.includes('does not exist'))) {
+            continue;
           }
-        } catch (e) {
-          console.error(`Exception deleting from ${table}:`, e);
+          const { error } = await supabaseAdmin.from(table).delete().not('id', 'is', null);
+          if (error) {
+            console.error(`Error wiping ${table}:`, error.message);
+          } else {
+            console.log(`Table ${table} cleared successfully.`);
+          }
+        } catch (e: any) {
+          console.error(`Error wiping ${table}:`, e.message);
         }
       }
 
-      // Delete profiles EXCEPT super_admin, association_manager, association_admin, super_observer, and Malachi
-      try {
-        console.log(`Attempting to delete profiles...`);
-        // Simplify the query to avoid 400 Bad Request errors from complex filters
-        const { error: profilesError } = await supabase.from('profiles')
-          .delete()
-          .neq('role', 'super_admin')
-          .neq('role', 'association_manager')
-          .neq('role', 'association_admin')
-          .neq('role', 'super_observer')
-          .neq('phone', '0556603336')
-          .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000');
+      if (idsToDelete.length > 0) {
+        console.log(`Factory Reset: Deleting ${idsToDelete.length} profiles to keep only Malachi and Good...`);
+        
+        const chunkSize = 20;
+        for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+          const chunk = idsToDelete.slice(i, i + chunkSize);
           
-        if (profilesError) {
-          console.error('Error deleting profiles:', profilesError);
-        } else {
-          console.log(`Successfully deleted profiles`);
+          // Finally delete the profiles
+          const { error: profilesError } = await supabaseAdmin.from('profiles').delete().in('id', chunk);
+          if (profilesError) {
+            console.error('Error deleting profiles chunk:', profilesError.message);
+          }
         }
-      } catch (e) {
-        console.error('Exception deleting profiles:', e);
+      }
+      console.log(`Table profiles cleared successfully.`);
+
+      // Ensure the 2 kept users have correct roles and credentials
+      if (goodId) {
+        await supabaseAdmin.from('profiles').update({
+          full_name: 'המנהל הראשי',
+          username: 'good',
+          password_plain: 'good',
+          password: 'good',
+          role: 'association_manager',
+          status: 'active',
+          is_approved: 1
+        }).eq('id', goodId);
       }
 
-      // Do NOT reset local settings or whatsapp_groups
+      if (malachiId) {
+        await supabaseAdmin.from('profiles').update({
+          full_name: 'מלאכי צוריאל',
+          role: 'association_manager',
+          status: 'active',
+          is_approved: 1
+        }).eq('id', malachiId);
+      }
+
+      console.log('Clean State: Only Malachi & Good Preserved.');
     } catch (err: any) {
       console.error('Error in factory reset:', err);
-      // Don't alert here to prevent stopping the UI, the reload will happen in the component
     }
   }
 

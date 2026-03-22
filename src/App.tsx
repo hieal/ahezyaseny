@@ -30,7 +30,8 @@ import AdminLiveTracker from './pages/AdminLiveTracker';
 import Leaderboard from './pages/Leaderboard';
 import OrphanedCandidatesPage from './pages/OrphanedCandidatesPage';
 import PendingTransfersPage from './pages/PendingTransfersPage';
-import { LayoutDashboard, Users, UserPlus, UserMinus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
+import MalachiLobby from './pages/MalachiLobby';
+import { LayoutDashboard, Users, UserPlus, UserMinus, UserCog, Settings, LogOut, Menu, X, Heart, ClipboardList, UserCheck, ArrowRight, History, Plus, Clock, User, MessageSquare, Send, ShieldAlert, Database, Cloud, Sparkles, ArrowLeftRight, Gamepad2, Zap, Trophy, ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME } from './constants';
 import { getGenderedText } from './utils/gender';
@@ -47,10 +48,10 @@ import { TransferModal } from './components/TransferModal';
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: { children: React.ReactNode, adminOnly?: boolean, superAdminOnly?: boolean }) {
   const { user, loading } = useAuth();
   
-  // Check localStorage for super_observer to prevent redirect during loading
+  // Check localStorage for association_manager to prevent redirect during loading
   const localUserStr = localStorage.getItem('current_user');
   const localUser = localUserStr ? JSON.parse(localUserStr) : null;
-  const isSuperObserver = user?.role === 'super_observer' || localUser?.role === 'super_observer';
+  const isSuperObserver = user?.role === 'association_manager' || localUser?.role === 'association_manager';
   
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-bg-gray">
@@ -58,7 +59,7 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
     </div>
   );
 
-  // If user is not logged in and not super_observer, redirect to login
+  // If user is not logged in and not association_manager, redirect to login
   if (!user && !isSuperObserver) return <Navigate to="/login" />;
   
   // If user is candidate, restrict access
@@ -70,16 +71,16 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }:
   }
   
   // Role-based access control
-  if (superAdminOnly && user?.role !== 'super_admin') return <Navigate to="/" />;
-  if (adminOnly && user?.role !== 'super_admin' && user?.role !== 'team_leader' && user?.role !== 'admin' && user?.role !== 'super_observer') return <Navigate to="/" />;
+  if (superAdminOnly && user?.role !== 'super_admin' && user?.role !== 'association_manager') return <Navigate to="/" />;
+  if (adminOnly && user?.role !== 'super_admin' && user?.role !== 'association_manager' && user?.role !== 'team_leader' && user?.role !== 'admin') return <Navigate to="/" />;
   
   return <>{children}</>;
 }
 
 function Sidebar() {
-  const { user, logout, refreshUser } = useAuth();
-  const activeUser = user;
-  const effectiveUser = user;
+  const { user, logout, refreshUser, isSafeMode, impersonatedUser, activeRole } = useAuth();
+  const activeUser = impersonatedUser || user;
+  const effectiveUser = impersonatedUser || user;
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -130,7 +131,7 @@ function Sidebar() {
       };
 
       const fetchOrphanedCount = async () => {
-        if (user.role === 'super_admin') {
+        if (user.role === 'super_admin' || user.role === 'association_manager') {
           try {
             const count = await dataService.getOrphanedCandidatesCount();
             setOrphanedCount(count);
@@ -249,7 +250,8 @@ function Sidebar() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const isMalachi = activeUser?.phone === '0556603336';
+  const isMalachi = user?.phone === '0556603336';
+  const isGood = user?.username === 'good' || user?.email === 'good';
 
   let navItems: any[] = activeUser?.role === 'candidate' 
     ? [
@@ -258,29 +260,45 @@ function Sidebar() {
         { path: '/portal/speed-date', label: 'ספיד-דייט', icon: <Zap size={20} /> },
         { path: '/portal/games', label: 'משחקים', icon: <Gamepad2 size={20} /> },
       ]
-    : [
-        { path: '/connected-admins', label: getGenderedText(activeUser?.gender, 'מנהלים מחוברים', 'מנהלות מחוברות'), icon: <Users size={20} /> },
-        { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-        { 
-          path: '/suggestions', 
-          label: 'הצעות יומיות', 
-          icon: <Sparkles size={20} />,
-          badge: formatTime(timeLeft)
-        },
-        { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
-        { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
-        { path: '/matches/new', label: getGenderedText(activeUser?.gender, 'צור כרטיס חדש', 'צרי כרטיס חדש'), icon: <UserPlus size={20} /> },
-        { path: '/pending-contact', label: 'ממתינים לקשר', icon: <UserCheck size={20} /> },
-        { path: '/initial-contact', label: 'קשר ראשוני', icon: <UserCheck size={20} /> },
-        { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
-        ...(activeUser?.role === 'team_leader' ? [{ path: '/tracking', label: 'מעקב פרסומים צוותי', icon: <History size={20} /> }] : []),
-      ];
+    : (isMalachi && activeRole === 'association_manager')
+      ? [
+          { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+          { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
+          { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
+          { path: '/connected-admins', label: 'מנהלים מחוברים', icon: <Users size={20} /> },
+        ]
+      : [
+          { path: '/connected-admins', label: getGenderedText(activeUser?.gender, 'מנהלים מחוברים', 'מנהלות מחוברות'), icon: <Users size={20} /> },
+          { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+          { 
+            path: '/suggestions', 
+            label: 'הצעות יומיות', 
+            icon: <Sparkles size={20} />,
+            badge: formatTime(timeLeft)
+          },
+          { path: '/matches/males', label: 'משודכים (בנים)', icon: <UserCheck size={20} /> },
+          { path: '/matches/females', label: 'משודכות (בנות)', icon: <Heart size={20} /> },
+          { path: '/matches/new', label: getGenderedText(activeUser?.gender, 'צור כרטיס חדש', 'צרי כרטיס חדש'), icon: <UserPlus size={20} /> },
+          { path: '/pending-contact', label: 'ממתינים לקשר', icon: <UserCheck size={20} /> },
+          { path: '/initial-contact', label: 'קשר ראשוני', icon: <UserCheck size={20} /> },
+          { path: '/tracking', label: 'מעקב פעולות', icon: <History size={20} /> },
+          ...(activeUser?.role === 'team_leader' ? [{ path: '/tracking', label: 'מעקב פרסומים צוותי', icon: <History size={20} /> }] : []),
+        ];
 
-  if (isMalachi) {
+  if (isMalachi && activeRole !== 'association_manager' && activeUser?.role !== 'candidate') {
     navItems.unshift({ 
       path: '/control-center', 
       label: 'מרכז השליטה', 
       icon: <ShieldAlert size={20} className="text-[#D4AF37]" />,
+      isGold: true
+    });
+  }
+
+  if (isMalachi) {
+    navItems.unshift({
+      path: '/lobby',
+      label: 'חזרה ללובי (מנהל עמותה)',
+      icon: <Home size={20} className="text-[#D4AF37]" />,
       isGold: true
     });
   }
@@ -294,7 +312,7 @@ function Sidebar() {
     });
   }
 
-  if (activeUser?.role === 'super_admin' && orphanedCount > 0) {
+  if ((activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager') && orphanedCount > 0) {
     navItems.push({
       path: '/orphaned-candidates',
       label: getGenderedText(activeUser?.gender, 'משודכים ללא מנהל', 'משודכות ללא מנהלת'),
@@ -308,21 +326,23 @@ function Sidebar() {
     setIsOpen(false);
   };
 
-  if (activeUser?.role === 'super_admin' || activeUser?.role === 'team_leader' || activeUser?.role === 'super_observer' || activeUser?.role === 'observer_manager') {
-    navItems.unshift(
-      { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
-      { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
-    );
-  }
+  if (!isMalachi || activeRole !== 'association_manager') {
+    if (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || activeUser?.role === 'team_leader' || activeUser?.role === 'observer_manager') {
+      navItems.unshift(
+        { path: '/admins', label: getGenderedText(activeUser?.gender, 'ניהול מנהלים', 'ניהול מנהלות'), icon: <UserCog size={20} /> },
+        { path: '/roles', label: 'ניהול תפקידים', icon: <ShieldAlert size={20} /> }
+      );
+    }
 
-  if (activeUser?.role === 'super_admin' || activeUser?.role === 'super_observer' || activeUser?.role === 'observer_manager') {
-    navItems.push(
-      { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
-      { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
-    );
-    navItems.push(
-      { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
-    );
+    if (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager' || activeUser?.role === 'observer_manager') {
+      navItems.push(
+        { path: '/blacklist', label: 'רשימה שחורה', icon: <ShieldAlert size={20} /> },
+        { path: '/import-portal', label: 'פורטל ייבוא', icon: <Database size={20} /> }
+      );
+      navItems.push(
+        { path: '/settings', label: 'הגדרות', icon: <Settings size={20} /> }
+      );
+    }
   }
 
   let mainNavItems = navItems;
@@ -341,13 +361,13 @@ function Sidebar() {
       <Link
         to={item.path}
         onClick={(e) => {
-          if (user?.role === 'super_observer') {
+          if (user?.role === 'association_manager') {
             e.preventDefault();
           } else {
             setIsOpen(false);
           }
         }}
-        title={user?.role === 'super_observer' ? 'אין הרשאת עריכה במצב צופה' : ''}
+        title={isSafeMode ? 'אין הרשאת עריכה במצב צופה' : ''}
         className={`sidebar-item flex-1 ${
           location.pathname === item.path ? 'sidebar-item-active' : ''
         } ${
@@ -362,7 +382,7 @@ function Sidebar() {
           item.path === '/matches/females' ? '!bg-pink-100 !text-pink-900 font-bold hover:!bg-pink-200' : ''
         } ${
           item.isGold ? '!bg-[#D4AF37]/10 !text-[#D4AF37] border border-[#D4AF37]/20 font-bold hover:!bg-[#D4AF37]/20' : ''
-        } ${user?.role === 'super_observer' && !item.isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
+        } {isSafeMode && !item.isGold ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         {item.icon}
         <span className={`font-medium flex-1 ${item.isGold ? 'text-[#D4AF37]' : ''}`}>{item.label}</span>
@@ -406,6 +426,15 @@ function Sidebar() {
       </div>
         </div>
         <div className="flex items-center gap-2">
+          {isMalachi && location.pathname !== '/lobby' && (
+            <button 
+              onClick={() => navigate('/lobby')}
+              className="px-3 py-1.5 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-lg text-[10px] font-bold flex items-center gap-1"
+            >
+              <Home size={14} />
+              לובי
+            </button>
+          )}
           <button 
             onClick={logout}
             className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
@@ -430,7 +459,7 @@ function Sidebar() {
             className={`fixed lg:sticky top-0 right-0 h-screen w-72 bg-white border-l border-slate-100 z-50 flex flex-col shadow-xl lg:shadow-none ${!isOpen && 'hidden lg:flex'}`}
           >
             <div className="p-8 border-b border-slate-50 hidden lg:block">
-              {user?.role === 'super_observer' && (
+              {isSafeMode && (
                 <div className="mb-4 px-3 py-1.5 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-lg text-[10px] font-bold text-center">
                   מצב צופה פעיל - הרשאות קריאה בלבד
                 </div>
@@ -445,6 +474,15 @@ function Sidebar() {
                 </div>
               </div>
               <p className="text-xs text-text-secondary font-medium mt-2">מערכת ניהול מקצועית</p>
+              {isMalachi && location.pathname !== '/lobby' && (
+                <button 
+                  onClick={() => navigate('/lobby')}
+                  className="w-full mt-6 p-4 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-[#D4AF37]/20 transition-all shadow-sm"
+                >
+                  <Home size={20} />
+                  חזרה לתצוגת מנהל עמותה
+                </button>
+              )}
             </div>
 
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
@@ -510,7 +548,7 @@ function Sidebar() {
                 <div className="pt-4 mt-4 border-t border-slate-50">
                   <div className="px-4 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">ניהול פורטל</div>
                   <div className="space-y-1">
-                    {user?.role === 'super_admin' && (
+                    {(user?.role === 'super_admin' || user?.role === 'association_manager') && (
                       <Link
                         to="/portal-admin"
                         onClick={() => setIsOpen(false)}
@@ -542,7 +580,7 @@ function Sidebar() {
             </nav>
 
             <div className="p-6 border-t border-slate-50">
-              {user?.role !== 'super_admin' && (
+              {user?.role !== 'super_admin' && user?.role !== 'association_manager' && (
                 <button 
                   onClick={() => setShowPasswordModal(true)}
                   className="w-full mb-4 py-2 px-4 text-xs font-bold text-luxury-blue bg-blue-50 rounded-xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
@@ -578,7 +616,7 @@ function Sidebar() {
                   </p>
                   <p className={`text-xs font-medium truncate ${isMalachi ? 'text-[#D4AF37]/80' : 'text-text-secondary'}`}>
                     {isMalachi ? 'מנהל העמותה' : (
-                        (user?.role === 'super_admin' ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
+                        ((user?.role === 'super_admin' || user?.role === 'association_manager') ? 'מנהל ראשי' : user?.role === 'team_leader' ? getGenderedText(user?.gender, 'ראש צוות', 'ראשת צוות') : user?.role === 'candidate' ? 'משודך' : 'מנהל')
                     )}
                   </p>
                 </div>
@@ -726,9 +764,9 @@ function Header() {
         )}
         <div className="flex items-center gap-2 text-text-secondary font-medium text-sm">
           <Logo size={28} showText={false} />
-          <span>{isMalachi ? 'ברוך הבא, מלאכי צוריאל - מנהל העמותה' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
+          <span>{isMalachi ? 'ברוך הבא מלאכי צוריאל - מנהל העמותה' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
           <span className="text-text-main font-bold">
-            {isMalachi ? '' : (user?.role === 'super_admin' ? (
+            {isMalachi ? '' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (
               <span className="text-luxury-blue font-bold">{user?.full_name || 'מנהל ראשי'}</span>
             ) : user?.full_name)}
           </span>
@@ -1031,6 +1069,10 @@ const PresenceWrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function App() {
+  React.useEffect(() => {
+    console.log("Malachi's Selection Lobby Updated: Team Leads & Candidate Search Active.");
+  }, []);
+
   return (
     <BackendProvider>
       <SettingsProvider>
@@ -1044,6 +1086,7 @@ export default function App() {
               <Route path="/observer-dashboard" element={<ProtectedRoute><ObserverDashboard /></ProtectedRoute>} />
               <Route path="/admin-dashboard" element={<ProtectedRoute superAdminOnly><ControlCenter /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/lobby" element={<ProtectedRoute><MalachiLobby /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/suggestions" element={<ProtectedRoute><DailySuggestionsPage /></ProtectedRoute>} />
               <Route path="/matches/:type" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

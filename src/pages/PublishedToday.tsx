@@ -44,7 +44,7 @@ export default function PublishedToday() {
           
           // For now, let's show all published today if they match the candidate's category/gender interest
           // But the user specifically asked for "groups they belong to or marked as viewer"
-          return isOwnGroup || isViewer || user.role === 'super_admin'; // super_admin sees all
+          return isOwnGroup || isViewer || user.role === 'super_admin' || user.role === 'association_manager'; // super_admin sees all
         });
 
         setPublishedMatches(filtered);

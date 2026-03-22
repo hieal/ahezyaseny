@@ -160,7 +160,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
       receiver_id: otherUser.id,
       content: newMessage || 'שלחתי לך הצעה למשודך',
       sender_id: user?.id || 'unknown',
-      sender_name: user?.role === 'super_observer' ? 'מנהל העמותה' : (user?.full_name || 'מנהל')
+      sender_name: user?.role === 'association_manager' ? 'מנהל העמותה' : (user?.full_name || 'מנהל')
     };
     
     try {
@@ -262,7 +262,7 @@ export const InternalChat: React.FC<InternalChatProps> = ({ otherUser, onClose, 
             <p className="text-sm font-black leading-tight">צ'אט עם: {otherUser.name}</p>
             {!isMinimized && (
               <p className="text-[10px] opacity-80 font-bold">
-                שיחה בין {user?.role === 'super_admin' ? 'המנהל הראשי' : 'המנהל/ת'} <span className="underline">{user?.full_name}</span> ל{otherUserDetails?.role === 'super_admin' ? 'מנהל ראשי' : 'מנהל/ת'} <span className="underline">{otherUser.name}</span>
+                שיחה בין {(user?.role === 'super_admin' || user?.role === 'association_manager') ? 'המנהל הראשי' : 'המנהל/ת'} <span className="underline">{user?.full_name}</span> ל{(otherUserDetails?.role === 'super_admin' || otherUserDetails?.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל/ת'} <span className="underline">{otherUser.name}</span>
               </p>
             )}
           </div>

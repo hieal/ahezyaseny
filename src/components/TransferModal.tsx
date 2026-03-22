@@ -278,7 +278,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-slate-900 truncate">{admin.full_name}</p>
-                          <p className="text-xs text-slate-500">{admin.role === 'super_admin' ? 'מנהל על' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}</p>
+                          <p className="text-xs text-slate-500">{(admin.role === 'super_admin' || admin.role === 'association_manager') ? 'מנהל על' : admin.role === 'team_leader' ? getGenderedText(admin.gender, 'ראש צוות', 'ראשת צוות') : 'מנהל'}</p>
                         </div>
                         {selectedReceiverId === admin.id && (
                           <div className="w-6 h-6 rounded-full bg-luxury-blue text-white flex items-center justify-center">

@@ -394,7 +394,7 @@ export default function MatchCard({ match, allGroups: allGroupsProp, onPublish, 
           />
           
           {/* Synced Indicator */}
-          {user?.role === 'super_admin' && match.image_url?.includes('supabase.co') && (
+          {(user?.role === 'super_admin' || user?.role === 'association_manager') && match.image_url?.includes('supabase.co') && (
             <div className="absolute top-2 right-2 z-20 bg-green-500/90 backdrop-blur-sm text-white p-1 rounded-full shadow-lg border border-white/20" title="תמונה מסונכרנת ומאובטחת">
               <CheckCircle size={14} />
             </div>

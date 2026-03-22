@@ -12,7 +12,7 @@ import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
 import { isAIStudio } from '../utils/env';
 
 export default function SettingsPage() {
-  const { user, isReadOnly } = useAuth();
+  const { user, isReadOnly, refreshUser } = useAuth();
   const [template, setTemplate] = useState('');
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(CATEGORIES);
@@ -27,7 +27,6 @@ export default function SettingsPage() {
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showResetHistoryModal, setShowResetHistoryModal] = useState(false);
-  const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
   const [resetting, setResetting] = useState(false);
   
   // Generic reset modal state
@@ -515,30 +514,30 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {user?.role === 'super_admin' ? (
+          {user?.role === 'super_admin' || user?.role === 'association_manager' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Option 1: Full System Reset */}
               <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
                 <h3 className="font-black text-red-700 flex items-center gap-2">
-                  <Trash2 size={20} /> איפוס מערכת מלא
+                  <Trash2 size={20} /> ניקוי יסודי (Deep Force Clear)
                 </h3>
-                <p className="text-xs text-red-600/80">מוחק נתונים בלבד: כרטיסי משודכים, התאמות, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות. לא מוחק הגדרות או קבוצות וואטסאפ.</p>
-                <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: המנהל הראשי ומנהל העמותה (מלאכי) הם חלק משלד המערכת ואינם נמחקים באף סוג של איפוס.</p>
+                <p className="text-xs text-red-600/80">מוחק את כל הנתונים במערכת: מנהלים, קבוצות וואטסאפ, לידים, כרטיסי משודכים, התאמות, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
+                <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: מנהל העמותה (מלאכי) הוא היחיד שלא יימחק.</p>
                 <button 
                   onClick={() => setResetModalConfig({
                     isOpen: true,
-                    title: 'איפוס מערכת מלא',
-                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים ראשיים, הגדרות וקבוצות). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
+                    title: 'ניקוי יסודי (Deep Force Clear)',
+                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת כולל מנהלים וקבוצות (למעט מלאכי). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
                     color: 'red',
                     onConfirm: async () => {
                       await dataService.factoryReset();
-                      toast.success('המערכת אופסה לחלוטין (נתונים בלבד)');
-                      window.location.reload();
+                      toast.success('המערכת נוקתה לחלוטין (Deep Force Clear)');
+                      await refreshUser();
                     }
                   })} 
                   className="w-full py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm"
                 >
-                  בצע איפוס מלא
+                  בצע ניקוי יסודי
                 </button>
               </div>
 
@@ -709,7 +708,7 @@ export default function SettingsPage() {
                       await dataService.resetHistory();
                       toast.success('המערכת אופסה בהצלחה');
                       setShowResetHistoryModal(false);
-                      window.location.reload();
+                      await refreshUser();
                     } catch (err) {
                       toast.error('שגיאה באיפוס');
                     } finally {
@@ -727,58 +726,7 @@ export default function SettingsPage() {
         )}
       </AnimatePresence>
 
-      {/* Factory Reset Confirmation Modal */}
-      <AnimatePresence>
-        {showFactoryResetModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md space-y-6 text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
-                <Trash2 size={32} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-slate-900">איפוס מערכת מלא</h3>
-                <p className="text-slate-500 font-medium">
-                  <strong>אזהרה חמורה!</strong>
-                  <br />
-                  פעולה זו תמחק את כל הנתונים במערכת (למעט מנהלים ראשיים, הגדרות וקבוצות). המערכת תתאפס לנתונים ריקים.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowFactoryResetModal(false)}
-                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
-                >
-                  ביטול
-                </button>
-                <button 
-                  onClick={async () => {
-                    setResetting(true);
-                    try {
-                      await dataService.factoryReset();
-                      toast.success('המערכת אופסה לחלוטין (נתונים בלבד)');
-                      setShowFactoryResetModal(false);
-                      window.location.reload();
-                    } catch (err) {
-                      toast.error('שגיאה באיפוס');
-                    } finally {
-                      setResetting(false);
-                    }
-                  }}
-                  disabled={resetting}
-                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-700 transition-all"
-                >
-                  {resetting ? 'מבצע איפוס...' : 'אפס הכל לצמיתות'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+
 
         {isAIStudio() && (
           <div className="card p-8 bg-white border-2 border-luxury-blue shadow-lg space-y-4">
