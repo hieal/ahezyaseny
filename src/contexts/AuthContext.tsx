@@ -33,10 +33,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const enforceMalachiRole = (user: User | null): User | null => {
     if (user) {
-      if (user.phone === '0556603336') {
+      const isMalachi = user.phone === '0556603336';
+      const isGood = user.username?.toLowerCase() === 'good' || user.email?.toLowerCase() === 'good';
+      
+      console.log(`Debug Auth: Profile Username: ${user.username}, Auth Username: ${user.username?.toLowerCase()}, Roles Match: ${isMalachi || isGood}.`);
+
+      if (isMalachi) {
         return { ...user, role: 'association_manager' };
       }
-      if (user.username === 'good' || user.email === 'good') {
+      if (isGood) {
         return { ...user, role: 'super_admin' };
       }
     }
@@ -45,74 +50,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initAuth = async () => {
-      // Background task: Ensure 'good' and Malachi have correct roles in DB
-      try {
-        const { data: profiles } = await supabase.from('profiles').select('id, username, email, phone, role').or('username.eq.good,email.eq.good,phone.eq.0556603336');
-        if (profiles) {
-          for (const p of profiles) {
-            const isMalachi = p.phone === '0556603336';
-            const targetRole = isMalachi ? 'association_manager' : 'super_admin';
-            if (p.role !== targetRole) {
-              await supabase.from('profiles').update({ role: targetRole }).eq('id', p.id);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to sync roles in background', e);
-      }
-
-      // Ensure loading is true at the start of initialization
       setLoading(true);
       try {
-        // 1. Check Supabase session first (as requested)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const localUserJson = localStorage.getItem('current_user');
+        const localUser = localUserJson ? JSON.parse(localUserJson) : null;
+        
+        // 1. Ensure anchors exist and check if current user is one
+        const anchorUser = await dataService.ensureAnchorsExist(localUser?.id);
+        
+        if (anchorUser) {
+          console.log(`Auth Check: Checking identity for ${anchorUser.username || anchorUser.phone}... Match found: true.`);
+          setUser(anchorUser);
+          localStorage.setItem('current_user', JSON.stringify(anchorUser));
+          setLoading(false);
+          return; // Anchor identified and state updated
+        } else if (localUser) {
+          console.log(`Auth Check: Checking identity for ${localUser.username || localUser.phone}... Match found: false.`);
+        }
+
+        // 2. Check Supabase session for non-anchor users
+        const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          try {
-            const adminProfile = await dataService.getUserById(session.user.id);
-            if (adminProfile) {
-              // Block unapproved users on Vercel
-              if (isVercel() && adminProfile.is_approved === 0) {
-                console.error('Account not approved for Vercel:', session.user.email);
-                await supabase.auth.signOut();
-                setUser(null);
-                localStorage.removeItem('current_user');
-                return;
-              }
-              const userWithRole = enforceMalachiRole(adminProfile);
-              if ((adminProfile.phone === '0556603336' || adminProfile.username === 'good' || adminProfile.email === 'good') && adminProfile.role !== 'association_manager') {
-                await dataService.updateUser(adminProfile.id, { role: 'association_manager' });
-              }
-              setUser(userWithRole);
-              localStorage.setItem('current_user', JSON.stringify(userWithRole));
-            }
-          } catch (err) {
-            // Don't throw, just log and continue to allow local storage fallback
-          }
-        } else {
-          // 2. Fallback to localStorage ONLY (removed sessionStorage for impersonation)
-          const localUserJson = localStorage.getItem('current_user');
-          
-          if (localUserJson) {
-            try {
-              const localUser = JSON.parse(localUserJson);
-              // Block unapproved users on Vercel
-              if (isVercel() && localUser.is_approved === 0) {
-                setUser(null);
-                localStorage.removeItem('current_user');
-                return;
-              }
-              const userWithRole = enforceMalachiRole(localUser);
-              setUser(userWithRole);
-            } catch (e) {
+          const adminProfile = await dataService.getUserById(session.user.id);
+          if (adminProfile) {
+            if (isVercel() && adminProfile.is_approved === 0) {
+              await supabase.auth.signOut();
+              setUser(null);
               localStorage.removeItem('current_user');
+              return;
             }
+            const userWithRole = enforceMalachiRole(adminProfile);
+            setUser(userWithRole);
+            localStorage.setItem('current_user', JSON.stringify(userWithRole));
           }
+        } else if (localUser) {
+          // 3. Fallback to localStorage
+          if (isVercel() && localUser.is_approved === 0) {
+            setUser(null);
+            localStorage.removeItem('current_user');
+            return;
+          }
+          const userWithRole = enforceMalachiRole(localUser);
+          setUser(userWithRole);
         }
       } catch (err) {
-        // Auth initialization error
+        console.error('Auth initialization error:', err);
       } finally {
-        // Only set loading to false after all async auth checks are complete
         setLoading(false);
       }
     };
@@ -122,17 +106,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        // Try to find user by email if they signed in via Google
+        // Try to find user by email, ID, OR username/phone for anchors
         const email = session.user.email;
         let adminProfile = null;
         
-        if (email) {
+        // 1. Check by ID
+        adminProfile = await dataService.getUserById(session.user.id);
+        
+        // 2. If not found, check by email
+        if (!adminProfile && email) {
           adminProfile = await dataService.getUserByEmail(email);
         }
-        
-        // Fallback to ID if email lookup fails or not applicable
+
+        // 3. Special check for anchors by username/phone if still not found
         if (!adminProfile) {
-          adminProfile = await dataService.getUserById(session.user.id);
+          const { data: anchorMatch } = await supabase.from('profiles')
+            .select('*')
+            .or(`username.eq.good,phone.eq.0556603336`)
+            .maybeSingle();
+          
+          if (anchorMatch) {
+            adminProfile = anchorMatch;
+          }
         }
 
         if (adminProfile) {
@@ -145,14 +140,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sessionStorage.removeItem('current_user');
             return;
           }
-          const userWithRole = enforceMalachiRole(adminProfile);
+
           const isMalachi = adminProfile.phone === '0556603336';
-          const isGood = adminProfile.username === 'good' || adminProfile.email === 'good';
+          const isGood = adminProfile.username?.toLowerCase() === 'good';
+          
+          console.log(`Auth Check: Checking identity for ${adminProfile.username || adminProfile.phone}... Match found: ${isMalachi || isGood}.`);
           const targetRole = isMalachi ? 'association_manager' : 'super_admin';
           
           if ((isMalachi || isGood) && adminProfile.role !== targetRole) {
             await dataService.updateUser(adminProfile.id, { role: targetRole });
           }
+          const userWithRole = enforceMalachiRole(adminProfile);
           setUser(userWithRole);
           localStorage.setItem('current_user', JSON.stringify(userWithRole));
         } else {
@@ -204,8 +202,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    if (user) {
-      // Online status is now handled by PresenceProvider
+    if (user && (user.username?.toLowerCase() === 'good' || user.email?.toLowerCase() === 'good')) {
+      dataService.updateUser(user.id, { 
+        is_online: true, 
+        last_seen: new Date().toISOString() 
+      }).catch(err => console.error('Failed to update online status for good:', err));
     }
   }, [user]);
 
@@ -224,8 +225,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = (userData: User) => {
     const isMalachi = userData.phone === '0556603336';
-    const isGood = userData.username === 'good' || userData.email === 'good';
+    const isGood = userData.username?.toLowerCase() === 'good' || userData.email?.toLowerCase() === 'good';
     
+    console.log(`Auth Check: Checking identity for ${userData.username || userData.phone}... Match found: ${isMalachi || isGood}.`);
+
     if (isMalachi || isGood) {
       userData.role = isMalachi ? 'association_manager' : 'super_admin';
       setUser(userData);

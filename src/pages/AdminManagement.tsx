@@ -369,7 +369,13 @@ export default function AdminManagement() {
   }, [finalUsers, search, filterCategory, roleTab, selectedRoles, filterConnection, presenceState, currentUser]);
 
   const displayedAdmins = useMemo(() => {
-    return [...filteredUsers].sort((a, b) => {
+    return [...filteredUsers].map(u => {
+      // Merge with currentUser if it's the same user to ensure real-time state for the logged-in admin
+      if (u.id === currentUser?.id) {
+        return { ...u, ...currentUser };
+      }
+      return u;
+    }).sort((a, b) => {
       if (a.role === 'super_admin' && b.role !== 'super_admin') return -1;
       if (a.role !== 'super_admin' && b.role === 'super_admin') return 1;
 
@@ -1705,7 +1711,7 @@ export default function AdminManagement() {
                   <div className="flex items-center gap-3">
                     <div className="relative">
                       <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-10 h-10" />
-                      {!!presenceState[u.id] && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                      {(!!presenceState[u.id] || u.is_online) && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full animate-pulse"></div>}
                     </div>
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{u.full_name || u.email || 'מנהל מערכת'}</p>
@@ -1967,7 +1973,7 @@ export default function AdminManagement() {
                               <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-white relative shadow-lg group-hover/card:scale-105 transition-transform duration-500">
                                   <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-full h-full" />
-                                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] || u.is_online ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
                                   
                                   {/* Affiliation Badge - Upgraded */}
                                   <div className={`absolute -top-2 -left-2 px-2.5 py-1 rounded-xl text-[9px] font-black shadow-lg z-30 border-2 transform -rotate-6 group-hover/card:rotate-0 transition-transform duration-500 ${getGroupColor(u.affiliation_group)}`}>

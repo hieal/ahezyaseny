@@ -329,40 +329,50 @@ class DataService {
     this.ensureAnchorsExist();
   }
 
-  async ensureAnchorsExist(): Promise<void> {
+  async ensureAnchorsExist(currentUserId?: string): Promise<User | null> {
     try {
       // Delete 'god' user if it exists (Cleanup duplicates)
       await supabaseAdmin.from('profiles').delete().eq('username', 'god');
 
+      let currentUserAnchor: User | null = null;
+
       // Check for Good
-      const { data: good } = await supabaseAdmin.from('profiles').select('id').eq('username', 'good').maybeSingle();
+      const { data: good } = await supabaseAdmin.from('profiles').select('*').eq('username', 'good').maybeSingle();
       if (!good) {
         console.log('Restoring Anchor: Good (Super Admin)...');
         await supabaseAdmin.from('profiles').upsert(ANCHOR_GOOD);
+        if (currentUserId === ANCHOR_GOOD.id) currentUserAnchor = ANCHOR_GOOD as any;
       } else {
         // Ensure correct role and status
-        await supabaseAdmin.from('profiles').update({ 
+        const updates = { 
           role: 'super_admin', 
           status: 'active',
           full_name: 'מנהל ראשי'
-        }).eq('id', good.id);
+        };
+        await supabaseAdmin.from('profiles').update(updates).eq('id', good.id);
+        if (currentUserId === good.id) currentUserAnchor = { ...good, ...updates } as any;
       }
 
       // Check for Malachi
-      const { data: malachi } = await supabaseAdmin.from('profiles').select('id').eq('phone', '0556603336').maybeSingle();
+      const { data: malachi } = await supabaseAdmin.from('profiles').select('*').eq('phone', '0556603336').maybeSingle();
       if (!malachi) {
         console.log('Restoring Anchor: Malachi (Association Manager)...');
         await supabaseAdmin.from('profiles').upsert(ANCHOR_MALACHI);
+        if (currentUserId === ANCHOR_MALACHI.id) currentUserAnchor = ANCHOR_MALACHI as any;
       } else {
         // Ensure correct role and status
-        await supabaseAdmin.from('profiles').update({ 
+        const updates = { 
           role: 'association_manager', 
           status: 'active',
           full_name: 'מלאכי צוריאל'
-        }).eq('id', malachi.id);
+        };
+        await supabaseAdmin.from('profiles').update(updates).eq('id', malachi.id);
+        if (currentUserId === malachi.id) currentUserAnchor = { ...malachi, ...updates } as any;
       }
+      return currentUserAnchor;
     } catch (err) {
       console.error('Error ensuring anchors exist:', err);
+      return null;
     }
   }
 
@@ -1095,25 +1105,6 @@ class DataService {
     }
   }
 
-  async getWhatsAppMessages(chatId: string): Promise<any[]> {
-    const token = import.meta.env.VITE_WHAPI_TOKEN;
-    if (!token) return [];
-    
-    try {
-      const response = await fetch(`https://gate.whapi.cloud/messages/list/${chatId}?count=20`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) return [];
-      const data = await response.json();
-      return data.messages || [];
-    } catch (err) {
-      console.error('Error fetching WhatsApp messages:', err);
-      return [];
-    }
-  }
-
   async getWhapiGroups(): Promise<any[]> {
     const token = import.meta.env.VITE_WHAPI_TOKEN;
     if (!token) {
@@ -1136,6 +1127,75 @@ class DataService {
     const data = await response.json();
     console.log('WHAPI GROUP FETCHING ACTIVE: IDS RETRIEVED SUCCESSFULLY');
     return data.groups || [];
+  }
+
+  async getWhapiGroupDetails(groupId: string): Promise<any> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) {
+      throw new Error('Whapi API Token is missing');
+    }
+    
+    const response = await fetch(`https://gate.whapi.cloud/groups/${groupId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Whapi API error: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  async crossReferenceParticipants(phones: string[]): Promise<any[]> {
+    if (phones.length === 0) return [];
+    
+    // Clean phones to match database format (usually just digits)
+    const cleanPhones = phones.map(p => p.replace(/\D/g, ''));
+    
+    // Check profiles (Managers)
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, phone, affiliation_group')
+      .in('phone', cleanPhones);
+      
+    // Check candidates (Matches)
+    const { data: candidates } = await supabase
+      .from('candidates')
+      .select('id, full_name, gender, phone, category, status, is_viewer')
+      .in('phone', cleanPhones);
+      
+    return [
+      ...(profiles || []).map(p => ({ ...p, systemType: 'manager' })),
+      ...(candidates || []).map(c => ({ ...c, systemType: 'match' }))
+    ];
+  }
+
+  async getWhatsAppMessages(chatId: string, limit: number = 20): Promise<any[]> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) {
+      throw new Error('Whapi API Token is missing');
+    }
+    
+    const response = await fetch(`https://gate.whapi.cloud/messages/list/${chatId}?count=${limit}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Whapi API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.messages || [];
   }
 
   async clearInternalMessages(): Promise<void> {

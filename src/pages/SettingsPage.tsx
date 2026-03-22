@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { WhatsAppGroup } from '../types';
 import { dataService } from '../services/dataService';
 import { ImageSyncDashboard } from '../components/ImageSyncDashboard';
+import { WhatsAppSyncModule } from '../components/WhatsAppSyncModule';
 import { isAIStudio } from '../utils/env';
 
 export default function SettingsPage() {
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testGroup, setTestGroup] = useState<WhatsAppGroup | null>(null);
   const [showImageSync, setShowImageSync] = useState(false);
+  const [showSyncModule, setShowSyncModule] = useState(false);
   
   // Modals state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -221,13 +223,22 @@ export default function SettingsPage() {
               </div>
               <h2 className="font-extrabold text-2xl tracking-tight">ניהול קבוצות WhatsApp</h2>
             </div>
-            <button 
-              onClick={() => addGroup()}
-              className="btn-primary flex items-center gap-2 px-4 py-2 text-sm"
-            >
-              <Plus size={18} />
-              הוסף קבוצה חדשה
-            </button>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setShowSyncModule(true)}
+                className="px-4 py-2 bg-luxury-blue text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-2 shadow-md"
+              >
+                <RefreshCw size={14} />
+                סנכרון מזהי קבוצות
+              </button>
+              <button 
+                onClick={() => addGroup()}
+                className="btn-primary flex items-center gap-2 px-4 py-2 text-sm"
+              >
+                <Plus size={18} />
+                הוסף קבוצה חדשה
+              </button>
+            </div>
           </div>
 
           <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
@@ -775,6 +786,15 @@ export default function SettingsPage() {
           <ImageSyncDashboard onClose={() => setShowImageSync(false)} />
         )}
       </AnimatePresence>
+
+      {/* WhatsApp Sync Module */}
+      {showSyncModule && (
+        <WhatsAppSyncModule 
+          onClose={() => setShowSyncModule(false)} 
+          localGroups={whatsappGroups}
+          onUpdateGroups={(updated) => setWhatsappGroups(updated)}
+        />
+      )}
 
       {/* Test Chat Modal */}
       {testGroup && (
