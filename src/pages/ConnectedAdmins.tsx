@@ -47,7 +47,7 @@ export default function ConnectedAdmins() {
             password_plain: '123456',
             full_name: 'מלאכי צוריאל',
             email: 'malachi@tzuriel.org',
-            role: 'association_admin',
+            role: 'super_observer',
             status: 'active',
             is_approved: 1,
             gender: 'male',
@@ -261,9 +261,9 @@ export default function ConnectedAdmins() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex flex-col gap-1 items-start">
-                              {(admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל')) ? (
-                                <span className="px-2 py-1 rounded-lg text-[10px] font-black bg-purple-100 text-purple-700">
-                                  מנהל העמותה
+                              {(admin.full_name?.includes('מלאכי') || admin.full_name?.includes('צוריאל') || admin.phone === '0556603336' || admin.role === 'association_manager') ? (
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-black bg-[#D4AF37] text-white">
+                                  ★ מנהל העמותה
                                 </span>
                               ) : (
                                 <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${

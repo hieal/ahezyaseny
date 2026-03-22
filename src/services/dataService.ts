@@ -1,6 +1,6 @@
 import { User, Match, ActivityLog, PublishLog, WhatsAppGroup, Stats, MatchNote, GameScore, PortalSettings, SpeedDateSession, Blacklist } from '../types';
 import { supabase, supabaseAdmin } from './supabase';
-import { isVercel } from '../utils/env';
+import { isVercel, isAIStudio } from '../utils/env';
 
 export type BackendMode = 'temporary' | 'production';
 
@@ -302,6 +302,10 @@ class DataService {
   }
 
   async performDeepClean(): Promise<void> {
+    if (isAIStudio()) {
+      console.warn('Deep Clean blocked in AI Studio environment.');
+      return;
+    }
     try {
       console.log('Starting Aggressive Deep Clean...');
       
@@ -441,6 +445,9 @@ class DataService {
   }
 
   async approveChanges(): Promise<{ success: boolean; message: string }> {
+    if (isAIStudio()) {
+      return { success: false, message: 'פעולה זו חסומה בסביבת הפיתוח (AI Studio)' };
+    }
     try {
       const tables = ['profiles', 'candidates', 'whatsapp_groups'];
       for (const table of tables) {
@@ -458,6 +465,9 @@ class DataService {
   }
 
   async publishChanges(): Promise<{ success: boolean; message: string }> {
+    if (isAIStudio()) {
+      return { success: false, message: 'פעולה זו חסומה בסביבת הפיתוח (AI Studio)' };
+    }
     let successCount = 0;
     const errors: string[] = [];
 
@@ -490,11 +500,11 @@ class DataService {
     }
   }
 
-  private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>): Promise<T | null> {
+  private async handleSupabase<T>(promise: PromiseLike<{ data: T | null; error: any }>, isWrite: boolean = false): Promise<T | null> {
     try {
       const { data, error } = await promise;
       if (error) {
-        console.error('Supabase Error:', error);
+        console.error('Database Error:', error);
         // 42P01: Table does not exist
         if (error.code === '42P01') {
           throw new Error('חסרה טבלה במסד הנתונים. אנא לחץ על כפתור הסנכרון (Refresh) בדף ההתחברות.');
@@ -508,9 +518,12 @@ class DataService {
         }
         throw error;
       }
+      if (isWrite) {
+        console.log('Database Updated Successfully');
+      }
       return data;
     } catch (err: any) {
-      console.error('handleSupabase caught error:', err);
+      console.error('Database Error:', err);
       // If it's a missing column error caught in catch block
       if (err.message && (err.message.includes('column') || err.message.includes('does not exist'))) {
         return null;
@@ -710,7 +723,7 @@ class DataService {
               password: '123456',
               full_name: 'מלאכי צוריאל',
               email: 'malachi@tzuriel.org',
-              role: 'association_admin',
+              role: 'super_observer',
               status: 'active',
               is_approved: 1,
               gender: 'male',
@@ -740,7 +753,7 @@ class DataService {
         // Special handling for Malachi
         if (user.phone === '0556603336' || user.email === 'malachi@tzuriel.org' || user.username === 'malachi') {
           if (password_plain === '123456') {
-            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' } as User;
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' } as User;
           }
         }
 
@@ -1639,7 +1652,7 @@ class DataService {
             return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
           }
           if (user.phone === '0556603336') {
-            return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+            return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
           }
           return user;
         }) as User[];
@@ -1658,7 +1671,7 @@ class DataService {
           return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
         }
         if (user.phone === '0556603336') {
-          return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+          return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
         }
         return user;
       }) as User[];
@@ -1713,7 +1726,7 @@ class DataService {
         return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
       }
       if (user.phone === '0556603336') {
-        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
       }
       return user;
     }
@@ -1746,7 +1759,7 @@ class DataService {
         return { ...user, full_name: 'מנהל ראשי', username: 'good', role: 'super_admin' };
       }
       if (user.phone === '0556603336') {
-        return { ...user, full_name: 'מלאכי צוריאל', role: 'association_admin' };
+        return { ...user, full_name: 'מלאכי צוריאל', role: 'super_observer' };
       }
       return user;
     }
@@ -2787,8 +2800,8 @@ class DataService {
         adminMales: admins.filter(a => a.gender === 'male').length,
         adminFemales: admins.filter(a => a.gender === 'female').length,
         superAdmins: admins.filter(a => a.role === 'super_admin' || a.id === 'b724069c-2a51-4c99-9dcb-178e488d6b4b').length,
-        associationManagers: admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager').length,
-        regularManagers: admins.filter(a => a.role === 'admin').length,
+        associationManagers: admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager' || a.role === 'super_observer' || a.phone === '0556603336').length,
+        regularManagers: admins.filter(a => a.role === 'admin' && a.phone !== '0556603336').length,
         teamLeaders: admins.filter(a => a.role === 'team_leader').length,
         observers: admins.filter(a => ['observer', 'super_observer', 'observer_manager', 'viewer'].includes(a.role)).length,
         activeAdmins: admins.filter(a => a.status === 'active').length,
@@ -2886,7 +2899,7 @@ class DataService {
         }
       }
 
-      // Delete profiles EXCEPT super_admin, association_manager, association_admin, and Malachi
+      // Delete profiles EXCEPT super_admin, association_manager, association_admin, super_observer, and Malachi
       try {
         console.log(`Attempting to delete profiles...`);
         // Simplify the query to avoid 400 Bad Request errors from complex filters
@@ -2895,6 +2908,7 @@ class DataService {
           .neq('role', 'super_admin')
           .neq('role', 'association_manager')
           .neq('role', 'association_admin')
+          .neq('role', 'super_observer')
           .neq('phone', '0556603336')
           .neq('id', currentUser?.id || '00000000-0000-0000-0000-000000000000');
           
@@ -3251,7 +3265,7 @@ class DataService {
       session_id: sessionId,
       sender_id: senderId,
       text
-    }));
+    }), true);
   }
 
   async getChatMessages(sessionId: string): Promise<any[]> {
@@ -3298,7 +3312,7 @@ class DataService {
     if (shareDetails?.male !== undefined) updates.share_details_male = shareDetails.male;
     if (shareDetails?.female !== undefined) updates.share_details_female = shareDetails.female;
     
-    await this.handleSupabase(supabase.from('speed_date_sessions').update(updates).eq('id', sessionId));
+    await this.handleSupabase(supabase.from('speed_date_sessions').update(updates).eq('id', sessionId), true);
   }
 
   async getOnlineStats() {

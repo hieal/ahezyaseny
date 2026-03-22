@@ -47,7 +47,7 @@ const getAdminAvatarUrl = (user: any) => {
 };
 
 const isSuperAdmin = (admin: any) => admin?.role === 'super_admin' || admin?.id?.startsWith('8ebb') || admin?.username === 'good';
-const isMalachiAdmin = (admin: any) => admin?.phone === '0556603336' || admin?.full_name?.includes('מלאכי') || admin?.role === 'association_admin';
+const isMalachiAdmin = (admin: any) => admin?.phone === '0556603336' || admin?.full_name?.includes('מלאכי') || admin?.role === 'association_admin' || admin?.role === 'super_observer';
 
 export default function AdminManagement() {
   const { user: currentUser, loading: authLoading, isReadOnly } = useAuth();
@@ -180,7 +180,7 @@ export default function AdminManagement() {
         .from('profiles')
         .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url, image_url');
         
-      if (currentUser?.role !== 'super_admin') {
+      if (currentUser?.role !== 'super_admin' && currentUser?.role !== 'super_observer') {
         query = query.eq('affiliation_group', currentUser?.affiliation_group);
       }
       
@@ -191,6 +191,32 @@ export default function AdminManagement() {
       }
       
       const rawUsers = (usersData as User[]) || [];
+      
+      // Auto-recreate Malachi if missing
+      const hasMalachi = rawUsers.some(u => u.phone === '0556603336' || u.full_name?.includes('מלאכי'));
+      if (!hasMalachi && (currentUser?.role === 'super_admin' || currentUser?.role === 'super_observer')) {
+        try {
+          const malachiData = {
+            username: 'malachi',
+            password_plain: '123456',
+            full_name: 'מלאכי צוריאל',
+            email: 'malachi@tzuriel.org',
+            role: 'super_observer',
+            status: 'active',
+            is_approved: 1,
+            gender: 'male',
+            phone: '0556603336',
+            avatar_url: null
+          };
+          const { data: newMalachi } = await supabase.from('profiles').insert(malachiData).select().single();
+          if (newMalachi) {
+            rawUsers.push(newMalachi as User);
+          }
+        } catch (e) {
+          console.error('Failed to auto-recreate Malachi:', e);
+        }
+      }
+
       const uniqueUsers = Array.from(new Map(rawUsers.map(u => {
         // Use ID as key to reflect actual rows in the table
         const key = u.id;
@@ -242,7 +268,7 @@ export default function AdminManagement() {
       password_plain: '123456',
       full_name: 'מלאכי צוריאל',
       email: 'malachi@tzuriel.org',
-      role: 'association_admin',
+      role: 'super_observer',
       status: 'active',
       is_approved: 1,
       gender: 'male',
@@ -319,7 +345,7 @@ export default function AdminManagement() {
         if (roleTab === 'super_admin' && u.role !== 'super_admin') return false;
         if (roleTab === 'team_leader' && u.role !== 'team_leader') return false;
         if (roleTab === 'admin' && u.role !== 'admin') return false;
-        if (roleTab === 'association_admin' && u.role !== 'association_admin' && u.role !== 'association_manager') return false;
+        if (roleTab === 'association_admin' && u.role !== 'association_admin' && u.role !== 'association_manager' && u.role !== 'super_observer') return false;
         if (roleTab === 'viewer' && u.role !== 'viewer' && u.role !== 'observer') return false;
       }
 
@@ -1062,8 +1088,8 @@ export default function AdminManagement() {
     total: admins.length,
     super_admin: admins.filter(u => u.role === 'super_admin').length,
     team_leader: admins.filter(u => u.role === 'team_leader').length,
-    admin: admins.filter(u => u.role === 'admin').length,
-    association_admin: admins.filter(u => u.role === 'association_admin' || u.role === 'association_manager').length,
+    admin: admins.filter(u => u.role === 'admin' && u.phone !== '0556603336').length,
+    association_admin: admins.filter(u => u.role === 'association_admin' || u.role === 'association_manager' || u.role === 'super_observer' || u.phone === '0556603336').length,
     viewer: admins.filter(u => u.role === 'viewer' || u.role === 'observer' || u.role === 'observer_manager').length,
     filtered: displayedAdmins.length
   };
@@ -2006,10 +2032,10 @@ export default function AdminManagement() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className={`px-3 py-1 rounded-full text-[10px] font-black w-fit shadow-sm ${
                                     u.role === 'super_admin' ? 'bg-yellow-400 text-black' : 
-                                    u.role === 'association_admin' ? 'bg-[#D4AF37] text-white' :
+                                    (u.role === 'association_admin' || u.role === 'association_manager' || u.role === 'super_observer' || u.phone === '0556603336') ? 'bg-[#D4AF37] text-white' :
                                     u.role === 'team_leader' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
                                   }`}>
-                                    {u.role === 'association_admin' ? 'מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
+                                    {(u.role === 'association_admin' || u.role === 'association_manager' || u.role === 'super_observer' || u.phone === '0556603336') ? '★ מנהל העמותה' : u.role === 'super_admin' ? 'מנהל על' : u.role === 'team_leader' ? 'ראש צוות' : 'מנהל'}
                                   </span>
                                   {u.role !== 'super_admin' && (
                                     <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
@@ -2645,6 +2671,7 @@ export default function AdminManagement() {
                         <option value="viewer">צופה</option>
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="association_admin">מנהל עמותה</option>
+                        <option value="super_observer">מנהל עמותה (Super Observer)</option>
                       </select>
                     </div>
 
@@ -3030,11 +3057,17 @@ export default function AdminManagement() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">תפקיד</label>
-                      <select className="input-field font-bold" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
+                      <select 
+                        className="input-field font-bold" 
+                        value={formData.role} 
+                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                        disabled={formData.phone === '0556603336'}
+                      >
                         <option value="admin">מנהל רגיל</option>
                         <option value="team_leader">ראש צוות / ראשת צוות</option>
                         <option value="viewer">צופה</option>
                         <option value="association_admin">מנהל עמותה</option>
+                        <option value="super_observer">מנהל עמותה (Super Observer)</option>
                         <option value="association_manager">רכז עמותה</option>
                         <option value="super_admin">מנהל על</option>
                       </select>

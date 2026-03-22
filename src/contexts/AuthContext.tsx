@@ -25,6 +25,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
 
+  const enforceMalachiRole = (user: User | null): User | null => {
+    if (user && user.phone === '0556603336') {
+      return { ...user, role: 'association_manager' };
+    }
+    return user;
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       // Ensure loading is true at the start of initialization
@@ -45,8 +52,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem('current_user');
                 return;
               }
-              setUser(adminProfile);
-              localStorage.setItem('current_user', JSON.stringify(adminProfile));
+              const userWithRole = enforceMalachiRole(adminProfile);
+              if (userWithRole.phone === '0556603336' && userWithRole.role !== 'association_manager') {
+                await dataService.updateUser(userWithRole.id, { role: 'association_manager' });
+                userWithRole.role = 'association_manager';
+              }
+              setUser(userWithRole);
+              localStorage.setItem('current_user', JSON.stringify(userWithRole));
             }
           } catch (err) {
             // Don't throw, just log and continue to allow local storage fallback
@@ -64,7 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem('current_user');
                 return;
               }
-              setUser(localUser);
+              const userWithRole = enforceMalachiRole(localUser);
+              setUser(userWithRole);
             } catch (e) {
               localStorage.removeItem('current_user');
             }
@@ -106,8 +119,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sessionStorage.removeItem('current_user');
             return;
           }
-          setUser(adminProfile);
-          localStorage.setItem('current_user', JSON.stringify(adminProfile));
+          const userWithRole = enforceMalachiRole(adminProfile);
+          setUser(userWithRole);
+          localStorage.setItem('current_user', JSON.stringify(userWithRole));
         } else {
           // If no admin profile found for this Google account, sign them out
           // but only if it was a Google login (not a manual session restore)
@@ -143,7 +157,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshUser = async () => {
     try {
       const currentUser = await dataService.getCurrentUser();
-      setUser(currentUser);
+      const userWithRole = enforceMalachiRole(currentUser);
+      setUser(userWithRole);
     } catch (err) {
       setUser(null);
     }
@@ -205,7 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('current_user');
   };
 
-  const isReadOnly = user?.role === 'super_observer' || user?.role === 'observer_manager' || user?.role === 'association_admin';
+  const isReadOnly = user?.role === 'observer_manager' || user?.role === 'observer' || user?.role === 'viewer';
 
   return (
     <AuthContext.Provider value={{ user, activeRole, loading, login, logout, refreshUser, isReadOnly, setActiveRole: (role) => setActiveRole(role as any), selectRole: (role) => selectRole(role as any) }}>
