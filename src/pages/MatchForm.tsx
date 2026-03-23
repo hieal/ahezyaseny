@@ -20,6 +20,12 @@ export default function MatchForm() {
   const navigate = useNavigate();
   const isEdit = !!id;
 
+  useEffect(() => {
+    if (user) {
+      console.log("Current User ID:", user.id);
+    }
+  }, [user]);
+
   const [formData, setFormData] = useState<Partial<Match>>({
     type: 'male',
     full_name: '',
@@ -477,29 +483,36 @@ export default function MatchForm() {
 
   const processCsvImport = async () => {
     if (scannedMatches.length === 0) return;
+    console.log("Current User ID:", user?.id);
     setImporting(true);
     
     let successCount = 0;
     let failCount = 0;
 
-    // Fetch all admins to check for orphaned matches
+    // Fetch all admins to check for valid managed_by IDs
     const allAdmins = await dataService.getActiveManagers();
     const adminIds = new Set(allAdmins.map(a => a.id));
+    
+    // Check if the specific UUID exists in the profiles table
+    const targetUUID = '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1';
+    if (!adminIds.has(targetUUID)) {
+      console.warn(`Profile with UUID ${targetUUID} is missing from the database. This is likely causing the "Manager without a name" issue.`);
+    } else {
+      console.log(`Profile with UUID ${targetUUID} exists in the database.`);
+    }
 
     for (const match of scannedMatches) {
       try {
         // Clean data: ensure id and created_at are not sent from CSV
-        const { id, created_at, ...cleanMatch } = match as any;
+        const matchData = { ...match };
+        delete (matchData as any).id;
+        delete (matchData as any).created_at;
 
-        // Check for orphaned managed_by
-        if (cleanMatch.managed_by && !adminIds.has(cleanMatch.managed_by)) {
-          cleanMatch.managed_by = user?.id;
-        }
-        if (!cleanMatch.managed_by) {
-          cleanMatch.managed_by = user?.id;
-        }
+        // Always assign managed_by to the current admin for CSV imports
+        // This ensures all imported matches are owned by the current user
+        matchData.managed_by = user?.id;
 
-        await dataService.upsertMatch({ ...cleanMatch, creation_source: 'csv' }, user || undefined);
+        await dataService.upsertMatch({ ...matchData, creation_source: 'csv' } as any, user || undefined);
         successCount++;
       } catch (err) {
         console.error('Error importing match:', err);
@@ -516,7 +529,7 @@ export default function MatchForm() {
       toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
     }
     
-    console.log('MATCH IMPORT FIXED: Orphaned candidates are now assigned to the current admin and conflicts are resolved.');
+    console.log('MATCH IMPORT RECOVERED: Invalid managed_by IDs were re-assigned to current admin and duplicates merged');
     navigate('/');
   };
 

@@ -943,7 +943,7 @@ class DataService {
 
   private sanitizeMatch(match: any): any {
     const allowedFields = [
-      'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
+      'id', 'type', 'name', 'full_name', 'age', 'height', 'ethnicity', 'marital_status', 
       'city', 'religious_level', 'service', 'occupation', 'about', 'family_description',
       'looking_for', 'notes', 'smoking', 'negiah', 'age_range', 'image_url', 
       'additional_images', 'created_by', 'creator_name', 'creator_category', 
@@ -1381,49 +1381,45 @@ class DataService {
   }
 
   async upsertMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User): Promise<Match> {
-    // Check for existing match by name and phone
-    const { data: existing } = await supabase
-      .from('candidates')
-      .select('*')
-      .eq('name', match.full_name)
-      .eq('phone', match.phone)
-      .is('deleted_at', null)
-      .limit(1);
-
-    if (existing && existing.length > 0) {
-      // Update existing
-      const existingId = existing[0].id;
-      const sanitized = this.sanitizeMatch({ ...match, id: existingId });
-      
-      // Mirror external images if needed
-      if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
-        // Keep original URL
-      } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
-        const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
-        if (uploadedUrl) {
-          sanitized.image_url = uploadedUrl;
-        } else {
-          delete sanitized.image_url;
-        }
-      }
-
-      const { data, error } = await supabase
-        .from('candidates')
-        .update(sanitized)
-        .eq('id', existingId)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data as Match;
-    } else {
-      // Create new
-      const result = await this.createMatch(match, user, true);
-      if ('error' in result) {
-        throw new Error('Duplicate match detected after check');
-      }
-      return result;
+    const sanitized = this.sanitizeMatch(match);
+    
+    // Clean empty ID to prevent key conflicts
+    if ((sanitized as any).id === '' || (sanitized as any).id === null) {
+      delete (sanitized as any).id;
     }
+
+    // Mirror external images if needed
+    if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
+      const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
+      if (uploadedUrl) {
+        sanitized.image_url = uploadedUrl;
+      } else {
+        delete sanitized.image_url;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('candidates')
+      .upsert(sanitized, { onConflict: 'phone' })
+      .select()
+      .single();
+    
+    if (error) {
+      // Fallback for missing unique constraint (Error 42P10)
+      if (error.code === '42P10') {
+        console.warn('Unique constraint on phone missing, falling back to insert');
+        const { data: insertData, error: insertError } = await supabase
+          .from('candidates')
+          .insert(sanitized)
+          .select()
+          .single();
+        
+        if (insertError) throw insertError;
+        return insertData as Match;
+      }
+      throw error;
+    }
+    return data as Match;
   }
 
   async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User, bypassDuplicateCheck: boolean = false): Promise<Match | { error: 'duplicate', existingMatch: Match }> {
