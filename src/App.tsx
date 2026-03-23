@@ -121,10 +121,13 @@ function Sidebar() {
 
   React.useEffect(() => {
     if (user && user.role !== 'candidate') {
+      let isMounted = true;
+      let timeoutId: NodeJS.Timeout;
+
       const fetchPendingCount = async () => {
         try {
           const pending = await dataService.getPendingTransfersForMe(user.id);
-          setPendingTransfersCount(pending.length);
+          if (isMounted) setPendingTransfersCount(pending.length);
         } catch (err) {
           console.error('Failed to fetch pending transfers count:', err);
         }
@@ -134,20 +137,28 @@ function Sidebar() {
         if (user.role === 'super_admin' || user.role === 'association_manager') {
           try {
             const count = await dataService.getOrphanedCandidatesCount();
-            setOrphanedCount(count);
+            if (isMounted) setOrphanedCount(count);
           } catch (err) {
             console.error('Failed to fetch orphaned candidates count:', err);
           }
         }
       };
 
-      fetchPendingCount();
-      fetchOrphanedCount();
-      const interval = setInterval(() => {
-        fetchPendingCount();
-        fetchOrphanedCount();
-      }, 30000); // Refresh every 30 seconds
-      return () => clearInterval(interval);
+      const debouncedFetch = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          fetchPendingCount();
+          fetchOrphanedCount();
+        }, 500); // 500ms debounce
+      };
+
+      debouncedFetch();
+      const interval = setInterval(debouncedFetch, 30000); // Refresh every 30 seconds
+      return () => {
+        isMounted = false;
+        clearTimeout(timeoutId);
+        clearInterval(interval);
+      };
     }
   }, [user]);
 

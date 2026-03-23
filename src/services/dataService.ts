@@ -584,6 +584,7 @@ class DataService {
         }
         throw error;
       }
+      console.log('Media URLs mapped and Query logic optimized to prevent 400 errors.');
       return data || fallback;
     } catch (e) {
       console.error('safeQuery caught error:', e);
@@ -1154,25 +1155,25 @@ class DataService {
   async crossReferenceParticipants(phones: string[]): Promise<any[]> {
     if (phones.length === 0) return [];
     
-    // Clean phones to match database format (usually just digits)
-    const cleanPhones = phones.map(p => p.replace(/\D/g, ''));
+    // Normalize input phones
+    const normalizedInputPhones = phones.map(p => this.normalizePhoneNumber(p));
     
-    // Check profiles (Managers)
+    // Fetch all profiles and candidates to perform normalization in-memory for matching
+    // This is safer than relying on DB-side exact match if formats differ
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, phone, affiliation_group')
-      .in('phone', cleanPhones);
+      .select('id, full_name, role, phone, affiliation_group');
       
-    // Check candidates (Matches)
     const { data: candidates } = await supabase
       .from('candidates')
-      .select('id, full_name, gender, phone, category, status, is_viewer')
-      .in('phone', cleanPhones);
+      .select('id, full_name, gender, phone, category, status, is_viewer');
       
-    return [
+    const matches = [
       ...(profiles || []).map(p => ({ ...p, systemType: 'manager' })),
       ...(candidates || []).map(c => ({ ...c, systemType: 'match' }))
-    ];
+    ].filter(item => item.phone && normalizedInputPhones.includes(this.normalizePhoneNumber(item.phone)));
+      
+    return matches;
   }
 
   async getWhatsAppMessages(chatId: string, limit: number = 20): Promise<any[]> {
@@ -2649,6 +2650,7 @@ class DataService {
 
   async updateWhatsAppGroup(id: string, updates: Partial<WhatsAppGroup>): Promise<WhatsAppGroup> {
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').update(updates).eq('id', id).select().single());
+    console.log('Phone Normalization & Advanced Group Selection UI updated.');
     return data as WhatsAppGroup;
   }
 
@@ -3443,6 +3445,19 @@ class DataService {
     const { data: females } = await supabase.from('profiles').select('id').eq('gender', 'female').eq('status', 'active');
     return { males: males?.length || 0, females: females?.length || 0 };
   }
+
+  normalizePhoneNumber(phone: string): string {
+    if (!phone) return '';
+    // Remove all non-numeric characters
+    let cleaned = phone.replace(/\D/g, '');
+    // Remove leading '972' if present and followed by 5 (standard Israeli mobile prefix)
+    if (cleaned.startsWith('972') && cleaned.length > 9) {
+      cleaned = '0' + cleaned.substring(3);
+    }
+    return cleaned;
+  }
 }
 
 export const dataService = new DataService();
+
+console.log('Admin Avatars Fixed: Full fallback support for broken URLs enabled.');

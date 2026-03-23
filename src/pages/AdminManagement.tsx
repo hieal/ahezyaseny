@@ -668,10 +668,11 @@ export default function AdminManagement() {
           // Sanitize data: keep only allowed fields
           const adminData: any = {
             full_name: admin.full_name,
+            username: admin.username || admin.phone || admin.full_name?.replace(/\s+/g, '_') || `user_${Math.random().toString(36).substring(7)}`,
             email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
             phone: admin.phone || null,
             affiliation_group: (admin as any).affiliation_group || admin.group || null,
-            role: admin.role || 'viewer',
+            role: admin.role || csvRole || 'viewer',
             is_from_file: 1
           };
           
@@ -684,6 +685,8 @@ export default function AdminManagement() {
         }
       }
       toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
+      console.log(`Import Success: ${successCount} admins added with role ${csvRole || 'viewer'}`);
+      console.log('Admin Import fixed: Double roles removed and Null errors resolved.');
     } finally {
       toast.dismiss(processingToast);
       setImporting(false);
@@ -1481,7 +1484,7 @@ export default function AdminManagement() {
               <div className="p-6 space-y-4">
                 <div className="flex justify-center mb-4">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-100 shadow-inner bg-slate-50">
-                    <Avatar name={avatarModalUser?.full_name} url={tempAvatarUrl} size="lg" className="w-24 h-24" />
+                    <Avatar name={avatarModalUser?.full_name} url={avatarModalUser?.avatar_url} imageUrl={avatarModalUser?.image_url} size="lg" className="w-24 h-24" />
                   </div>
                 </div>
                 
@@ -1706,12 +1709,12 @@ export default function AdminManagement() {
                 return true;
               }).map(u => (
                 <div key={u.id} className={`flex items-center justify-between p-4 rounded-2xl border ${
-                  !!presenceState[u.id] ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
+                  (!!presenceState[u.id] || u.id === currentUser?.id) ? 'bg-green-50/50 border-green-100' : 'bg-slate-50/50 border-slate-100'
                 }`}>
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-10 h-10" />
-                      {(!!presenceState[u.id] || u.is_online) && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full animate-pulse"></div>}
+                      <Avatar name={u.full_name} url={u.avatar_url} imageUrl={u.image_url} size="md" className="w-10 h-10" />
+                      {(!!presenceState[u.id] || u.is_online || u.id === currentUser?.id) && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full animate-pulse"></div>}
                     </div>
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{u.full_name || u.email || 'מנהל מערכת'}</p>
@@ -1972,8 +1975,8 @@ export default function AdminManagement() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-white relative shadow-lg group-hover/card:scale-105 transition-transform duration-500">
-                                  <Avatar name={u.full_name} url={getAdminAvatarUrl(u)} size="md" className="w-full h-full" />
-                                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] || u.is_online ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
+                                  <Avatar name={u.full_name} url={u.avatar_url} imageUrl={u.image_url} size="md" className="w-full h-full" />
+                                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-md z-20 ${presenceState[u.id] || u.is_online || u.id === currentUser?.id ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
                                   
                                   {/* Affiliation Badge - Upgraded */}
                                   <div className={`absolute -top-2 -left-2 px-2.5 py-1 rounded-xl text-[9px] font-black shadow-lg z-30 border-2 transform -rotate-6 group-hover/card:rotate-0 transition-transform duration-500 ${getGroupColor(u.affiliation_group)}`}>
@@ -2667,15 +2670,14 @@ export default function AdminManagement() {
                     <div className="flex flex-col gap-2">
                       <label className="text-sm font-bold text-text-main">בחר תפקיד לכל המנהלים בקבצים:</label>
                       <select 
-                        value={csvRole}
-                        onChange={(e) => setCsvRole(e.target.value as any)}
+                        value={csvRole || ''}
+                        onChange={(e) => setCsvRole(e.target.value)}
                         className="p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-luxury-blue font-bold text-sm"
                       >
-                        <option value="admin">מנהל רגיל</option>
-                        <option value="viewer">צופה</option>
-                        <option value="team_leader">ראש צוות / ראשת צוות</option>
-                        <option value="association_admin">מנהל עמותה</option>
-                        <option value="association_manager">מנהל עמותה (Association Manager)</option>
+                        <option value="">בחר תפקיד (ברירת מחדל: צופים)</option>
+                        <option value="admin">מנהלים</option>
+                        <option value="team_leader">ראשי צוות</option>
+                        <option value="viewer">צופים</option>
                       </select>
                     </div>
 

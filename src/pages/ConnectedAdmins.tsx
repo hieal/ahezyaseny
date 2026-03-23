@@ -28,6 +28,7 @@ export default function ConnectedAdmins() {
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   useEffect(() => {
+    console.log('Connected Admins Page: Real-time status sync for anchors enabled.');
     const fetchAdmins = async () => {
       setLoading(true);
       try {
@@ -69,7 +70,7 @@ export default function ConnectedAdmins() {
 
   const filteredAdmins = allAdmins.filter(admin => {
     // 1. Calculate online status (Exclusive)
-    const isOnline = admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000;
+    const isOnline = (admin.last_seen && new Date().getTime() - new Date(admin.last_seen).getTime() < 5 * 60 * 1000) || admin.id === user?.id;
     
     // 2. Role/Name filtering (Category independent)
     const role = admin.role?.toLowerCase() || '';
@@ -237,7 +238,7 @@ export default function ConnectedAdmins() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredAdmins.map(admin => {
-                      const isOnline = !!presenceState[admin.id];
+                      const isOnline = (!!presenceState[admin.id]) || admin.id === user?.id;
                       return (
                         <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
@@ -246,7 +247,8 @@ export default function ConnectedAdmins() {
                                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border border-slate-200">
                                   <Avatar 
                                     name={admin.full_name || ''}
-                                    url={getAvatarUrl(admin.avatar_url, admin.id)}
+                                    url={admin.avatar_url}
+                                    imageUrl={admin.image_url}
                                     userId={admin.id}
                                     size="md"
                                     className="w-full h-full object-cover"
@@ -336,7 +338,7 @@ export default function ConnectedAdmins() {
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
               {filteredAdmins.map(admin => {
-                const isOnline = !!presenceState[admin.id];
+                const isOnline = (!!presenceState[admin.id]) || admin.id === user?.id;
                 return (
                   <div key={admin.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-luxury-blue/5 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:scale-150" />
@@ -346,7 +348,8 @@ export default function ConnectedAdmins() {
                         <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-2 border-white shadow-md">
                           <Avatar 
                             name={admin.full_name || ''}
-                            url={getAvatarUrl(admin.avatar_url, admin.id)}
+                            url={admin.avatar_url}
+                            imageUrl={admin.image_url}
                             userId={admin.id}
                             size="lg"
                             className="w-full h-full object-cover"
@@ -428,7 +431,7 @@ export default function ConnectedAdmins() {
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6">
                   <AnimatePresence mode="popLayout">
                     {carouselItems.map(admin => {
-                      const isOnline = !!presenceState[admin.id];
+                      const isOnline = (!!presenceState[admin.id]) || admin.id === user?.id;
                       return (
                         <motion.div 
                           key={admin.id}
@@ -442,7 +445,8 @@ export default function ConnectedAdmins() {
                             <div className="w-32 h-32 rounded-[32px] bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border-4 border-white shadow-xl rotate-3 group-hover:rotate-0 transition-transform">
                               <Avatar 
                                 name={admin.full_name || ''}
-                                url={getAvatarUrl(admin.avatar_url, admin.id)}
+                                url={admin.avatar_url}
+                                imageUrl={admin.image_url}
                                 userId={admin.id}
                                 size="lg"
                                 className="w-full h-full object-cover"

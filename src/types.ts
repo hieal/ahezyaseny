@@ -5,6 +5,7 @@ export interface ScannedAdmin {
   missing_fields: string[];
   role?: string;
   group?: string;
+  username?: string;
   isSelected?: boolean;
   isManager?: boolean;
   existingUser?: User;
@@ -106,6 +107,7 @@ export interface WhatsAppGroup {
   last_initial_sent: string | null;
   last_initial_sent_method?: 'auto' | 'manual' | null;
   is_approved?: number;
+  age_groups?: string | null;
 }
 
 export interface ImagePosition {

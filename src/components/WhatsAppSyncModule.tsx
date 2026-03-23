@@ -19,13 +19,47 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
   const [showLiveView, setShowLiveView] = useState(false);
   const [selectedLocalGroupId, setSelectedLocalGroupId] = useState<string>('');
   const [participantsInfo, setParticipantsInfo] = useState<any[]>([]);
+  const [participantsCache, setParticipantsCache] = useState<Record<string, any>>({});
   const [memberFilter, setMemberFilter] = useState<'all' | 'found' | 'not_found'>('all');
   const [advancedFilter, setAdvancedFilter] = useState<string>('all');
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [excludedGroups, setExcludedGroups] = useState<string[]>([]);
+  const [stats, setStats] = useState<{total: number, unique: number} | null>(null);
+  const [duplicates, setDuplicates] = useState<any[]>([]);
+
+  const toggleGroupSelection = (groupId: string) => {
+    if (excludedGroups.includes(groupId)) return;
+    if (selectedGroups.includes(groupId)) {
+      setSelectedGroups(selectedGroups.filter(id => id !== groupId));
+    } else {
+      setSelectedGroups([...selectedGroups, groupId]);
+    }
+  };
+
+  const toggleGroupExclusion = (groupId: string) => {
+    if (excludedGroups.includes(groupId)) {
+      setExcludedGroups(excludedGroups.filter(id => id !== groupId));
+      setSelectedGroups([...selectedGroups, groupId]);
+    } else {
+      setExcludedGroups([...excludedGroups, groupId]);
+      setSelectedGroups(selectedGroups.filter(id => id !== groupId));
+    }
+  };
+
+  const selectAll = () => {
+    const selectable = whapiGroups.filter(g => !excludedGroups.includes(g.id)).map(g => g.id);
+    setSelectedGroups(selectable);
+  };
+
+  const deselectAll = () => {
+    setSelectedGroups([]);
+  };
 
   useEffect(() => {
     fetchWhapiGroups();
     console.log('WhatsApp Sync Module integrated strictly in Settings/WhatsApp Groups section.');
+    console.log('WhatsApp Media & Cross-Group Analytics module is now live.');
   }, []);
 
   const fetchWhapiGroups = async () => {
@@ -36,6 +70,66 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
     } catch (err) {
       toast.error('שגיאה בטעינת קבוצות מוואטסאפ');
       console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showStatistics = async () => {
+    setLoading(true);
+    try {
+      const allParticipants: any[] = [];
+      for (const groupId of selectedGroups) {
+        const details = await dataService.getWhapiGroupDetails(groupId);
+        if (details.participants) {
+          allParticipants.push(...details.participants);
+        }
+      }
+      
+      const totalParticipants = allParticipants.length;
+      const uniqueParticipants = new Set(allParticipants.map((p: any) => p.id)).size;
+      
+      setStats({ total: totalParticipants, unique: uniqueParticipants });
+    } catch (err) {
+      toast.error('שגיאה בחישוב סטטיסטיקה');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showDuplicates = async () => {
+    setLoading(true);
+    try {
+      const participantMap: Record<string, { groups: string[], info: any }> = {};
+      const allPhones: string[] = [];
+      
+      for (const groupId of selectedGroups) {
+        const details = await dataService.getWhapiGroupDetails(groupId);
+        if (details.participants) {
+          for (const p of details.participants) {
+            const phone = p.id.split('@')[0];
+            if (!participantMap[p.id]) {
+              participantMap[p.id] = { groups: [], info: p };
+              allPhones.push(phone);
+            }
+            participantMap[p.id].groups.push(details.name);
+          }
+        }
+      }
+      
+      const crossRef = await dataService.crossReferenceParticipants(allPhones);
+      
+      const duplicatesList = Object.entries(participantMap)
+        .filter(([id, data]) => data.groups.length > 1)
+        .map(([id, data]) => {
+          const phone = data.info.id.split('@')[0];
+          const systemInfo = crossRef.find(cr => cr.phone === phone);
+          return { id, ...data, systemInfo };
+        });
+        
+      setDuplicates(duplicatesList);
+    } catch (err) {
+      toast.error('שגיאה בזיהוי כפילויות');
     } finally {
       setLoading(false);
     }
@@ -106,6 +200,14 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
   const openLiveView = async (groupId: string) => {
     setLoadingPreview(true);
     try {
+      // Fetch group details to get participants for avatars
+      const details = await dataService.getWhapiGroupDetails(groupId);
+      const cache: Record<string, any> = {};
+      details.participants?.forEach((p: any) => {
+        cache[p.id] = p;
+      });
+      setParticipantsCache(cache);
+
       const messages = await dataService.getWhatsAppMessages(groupId);
       setPreviewMessages(messages);
       setShowLiveView(true);
@@ -240,14 +342,42 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
                 <Users size={20} className="text-luxury-blue" />
                 קבוצות קיימות בוואטסאפ (Whapi)
               </h3>
-              <button 
-                onClick={fetchWhapiGroups}
-                disabled={loading}
-                className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
-              >
-                <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-                רענן רשימה
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={selectAll}
+                  className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-200"
+                >
+                  בחר הכל
+                </button>
+                <button 
+                  onClick={deselectAll}
+                  className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-200"
+                >
+                  נקה הכל
+                </button>
+                <button 
+                  onClick={showStatistics}
+                  disabled={selectedGroups.length === 0 || loading}
+                  className={`text-xs font-bold bg-luxury-blue text-white px-3 py-1.5 rounded-xl hover:bg-blue-700 disabled:opacity-50 ${selectedGroups.length === 0 ? 'hidden' : ''}`}
+                >
+                  הצג סטטיסטיקה
+                </button>
+                <button 
+                  onClick={showDuplicates}
+                  disabled={selectedGroups.length === 0 || loading}
+                  className="text-xs font-bold bg-rose-500 text-white px-3 py-1.5 rounded-xl hover:bg-rose-600 disabled:opacity-50"
+                >
+                  הצג כפילויות
+                </button>
+                <button 
+                  onClick={fetchWhapiGroups}
+                  disabled={loading}
+                  className="text-xs font-bold text-luxury-blue hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                  רענן רשימה
+                </button>
+              </div>
             </div>
 
             {loading ? (
@@ -260,58 +390,119 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
                 <p className="text-slate-400 font-medium">לא נמצאו קבוצות בחשבון הוואטסאפ</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {whapiGroups.map(group => (
-                  <div key={group.id} className="group bg-white border border-slate-100 rounded-2xl p-4 hover:border-luxury-blue hover:shadow-md transition-all flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-slate-200">
-                        {group.icon ? (
-                          <img src={group.icon} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Users size={20} className="text-slate-400" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-slate-900 truncate">{group.name}</h4>
-                        <p className="text-[10px] font-mono text-slate-400 truncate">{group.id}</p>
-                      </div>
-                    </div>
+              <div className="grid grid-cols-1 gap-4">
+                {whapiGroups.map(group => {
+                  const matchingGroups = localGroups.filter(lg => lg.whapi_id === group.id);
+                  const isIdMatch = matchingGroups.length > 0;
+                  const fullMatch = matchingGroups.find(lg => lg.name === group.name);
+                  const isFullMatch = !!fullMatch;
 
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => openLiveView(group.id)}
-                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
-                        title="צפה במתרחש (Live View)"
-                      >
-                        <MessageSquare size={18} />
-                      </button>
-                      <button 
-                        onClick={() => showPreview(group.id)}
-                        className="p-2 text-slate-400 hover:text-luxury-blue hover:bg-blue-50 rounded-xl transition-all"
-                        title="תצוגה מקדימה"
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <div className="h-8 w-px bg-slate-100 mx-1"></div>
-                      <button 
-                        onClick={() => handleLinkID(group.id)}
-                        disabled={!selectedLocalGroupId}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-luxury-blue rounded-xl text-xs font-bold hover:bg-luxury-blue hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                      >
-                        <LinkIcon size={14} />
-                        שיוך ID
-                      </button>
-                      <button 
-                        onClick={() => handleLinkName(group.name)}
-                        disabled={!selectedLocalGroupId}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                      >
-                        <Type size={14} />
-                        שיוך שם
-                      </button>
+                  return (
+                    <div 
+                      key={group.id} 
+                      className={`group border-2 rounded-2xl p-4 transition-all flex flex-col gap-3 ${
+                        isFullMatch ? 'bg-emerald-50/50 border-emerald-200 shadow-sm' : 
+                        isIdMatch ? 'border-blue-400 bg-blue-50/10 shadow-sm' : 
+                        'bg-white border-slate-100 hover:border-luxury-blue hover:shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedGroups.includes(group.id)}
+                            onChange={() => toggleGroupSelection(group.id)}
+                            className="w-5 h-5 rounded border-slate-300 text-luxury-blue focus:ring-luxury-blue"
+                          />
+                          <button 
+                            onClick={() => toggleGroupExclusion(group.id)}
+                            className={`text-[9px] font-black px-2 py-1 rounded-lg ${
+                              excludedGroups.includes(group.id) 
+                                ? 'bg-rose-500 text-white' 
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            }`}
+                          >
+                            {excludedGroups.includes(group.id) ? 'מוחרג' : 'החרג'}
+                          </button>
+                          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-white shadow-sm">
+                            {group.icon ? (
+                              <img src={group.icon} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <Users size={24} className="text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-black text-slate-900 truncate text-lg">{group.name}</h4>
+                            <p className="text-[10px] font-mono text-slate-400 truncate tracking-tighter">{group.id}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => openLiveView(group.id)}
+                            className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                            title="צפה במתרחש (Live View)"
+                          >
+                            <MessageSquare size={20} />
+                          </button>
+                          <button 
+                            onClick={() => showPreview(group.id)}
+                            className="p-2.5 text-slate-400 hover:text-luxury-blue hover:bg-blue-50 rounded-xl transition-all"
+                            title="תצוגה מקדימה"
+                          >
+                            <Eye size={20} />
+                          </button>
+                          <div className="h-10 w-px bg-slate-100 mx-1"></div>
+                          <button 
+                            onClick={() => handleLinkID(group.id)}
+                            disabled={!selectedLocalGroupId}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-luxury-blue rounded-xl text-xs font-black hover:bg-luxury-blue hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                          >
+                            <LinkIcon size={14} />
+                            שיוך ID
+                          </button>
+                          <button 
+                            onClick={() => handleLinkName(group.name)}
+                            disabled={!selectedLocalGroupId}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                          >
+                            <Type size={14} />
+                            שיוך שם
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Match Status Info & Gender Differentiation */}
+                      {(isFullMatch || isIdMatch) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100/50">
+                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black shadow-sm ${
+                            isFullMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {isFullMatch ? <CheckCircle size={12} /> : <LinkIcon size={12} />}
+                            {isFullMatch ? 'שם ו-ID משויכים' : 'ID משויך לקבוצה'}
+                          </div>
+                          
+                          {matchingGroups.map(lg => (
+                            <div key={lg.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black border shadow-sm ${
+                              lg.type === 'female' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                            }`}>
+                              <span className="opacity-70">{lg.type === 'female' ? '♀️' : '♂️'}</span>
+                              <span>{lg.category}</span>
+                              <span className="opacity-40">|</span>
+                              <span>{lg.age_groups || 'כל הגילאים'}</span>
+                            </div>
+                          ))}
+                          
+                          {matchingGroups.length > 1 && (
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-md">
+                              {matchingGroups.length} שיוכים נמצאו
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -327,6 +518,53 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
           </p>
         </div>
       </motion.div>
+
+      {/* Stats Modal */}
+      <AnimatePresence>
+        {stats && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm">
+              <h3 className="text-xl font-black text-slate-900 mb-4">סטטיסטיקת קבוצות</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between p-4 bg-slate-50 rounded-xl">
+                  <span className="font-bold text-slate-600">סך משתתפים כולל</span>
+                  <span className="font-black text-luxury-blue">{stats.total}</span>
+                </div>
+                <div className="flex justify-between p-4 bg-slate-50 rounded-xl">
+                  <span className="font-bold text-slate-600">סך משתתפים ייחודיים</span>
+                  <span className="font-black text-emerald-600">{stats.unique}</span>
+                </div>
+              </div>
+              <button onClick={() => setStats(null)} className="w-full mt-6 py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700">סגור</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Duplicates Modal */}
+      <AnimatePresence>
+        {duplicates.length > 0 && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+              <h3 className="text-xl font-black text-slate-900 mb-4">משתתפים כפולים</h3>
+              <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                {duplicates.map((d: any) => (
+                  <div key={d.id} className="p-4 bg-rose-50 rounded-2xl border border-rose-100">
+                    <p className="font-black text-slate-900">{d.info.name || d.info.push_name || d.id.split('@')[0]}</p>
+                    <p className="text-xs font-bold text-slate-500 mt-1">נמצא בקבוצות: {d.groups.join(', ')}</p>
+                    {d.systemInfo && (
+                      <p className="text-xs font-black text-emerald-600 mt-1">
+                        תפקיד: {d.systemInfo.systemType === 'manager' ? 'מנהל' : d.systemInfo.systemType === 'match' ? 'משודך/ת' : 'צופה'}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setDuplicates([])} className="w-full mt-6 py-3 bg-luxury-blue text-white rounded-xl font-bold hover:bg-blue-700">סגור</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Preview Modal (Group Insights) */}
       <AnimatePresence>
@@ -546,7 +784,7 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
               </div>
 
               {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat">
                 {previewMessages.length === 0 ? (
                   <div className="h-full flex items-center justify-center">
                     <div className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl text-center shadow-sm">
@@ -554,21 +792,37 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
                     </div>
                   </div>
                 ) : (
-                  previewMessages.map((msg: any) => (
-                    <div key={msg.id} className={`flex flex-col ${msg.from_me ? 'items-end' : 'items-start'}`}>
-                      <div className={`max-w-[85%] p-2.5 rounded-2xl shadow-sm relative ${
-                        msg.from_me ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none'
-                      }`}>
+                  previewMessages.map((msg: any) => {
+                    const sender = participantsCache[msg.from];
+                    return (
+                      <div key={msg.id} className={`flex gap-2 ${msg.from_me ? 'flex-row-reverse' : 'flex-row'}`}>
                         {!msg.from_me && (
-                          <p className="text-[10px] font-black text-emerald-600 mb-1">{msg.sender?.name || msg.from_name || msg.from.split('@')[0]}</p>
+                          <div className="w-8 h-8 rounded-full bg-white flex-shrink-0 overflow-hidden border border-slate-200 mt-1 shadow-sm">
+                            {sender?.profile_pic ? (
+                              <img src={sender.profile_pic} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                                <User size={16} className="text-slate-300" />
+                              </div>
+                            )}
+                          </div>
                         )}
-                        {renderMessageContent(msg)}
-                        <p className="text-[9px] text-slate-400 text-left mt-1">
-                          {new Date(msg.timestamp * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
+                        <div className={`flex flex-col ${msg.from_me ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-[85%] p-2.5 rounded-2xl shadow-sm relative ${
+                            msg.from_me ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none'
+                          }`}>
+                            {!msg.from_me && (
+                              <p className="text-[10px] font-black text-emerald-600 mb-1 leading-none">{sender?.name || sender?.push_name || msg.from_name || msg.from.split('@')[0]}</p>
+                            )}
+                            {renderMessageContent(msg)}
+                            <p className="text-[9px] text-slate-400 text-left mt-1 font-bold">
+                              {new Date(msg.timestamp * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 

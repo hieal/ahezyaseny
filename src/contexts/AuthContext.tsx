@@ -18,6 +18,7 @@ interface AuthContextType {
   setImpersonatedUser: (user: User | null) => void;
   setActiveRole: (role: string | null) => void;
   selectRole: (role: string | null) => void;
+  isAnchorIdentified: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingUser, setPendingUser] = useState<User | null>(null);
   const [isSafeMode, setSafeMode] = useState(false);
   const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
+  const [isAnchorIdentified, setIsAnchorIdentified] = useState(false);
 
   const enforceMalachiRole = (user: User | null): User | null => {
     if (user) {
@@ -61,6 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (anchorUser) {
           console.log(`Auth Check: Checking identity for ${anchorUser.username || anchorUser.phone}... Match found: true.`);
           setUser(anchorUser);
+          setIsAnchorIdentified(true);
           localStorage.setItem('current_user', JSON.stringify(anchorUser));
           setLoading(false);
           return; // Anchor identified and state updated
@@ -202,11 +205,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    if (user && (user.username?.toLowerCase() === 'good' || user.email?.toLowerCase() === 'good')) {
+    if (user && (user.username?.toLowerCase() === 'good' || user.email?.toLowerCase() === 'good' || user.phone === '0556603336')) {
       dataService.updateUser(user.id, { 
         is_online: true, 
         last_seen: new Date().toISOString() 
-      }).catch(err => console.error('Failed to update online status for good:', err));
+      }).catch(err => console.error('Failed to update online status for anchor:', err));
     }
   }, [user]);
 
@@ -232,8 +235,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isMalachi || isGood) {
       userData.role = isMalachi ? 'association_manager' : 'super_admin';
       setUser(userData);
+      setIsAnchorIdentified(true);
       setActiveRole(userData.role as any);
       localStorage.setItem('current_user', JSON.stringify(userData));
+      
+      // Force online status in Supabase
+      dataService.updateUser(userData.id, { 
+        is_online: true, 
+        last_seen: new Date().toISOString() 
+      }).catch(err => console.error('Failed to force online status:', err));
+      
+      console.log('Final Auth Sync: Anchor identity confirmed and online status forced.');
       return;
     }
 
@@ -280,7 +292,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       impersonatedUser,
       setImpersonatedUser,
       setActiveRole: (role) => setActiveRole(role as any), 
-      selectRole: (role) => selectRole(role as any) 
+      selectRole: (role) => selectRole(role as any),
+      isAnchorIdentified
     }}>
       {children}
       {showRolePicker && (

@@ -4,6 +4,7 @@ import { getAvatarUrl, getAvatarFallback } from '../utils/image';
 interface AvatarProps {
   name?: string;
   url?: string | null;
+  imageUrl?: string | null;
   userId?: string;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
@@ -23,16 +24,18 @@ const getColor = (name?: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-export const Avatar: React.FC<AvatarProps> = ({ name, url, userId, size = 'md', className = '' }) => {
+export const Avatar: React.FC<AvatarProps> = ({ name, url, imageUrl, userId, size = 'md', className = '' }) => {
+  const [failed, setFailed] = React.useState(false);
+
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
     md: 'w-10 h-10 text-sm',
     lg: 'w-16 h-16 text-2xl'
   };
 
-  const processedUrl = getAvatarUrl(url, userId);
+  const processedUrl = getAvatarUrl(url || imageUrl, userId);
 
-  if (processedUrl) {
+  if (processedUrl && !failed) {
     return (
       <img
         key={userId}
@@ -40,6 +43,7 @@ export const Avatar: React.FC<AvatarProps> = ({ name, url, userId, size = 'md', 
         alt={name || ''}
         className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
         referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
       />
     );
   }
