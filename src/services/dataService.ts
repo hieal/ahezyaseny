@@ -1380,6 +1380,52 @@ class DataService {
     return data[0] as Match;
   }
 
+  async upsertMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User): Promise<Match> {
+    // Check for existing match by name and phone
+    const { data: existing } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('name', match.full_name)
+      .eq('phone', match.phone)
+      .is('deleted_at', null)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      // Update existing
+      const existingId = existing[0].id;
+      const sanitized = this.sanitizeMatch({ ...match, id: existingId });
+      
+      // Mirror external images if needed
+      if (sanitized.image_url && sanitized.image_url.startsWith('http') && !sanitized.image_url.includes('supabase.co')) {
+        // Keep original URL
+      } else if (sanitized.image_url && sanitized.image_url.startsWith('data:image')) {
+        const uploadedUrl = await this.uploadBase64Image(sanitized.image_url);
+        if (uploadedUrl) {
+          sanitized.image_url = uploadedUrl;
+        } else {
+          delete sanitized.image_url;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('candidates')
+        .update(sanitized)
+        .eq('id', existingId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data as Match;
+    } else {
+      // Create new
+      const result = await this.createMatch(match, user, true);
+      if ('error' in result) {
+        throw new Error('Duplicate match detected after check');
+      }
+      return result;
+    }
+  }
+
   async createMatch(match: Omit<Match, 'id' | 'created_at'>, user?: User, bypassDuplicateCheck: boolean = false): Promise<Match | { error: 'duplicate', existingMatch: Match }> {
     // Duplicate check
     if (!bypassDuplicateCheck) {
@@ -1980,6 +2026,13 @@ class DataService {
       });
       
       admin.existingUser = existingUser;
+      
+      // CRITICAL: Prevent overwriting synced images with older CSV links
+      if (existingUser && (existingUser.avatar_url?.includes('supabase.co') || existingUser.image_url?.includes('supabase.co'))) {
+        admin.avatar_url = existingUser.avatar_url;
+        admin.image_url = existingUser.image_url || existingUser.avatar_url;
+      }
+
       admin.missing_fields = [];
       if (!admin.full_name) admin.missing_fields.push('שם מלא');
       if (!admin.phone) admin.missing_fields.push('טלפון');
@@ -1989,7 +2042,70 @@ class DataService {
     return allAdmins;
   }
 
-  async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
+  async createAuthUser(email: string, phone: string, password: string): Promise<string> {
+    const client = supabaseAdmin || supabase;
+    
+    // 1. Try to create new user directly to bypass 403 listUsers
+    const { data, error } = await client.auth.admin.createUser({
+      email,
+      phone,
+      password,
+      email_confirm: true,
+      phone_confirm: true
+    });
+
+    if (error) {
+      // 2. If phone format error (E.164), try with only email as requested
+      if (error.message.toLowerCase().includes('phone') || error.message.includes('E.164') || error.status === 400) {
+        console.log(`Phone creation failed for ${email} due to format. Retrying with email only.`);
+        const { data: emailData, error: emailError } = await client.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true
+        });
+        
+        if (!emailError) return emailData.user.id;
+        
+        // If email creation also fails, check if it's because user already exists
+        if (emailError.status === 422 || emailError.message.includes('already exists')) {
+          const { data: profile, error: profileError } = await client
+            .from('profiles')
+            .select('id')
+            .eq('email', email)
+            .maybeSingle();
+
+          if (profileError) throw profileError;
+          if (profile) return profile.id;
+        }
+        throw emailError;
+      }
+
+      // 3. If user already exists (error 422), find their ID from profiles
+      if (error.status === 422 || error.message.includes('already exists')) {
+        const { data: profile, error: profileError } = await client
+          .from('profiles')
+          .select('id')
+          .or(`email.eq.${email}${phone ? `,phone.eq.${phone}` : ''}`)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+        if (profile) return profile.id;
+        
+        throw new Error(`User exists in Auth but not in profiles: ${email || phone}`);
+      }
+      throw error;
+    }
+
+    return data.user.id;
+  }
+
+  async deleteAuthUser(userId: string): Promise<{ error: any }> {
+    const client = supabaseAdmin || supabase;
+    const { error } = await client.auth.admin.deleteUser(userId);
+    return { error };
+  }
+
+  async upsertAdmin(admin: any): Promise<User> {
     // Prevent nulls in critical fields
     if (!admin.full_name || !admin.role || !admin.phone) {
       throw new Error('Full Name, Phone, and Role are required.');
@@ -2000,8 +2116,14 @@ class DataService {
       email: admin.email || null,
       phone: admin.phone,
       role: admin.role,
-      category: admin.category || (admin as any).affiliation_group || null
+      category: admin.category || admin.affiliation_group || null,
+      affiliation_group: admin.affiliation_group || admin.category || null,
+      gender: admin.gender || null
     };
+
+    if (admin.id) {
+      adminData.id = admin.id;
+    }
 
     // Only update avatar_url if provided to preserve existing synced avatars
     if (admin.avatar_url) {
@@ -2017,7 +2139,7 @@ class DataService {
     return data as User;
   }
 
-  async insertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
+  async insertAdmin(admin: any): Promise<User> {
     // Prevent nulls in critical fields
     if (!admin.full_name || !admin.role || !admin.phone) {
       throw new Error('Full Name, Phone, and Role are required.');
@@ -2030,8 +2152,14 @@ class DataService {
       role: admin.role,
       avatar_url: admin.avatar_url || null,
       category: admin.category || (admin as any).affiliation_group || null,
+      affiliation_group: (admin as any).affiliation_group || admin.category || null,
+      gender: admin.gender || null,
       username: `${admin.phone}_${Math.random().toString(36).substring(7)}`
     };
+
+    if (admin.id) {
+      adminData.id = admin.id;
+    }
 
     const data = await this.handleSupabase(supabase.from('profiles').insert(adminData).select().single());
     
@@ -2042,7 +2170,7 @@ class DataService {
     return data as User;
   }
 
-  async createUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
+  async createUser(user: any): Promise<User> {
     return this.upsertAdmin(user);
   }
 
@@ -2080,6 +2208,89 @@ class DataService {
       })
       .eq('transfer_status', 'orphaned')
       .eq('previous_admin_name', adminName);
+  }
+
+  async updateAdminProfile(id: string, updates: Partial<User>): Promise<{ data: User | null; error: any }> {
+    console.log(`[AdminPersistence] Updating profile for ID: ${id}`, updates);
+    
+    // Protect Anchors from modification
+    if (id === ANCHOR_GOOD.id || id === ANCHOR_MALACHI.id) {
+      console.warn('[AdminPersistence] Blocked modification of protected anchor.');
+      return { data: null, error: { message: 'לא ניתן לערוך משתמש זה - זהו משתמש מערכת מוגן' } };
+    }
+
+    // Clean update data: Ensure ONLY relevant fields are sent to Supabase
+    // This prevents cache pollution and 400 errors from non-existent columns
+    const profileUpdates: any = {};
+    const relevantFields = [
+      'gender', 
+      'category', 
+      'email', 
+      'full_name', 
+      'affiliation_group', 
+      'role', 
+      'status', 
+      'username', 
+      'avatar_url', 
+      'phone', 
+      'secondary_category', 
+      'google_login_allowed'
+    ];
+    
+    relevantFields.forEach(field => {
+      if (updates[field as keyof User] !== undefined) {
+        profileUpdates[field] = updates[field as keyof User];
+      }
+    });
+
+    // Force status: 'active' when gender is updated to prevent accidental deactivation
+    if (profileUpdates.gender !== undefined) {
+      profileUpdates.status = 'active';
+    }
+
+    // Ensure category/affiliation_group sync if one is provided
+    if (profileUpdates.affiliation_group && !profileUpdates.category) {
+      profileUpdates.category = profileUpdates.affiliation_group;
+    } else if (profileUpdates.category && !profileUpdates.affiliation_group) {
+      profileUpdates.affiliation_group = profileUpdates.category;
+    }
+
+    // Apply basic sanitization (like avatar URL parsing) but skip default password
+    if (profileUpdates.avatar_url) {
+      const parseAirtableUrl = (val: any) => {
+        if (val && typeof val === 'string') {
+          const match = val.match(/\((https?:\/\/[^\)]+)\)/);
+          return match ? match[1] : val;
+        }
+        return val;
+      };
+      profileUpdates.avatar_url = parseAirtableUrl(profileUpdates.avatar_url);
+    }
+
+    console.log('[AdminPersistence] Sending to Supabase:', profileUpdates);
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('[AdminPersistence] Supabase error:', error);
+        if (error.code === '42501' || error.message?.includes('permission denied')) {
+          console.error('RLS ERROR DETECTED: You may need to disable RLS in Supabase or add a policy for the profiles table.');
+        }
+        return { data: null, error };
+      }
+
+      console.log('[AdminPersistence] SUCCESS:', data);
+      return { data: data as User, error: null };
+    } catch (err) {
+      console.error('[AdminPersistence] Catch error:', err);
+      return { data: null, error: err };
+    }
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<{ data: User | null; error: any }> {
@@ -3518,20 +3729,11 @@ class DataService {
 
   normalizePhoneNumber(phone: string): string {
     if (!phone) return '';
-    // Remove all non-numeric characters
-    let cleaned = phone.replace(/\D/g, '');
-    // Remove leading '972' if present and followed by 5 (standard Israeli mobile prefix)
-    if (cleaned.startsWith('972') && cleaned.length > 9) {
-      cleaned = '0' + cleaned.substring(3);
-    }
-    // If it's 9 digits and starts with 5, add leading 0
-    if (cleaned.length === 9 && cleaned.startsWith('5')) {
-      cleaned = '0' + cleaned;
-    }
-    return cleaned;
+    // Preserve original format as requested, just trim whitespace
+    return phone.trim();
   }
 }
 
 export const dataService = new DataService();
 
-console.log('Admin Avatars Fixed: Full fallback support for broken URLs enabled.');
+console.log('ADMIN AUTH FIXED: Phone numbers kept in original format, Auth handled via email to bypass E.164 constraints.');

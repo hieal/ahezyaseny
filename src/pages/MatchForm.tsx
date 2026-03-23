@@ -444,6 +444,7 @@ export default function MatchForm() {
 
         // Mapping based on the provided CSV structure
         const mapped: any = {
+          full_name: name || entry['שם'] || entry['שם מלא'] || entry['Name'] || '',
           name: name || entry['שם'] || entry['שם מלא'] || entry['Name'] || '',
           phone: phone || entry['טלפון'] || entry['נייד'] || entry['Phone'] || entry['Mobile'] || '',
           image_url: imageUrl,
@@ -457,6 +458,7 @@ export default function MatchForm() {
           occupation: entry['עיסוק'] || entry['Occupation'] || '',
           about: entry['על עצמי'] || entry['קצת עליי'] || entry['About'] || '',
           looking_for: entry['מה מחפש'] || entry['אני מחפש/ת'] || entry['Looking For'] || '',
+          managed_by: entry['מנהל'] || entry['Managed By'] || entry['managed_by'] || undefined,
           viewer_group_ids: '[]',
           creation_source: 'csv'
         };
@@ -478,35 +480,43 @@ export default function MatchForm() {
     setImporting(true);
     
     let successCount = 0;
-    let duplicateCount = 0;
     let failCount = 0;
+
+    // Fetch all admins to check for orphaned matches
+    const allAdmins = await dataService.getActiveManagers();
+    const adminIds = new Set(allAdmins.map(a => a.id));
+
     for (const match of scannedMatches) {
       try {
-        await dataService.createMatch({ ...match, creation_source: 'csv' }, user || undefined);
+        // Clean data: ensure id and created_at are not sent from CSV
+        const { id, created_at, ...cleanMatch } = match as any;
+
+        // Check for orphaned managed_by
+        if (cleanMatch.managed_by && !adminIds.has(cleanMatch.managed_by)) {
+          cleanMatch.managed_by = user?.id;
+        }
+        if (!cleanMatch.managed_by) {
+          cleanMatch.managed_by = user?.id;
+        }
+
+        await dataService.upsertMatch({ ...cleanMatch, creation_source: 'csv' }, user || undefined);
         successCount++;
       } catch (err) {
-        if (err instanceof Error && err.message === 'משודך עם שם וטלפון זהה כבר קיים במערכת') {
-          duplicateCount++;
-        } else {
-          console.error('Error importing match:', err);
-          failCount++;
-        }
+        console.error('Error importing match:', err);
+        failCount++;
       }
     }
     
     setImporting(false);
     const total = scannedMatches.length;
 
-    if (duplicateCount === total) {
-      toast('כל הכרטיסים כבר קיימים במערכת');
-    } else if (duplicateCount > 0 || failCount > 0) {
-      let message = `הועלו ${successCount} מתוך ${total} כרטיסים.`;
-      if (duplicateCount > 0) message += ` ${duplicateCount} כבר קיימים במערכת.`;
-      if (failCount > 0) message += ` ${failCount} נכשלו.`;
-      toast(message);
+    if (failCount > 0) {
+      toast(`הועלו ${successCount} מתוך ${total} כרטיסים. ${failCount} נכשלו.`);
     } else {
       toast.success(`יובאו ${successCount} כרטיסים בהצלחה`);
     }
+    
+    console.log('MATCH IMPORT FIXED: Orphaned candidates are now assigned to the current admin and conflicts are resolved.');
     navigate('/');
   };
 

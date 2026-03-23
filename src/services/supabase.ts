@@ -8,16 +8,19 @@ const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const globalAny = globalThis as any;
 
 if (!globalAny.__supabase) {
+  console.log('[Supabase] Initializing main client with persistSession: true');
   globalAny.__supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: true,
+      storage: window.localStorage
     }
   });
 }
 
 if (!globalAny.__supabaseAdmin) {
+  console.log('[Supabase] Initializing admin client with persistSession: false');
   globalAny.__supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
     auth: {
       persistSession: false,

@@ -1,12 +1,13 @@
 import React from 'react';
 import { getAvatarUrl, getAvatarFallback } from '../utils/image';
+import { AlertCircle } from 'lucide-react';
 
 interface AvatarProps {
   name?: string;
   url?: string | null;
   imageUrl?: string | null;
   userId?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -26,38 +27,60 @@ const getColor = (name?: string) => {
 
 export const Avatar: React.FC<AvatarProps> = ({ name, url, imageUrl, userId, size = 'md', className = '' }) => {
   const [failed, setFailed] = React.useState(false);
+  const [triedStorage, setTriedStorage] = React.useState(false);
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
+  const originalUrl = url || imageUrl;
+  const storageUrl = userId ? `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${userId}.png` : null;
+
+  // Decide which URL to use
+  let currentUrl = null;
+  if (userId && !triedStorage) {
+    currentUrl = storageUrl;
+  } else {
+    currentUrl = originalUrl;
+  }
+
+  const isAirtable = originalUrl?.includes('airtable');
+  const isExpired = failed && isAirtable;
+
+  const handleError = () => {
+    if (currentUrl === storageUrl && originalUrl && originalUrl !== storageUrl) {
+      setTriedStorage(true);
+    } else {
       setFailed(true);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
+    }
+  };
 
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
     md: 'w-10 h-10 text-sm',
-    lg: 'w-16 h-16 text-2xl'
+    lg: 'w-16 h-16 text-2xl',
+    xl: 'w-24 h-24 text-4xl'
   };
 
-  const processedUrl = getAvatarUrl(url || imageUrl, userId);
-
-  if (processedUrl && !failed) {
-    return (
-      <img
-        key={userId}
-        src={processedUrl}
-        alt={name || ''}
-        className={`${sizeClasses[size]} rounded-full object-cover ${className}`}
-        referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
   return (
-    <div key={userId} className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-white ${getColor(name)} ${className}`}>
-      {getAvatarFallback(name || '')}
+    <div className={`relative flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center font-bold text-white ${getColor(name)} ${sizeClasses[size]} ${className}`}>
+      {currentUrl && !failed ? (
+        <img
+          key={currentUrl}
+          src={currentUrl}
+          alt={name || ''}
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+          onError={handleError}
+        />
+      ) : (
+        <span>{getAvatarFallback(name || '')}</span>
+      )}
+
+      {isExpired && (
+        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white p-1 text-center">
+          <AlertCircle size={size === 'sm' ? 12 : 16} className="text-amber-400 mb-0.5" />
+          {size !== 'sm' && (
+            <span className="text-[8px] font-black leading-tight">קישור פג תוקף - נדרש סנכרון</span>
+          )}
+        </div>
+      )}
     </div>
   );
 };

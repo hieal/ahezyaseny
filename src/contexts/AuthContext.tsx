@@ -8,6 +8,7 @@ interface AuthContextType {
   user: User | null;
   activeRole: 'admin' | 'team_leader' | 'observer_manager' | 'association_manager' | 'super_admin' | null;
   loading: boolean;
+  authError: string | null;
   login: (userData: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -27,11 +28,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [activeRole, setActiveRole] = useState<'admin' | 'team_leader' | 'observer_manager' | 'association_manager' | 'super_admin' | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
   const [isSafeMode, setSafeMode] = useState(false);
   const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
   const [isAnchorIdentified, setIsAnchorIdentified] = useState(false);
+
+  const syncIdentity = async (authUser: any): Promise<User | null> => {
+    const email = authUser.email;
+    const phone = authUser.phone; // Assuming phone might be in user_metadata
+    const username = authUser.user_metadata?.username;
+
+    let adminProfile = null;
+
+    // 1. Check by ID
+    adminProfile = await dataService.getUserById(authUser.id);
+
+    // 2. Identity Recovery Protocol
+    if (!adminProfile) {
+      // Search by Email
+      if (email) {
+        const { data } = await supabase.from('profiles').select('*').eq('email', email).maybeSingle();
+        adminProfile = data;
+      }
+      // Search by Phone
+      if (!adminProfile && phone) {
+        const { data } = await supabase.from('profiles').select('*').eq('phone', phone).maybeSingle();
+        adminProfile = data;
+      }
+      // Search by Username
+      if (!adminProfile && username) {
+        const { data } = await supabase.from('profiles').select('*').eq('username', username).maybeSingle();
+        adminProfile = data;
+      }
+
+      // Auto-Link
+      if (adminProfile && adminProfile.id !== authUser.id) {
+        console.log('Identity Sync: Found profile match. Updating ID...');
+        await supabase.from('profiles').update({ id: authUser.id }).eq('id', adminProfile.id);
+        adminProfile.id = authUser.id;
+      }
+    }
+
+    if (!adminProfile) {
+      setAuthError('שגיאת חארדו דאבו: משתמש לא מזוהה במערכת');
+      return null;
+    }
+
+    return adminProfile;
+  };
 
   const enforceMalachiRole = (user: User | null): User | null => {
     if (user) {
@@ -75,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          const adminProfile = await dataService.getUserById(session.user.id);
+          const adminProfile = await syncIdentity(session.user);
           if (adminProfile) {
             const userWithRole = enforceMalachiRole(adminProfile);
             setUser(userWithRole);
@@ -98,29 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        // Try to find user by email, ID, OR username/phone for anchors
-        const email = session.user.email;
-        let adminProfile = null;
-        
-        // 1. Check by ID
-        adminProfile = await dataService.getUserById(session.user.id);
-        
-        // 2. If not found, check by email
-        if (!adminProfile && email) {
-          adminProfile = await dataService.getUserByEmail(email);
-        }
-
-        // 3. Special check for anchors by username/phone if still not found
-        if (!adminProfile) {
-          const { data: anchorMatch } = await supabase.from('profiles')
-            .select('*')
-            .or(`username.eq.good,phone.eq.0556603336`)
-            .maybeSingle();
-          
-          if (anchorMatch) {
-            adminProfile = anchorMatch;
-          }
-        }
+        const adminProfile = await syncIdentity(session.user);
 
         if (adminProfile) {
           const isMalachi = adminProfile.phone === '0556603336';
@@ -135,11 +159,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userWithRole = enforceMalachiRole(adminProfile);
           setUser(userWithRole);
           localStorage.setItem('current_user', JSON.stringify(userWithRole));
+          console.log('IDENTITY FIXED: Admin names now linked by Email, Phone, or Username.');
         } else {
           // If no admin profile found for this Google account, sign them out
           // but only if it was a Google login (not a manual session restore)
           if (session.user.app_metadata.provider === 'google') {
-            console.error('Google account not registered as admin:', email);
+            console.error('Google account not registered as admin:', session.user.email);
             await supabase.auth.signOut();
             setUser(null);
             localStorage.removeItem('current_user');
@@ -262,6 +287,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, 
       activeRole, 
       loading, 
+      authError,
       login, 
       logout, 
       refreshUser, 

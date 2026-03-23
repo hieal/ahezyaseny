@@ -81,7 +81,13 @@ export default function LoginPage() {
       setLoading(true);
 
       try {
-        const tempClient = createClient(url, key);
+        const tempClient = createClient(url, key, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        });
         const { error } = await tempClient.from('profiles').select('id').limit(1);
 
         if (!error) {

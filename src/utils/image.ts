@@ -1,24 +1,24 @@
 export const getAvatarUrl = (path: string | null | undefined, userId?: string): string | null => {
-  if (!path) {
-    if (userId) {
-      return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${userId}.png`;
-    }
-    return null;
+  // Priority 1: If it's already a full Supabase URL, return it
+  if (path && path.includes('supabase.co')) {
+    return path;
   }
 
-  // 1. If it's already a full URL (including Airtable), return it
+  // Priority 2: If we have a userId, we might have a synced image in the 'images' bucket
+  // We use a predictable path based on userId
+  if (userId) {
+    return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${userId}.png`;
+  }
+
+  if (!path) return null;
+
+  // Priority 3: If it's an external URL (Airtable, etc.), return it
   if (path.startsWith('http')) {
     return path;
   }
 
-  // 2. If path exists and is a Supabase URL, return it as is
-  if (path.includes('supabase')) {
-    return path;
-  }
-
-  // Construct Supabase Storage URL
+  // Construct Supabase Storage URL for other cases
   const filename = path.includes('/') ? path.split('/').pop() : path;
-  // Use 'images' bucket as it seems to be the primary one in dataService
   return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${filename}`;
 };
 
