@@ -778,8 +778,10 @@ function Header() {
           <span>{isMalachi ? 'ברוך הבא מלאכי צוריאל - מנהל העמותה' : getGenderedText(user?.gender, 'ברוך הבא,', 'ברוכה הבאה,')}</span>
           <span className="text-text-main font-bold">
             {isMalachi ? '' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (
-              <span className="text-luxury-blue font-bold">{user?.full_name || 'מנהל ראשי'}</span>
-            ) : user?.full_name)}
+              <span className="text-luxury-blue font-bold">
+                {user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.username || 'מנהל ראשי')}
+              </span>
+            ) : (user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.username || 'מנהל')))}
           </span>
         </div>
       </div>

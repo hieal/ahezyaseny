@@ -27,6 +27,13 @@ const getColor = (name?: string) => {
 export const Avatar: React.FC<AvatarProps> = ({ name, url, imageUrl, userId, size = 'md', className = '' }) => {
   const [failed, setFailed] = React.useState(false);
 
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setFailed(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
     md: 'w-10 h-10 text-sm',

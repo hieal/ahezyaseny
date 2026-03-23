@@ -5,10 +5,13 @@ export interface ScannedAdmin {
   missing_fields: string[];
   role?: string;
   group?: string;
+  category?: string;
+  avatar_url?: string;
   username?: string;
   isSelected?: boolean;
   isManager?: boolean;
   existingUser?: User;
+  action?: 'update' | 'new' | 'skip';
 }
 
 export interface User {
@@ -30,7 +33,6 @@ export interface User {
   deleted_at?: string | null;
   daily_message_template?: string | null;
   is_from_file?: number;
-  is_approved?: number;
   password_updated_at?: string;
   password_plain?: string;
   assigned_group_id?: string;
@@ -106,7 +108,6 @@ export interface WhatsAppGroup {
   whapi_id: string | null;
   last_initial_sent: string | null;
   last_initial_sent_method?: 'auto' | 'manual' | null;
-  is_approved?: number;
   age_groups?: string | null;
 }
 

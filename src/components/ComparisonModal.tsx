@@ -1,51 +1,93 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { motion } from 'motion/react';
+import { X, RefreshCw, UserPlus, XCircle } from 'lucide-react';
 import { ScannedAdmin } from '../types';
 
 interface ComparisonModalProps {
   admin: ScannedAdmin;
   onClose: () => void;
-  onUpdate: (action: string) => void;
+  onUpdate: (action: 'update' | 'new' | 'skip') => void;
 }
 
 export const ComparisonModal: React.FC<ComparisonModalProps> = ({ admin, onClose, onUpdate }) => {
   if (!admin.existingUser) return null;
 
+  const existing = admin.existingUser;
+  
+  const fields = [
+    { label: 'שם מלא', existing: existing.full_name || '', new: admin.full_name || '' },
+    { label: 'טלפון', existing: existing.phone || '', new: admin.phone || '' },
+    { label: 'מייל', existing: existing.email || '', new: admin.email || '' },
+    { label: 'פרויקט/קטגוריה', existing: existing.affiliation_group || (existing as any).category || '', new: admin.group || admin.category || '' },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="card w-full max-w-lg p-8 space-y-6 shadow-2xl border-none"
+        className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-2xl space-y-6"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold text-text-main">השוואת נתונים: {admin.full_name}</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
-            <X size={20} />
+          <h3 className="text-2xl font-black text-slate-900">השוואת נתונים - מנהל קיים</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+            <X size={24} />
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div className="font-bold">שדה</div>
-          <div className="font-bold">קיים במערכת</div>
-          <div className="font-bold">חדש מהקובץ</div>
-          
-          <div>שם</div>
-          <div>{admin.existingUser.full_name}</div>
-          <div className={admin.full_name !== admin.existingUser.full_name ? 'text-red-600' : ''}>{admin.full_name}</div>
-          
-          <div>אימייל</div>
-          <div>{admin.existingUser.email}</div>
-          <div className={admin.email !== admin.existingUser.email ? 'text-red-600' : ''}>{admin.email}</div>
+        <div className="overflow-hidden border border-slate-200 rounded-2xl">
+          <table className="w-full text-sm text-right">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="p-3 text-slate-500">שדה</th>
+                <th className="p-3 text-slate-500">קיים במערכת</th>
+                <th className="p-3 text-slate-500">בנתונים החדשים</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {fields.map((f, idx) => (
+                <tr key={idx}>
+                  <td className="p-3 font-bold text-slate-700">{f.label}</td>
+                  <td className={`p-3 ${!f.existing ? 'text-red-500 font-bold bg-red-50' : 'text-slate-600'}`}>
+                    {f.existing || 'חסר'}
+                  </td>
+                  <td className={`p-3 ${!f.new ? 'text-red-500 font-bold bg-red-50' : 'text-slate-900 font-medium'}`}>
+                    {f.new || 'חסר'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        <div className="flex flex-wrap gap-2 pt-4">
-          <button onClick={() => onUpdate('update_details')} className="btn-secondary">עדכן פרטים</button>
-          <button onClick={() => onUpdate('update_all')} className="btn-primary">עדכן הכל</button>
-          <button onClick={() => onUpdate('create_new')} className="btn-primary bg-amber-600">צור מנהל חדש</button>
-          <button onClick={onClose} className="btn-secondary">ביטול</button>
+        <div className="grid grid-cols-3 gap-3">
+          <button 
+            onClick={() => onUpdate('update')}
+            className="flex flex-col items-center gap-2 p-4 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 hover:bg-blue-100 transition-all group"
+          >
+            <RefreshCw size={24} className="group-hover:rotate-180 transition-transform duration-500" />
+            <span className="font-bold text-xs">עדכן כרטיס קיים</span>
+          </button>
+          
+          <button 
+            onClick={() => {
+              if (window.confirm(`שים לב, מנהל בשם זה/טלפון זה כבר קיים. האם אתה בטוח שברצונך ליצור כפילות? (למשל: ראש צוות שהוא גם מנהל)`)) {
+                onUpdate('new');
+              }
+            }}
+            className="flex flex-col items-center gap-2 p-4 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 hover:bg-amber-100 transition-all"
+          >
+            <UserPlus size={24} />
+            <span className="font-bold text-xs">הוסף כמנהל חדש</span>
+          </button>
+
+          <button 
+            onClick={() => onUpdate('skip')}
+            className="flex flex-col items-center gap-2 p-4 bg-slate-50 text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-100 transition-all"
+          >
+            <XCircle size={24} />
+            <span className="font-bold text-xs">ביטול הוספה</span>
+          </button>
         </div>
       </motion.div>
     </div>

@@ -42,7 +42,7 @@ export default function CandidatePortalAdmin() {
         setLeaderboard(scores);
         setStats(portalStats);
         setWeeklyLeaderboard(weeklyLeaderboardData);
-        setManagers(managersData.filter(u => u.is_approved === 1 && ['admin', 'super_admin', 'association_manager', 'team_leader'].includes(u.role)));
+        setManagers(managersData.filter(u => ['admin', 'super_admin', 'association_manager', 'team_leader'].includes(u.role)));
       } catch (err) {
         console.error('Error fetching portal settings:', err);
       } finally {

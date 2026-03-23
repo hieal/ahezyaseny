@@ -1,26 +1,25 @@
 export const getAvatarUrl = (path: string | null | undefined, userId?: string): string | null => {
-  // 1. If path exists and is a Supabase URL, return it as is
-  if (path && path.includes('supabase')) {
-    return path;
-  }
-
-  // 2. Block Airtable URLs or empty paths
-  if (!path || path.includes('airtable') || path.includes('dl.airtable.com')) {
-    // 3. Fallback to [userId].png
+  if (!path) {
     if (userId) {
-      return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/avatars/${userId}.png`;
+      return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${userId}.png`;
     }
     return null;
   }
 
-  // 4. If it's already a full URL, return it
+  // 1. If it's already a full URL (including Airtable), return it
   if (path.startsWith('http')) {
+    return path;
+  }
+
+  // 2. If path exists and is a Supabase URL, return it as is
+  if (path.includes('supabase')) {
     return path;
   }
 
   // Construct Supabase Storage URL
   const filename = path.includes('/') ? path.split('/').pop() : path;
-  return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/avatars/${filename}`;
+  // Use 'images' bucket as it seems to be the primary one in dataService
+  return `https://bdxddmsdkebxpfuirkmh.supabase.co/storage/v1/object/public/images/${filename}`;
 };
 
 export const getAvatarFallback = (name: string): string => {

@@ -7,6 +7,12 @@ import { getGenderedText } from '../utils/gender';
 export const Navbar: React.FC = () => {
   const { user, logout, activeRole, setActiveRole } = useAuth();
 
+  React.useEffect(() => {
+    if (user) {
+      console.log('User identity fetched:', user.full_name);
+    }
+  }, [user]);
+
   const isDualRole = user?.role === 'admin' && user?.is_team_leader;
 
   return (
@@ -17,7 +23,7 @@ export const Navbar: React.FC = () => {
             <Avatar name={user?.full_name || user?.username} url={user?.avatar_url} size="md" />
             <div>
               <h1 className="font-bold text-slate-900">
-                {getGenderedText(user?.gender, 'ברוך הבא', 'ברוכה הבאה')} {user?.full_name}
+                {getGenderedText(user?.gender, 'ברוך הבא', 'ברוכה הבאה')} {user?.full_name || user?.username || 'מנהל'}
               </h1>
               {isDualRole && (
                 <div className="flex gap-1 mt-1">

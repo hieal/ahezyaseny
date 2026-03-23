@@ -50,6 +50,8 @@ export const WHATSAPP_GROUPS = {
 };
 
 export const CATEGORIES = [
+  'כללי',
+  'שח"ם',
   '18-22',
   '23-27',
   '28-32',

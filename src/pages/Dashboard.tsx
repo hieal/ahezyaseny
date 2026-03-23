@@ -181,7 +181,7 @@ export default function Dashboard() {
 
   const fetchDashboardAdmins = async () => {
     try {
-      let query = supabase.from('profiles').select('*');
+      let query = supabase.from('profiles').select('id, phone, full_name, role, avatar_url, is_online');
 
       if (activeUser?.role === 'super_admin' || activeUser?.role === 'association_manager') {
         query = query.in('role', ['admin', 'association_manager', 'super_admin', 'team_leader', 'observer']);

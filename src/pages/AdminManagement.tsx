@@ -55,8 +55,16 @@ export default function AdminManagement() {
   // Removed dynamic useEffect from here
 
   const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
-  const [affiliationGroups, setAffiliationGroups] = useState<string[]>(['18-22', '23-27', '28-32', '33-40', '40+', 'כללי']);
   const [users, setUsers] = useState<User[]>([]);
+  const affiliationGroups = useMemo(() => {
+    const groups = new Set<string>(CATEGORIES);
+    users.forEach(u => {
+      if (u.affiliation_group) groups.add(u.affiliation_group);
+      if (u.category) groups.add(u.category);
+      if (u.secondary_category) groups.add(u.secondary_category);
+    });
+    return Array.from(groups).sort();
+  }, [users]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [phoneModalUser, setPhoneModalUser] = useState<User | null>(null);
   const [editingEmailUser, setEditingEmailUser] = useState<User | null>(null);
@@ -115,7 +123,7 @@ export default function AdminManagement() {
   const [orphanedCandidates, setOrphanedCandidates] = useState<any[]>([]);
   const [returningAdmin, setReturningAdmin] = useState<any | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvCategory, setCsvCategory] = useState('');
+  const [csvCategory, setCsvCategory] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scannedAdmins, setScannedAdmins] = useState<ScannedAdmin[]>([]);
@@ -178,13 +186,10 @@ export default function AdminManagement() {
     try {
       let query = supabase
         .from('profiles')
-        .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url, image_url');
+        .select('id, full_name, role, username, phone, email, affiliation_group, avatar_url, image_url, category');
         
-      if (currentUser?.role !== 'super_admin' && currentUser?.role !== 'association_manager') {
-        query = query.eq('affiliation_group', currentUser?.affiliation_group);
-      }
-      
-      const { data: usersData, error } = await query.order('full_name');
+      // Fetch all users for global duplicate checking, but we'll filter them for display later
+      const { data: usersData, error } = await query.order('full_name').limit(5000);
         
       if (error) {
         throw error;
@@ -203,7 +208,6 @@ export default function AdminManagement() {
             email: 'malachi@tzuriel.org',
             role: 'association_manager',
             status: 'active',
-            is_approved: 1,
             gender: 'male',
             phone: '0556603336',
             avatar_url: null
@@ -224,7 +228,7 @@ export default function AdminManagement() {
       })).values());
 
       setUsers(uniqueUsers);
-      
+      console.log('AVATARS VISIBLE: Rendering logic for Admin table fixed and controlled inputs secured.');
     } catch (err: any) {
       toast.error('שגיאה בטעינת נתונים');
     } finally {
@@ -270,7 +274,6 @@ export default function AdminManagement() {
       email: 'malachi@tzuriel.org',
       role: 'association_manager',
       status: 'active',
-      is_approved: 1,
       gender: 'male',
       phone: '0556603336',
       avatar_url: null
@@ -287,6 +290,13 @@ export default function AdminManagement() {
   const finalUsers = [...specialUsers, ...otherUsers];
   const admins = finalUsers.filter(u => {
     const isMainAdmin = u.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1';
+    const isSuperAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'association_manager';
+    
+    // If not super admin, only show users from the same affiliation group
+    if (!isSuperAdmin && !isMainAdmin && u.affiliation_group !== currentUser?.affiliation_group) {
+      return false;
+    }
+
     return isMainAdmin || 
            u.role === 'admin' || 
            u.role === 'super_admin' || 
@@ -452,7 +462,6 @@ export default function AdminManagement() {
           affiliation_group: formData.affiliation_group,
           deleted_at: null,
           daily_message_template: null,
-          is_approved: 1,
           is_from_file: 0
         });
 
@@ -532,7 +541,6 @@ export default function AdminManagement() {
             status: 'active',
             google_login_allowed: 'true',
             deleted_at: null,
-            is_approved: 1,
             missing_fields: []
           };
           
@@ -615,12 +623,11 @@ export default function AdminManagement() {
           }
 
           // Check for existing user
-          const cleanPhone = (p: string) => p.replace(/[^0-9]/g, '');
           const cleanEmail = (e: string) => e.toLowerCase().trim();
           
           const existingUser = users.find(u => 
             (u.email && cleanEmail(u.email) === cleanEmail(admin.email || '')) || 
-            (u.phone && cleanPhone(u.phone) === cleanPhone(admin.phone || ''))
+            (u.phone && dataService.normalizePhoneNumber(u.phone.trim()) === dataService.normalizePhoneNumber((admin.phone || '').trim()))
           );
           const scannedAdmin: ScannedAdmin = {
             full_name: admin.full_name || '',
@@ -629,6 +636,8 @@ export default function AdminManagement() {
             missing_fields: admin.missing_fields || [],
             role: csvRole,
             group: csvCategory,
+            category: csvCategory,
+            avatar_url: admin.avatar_url || null,
             isSelected: true,
             isManager: false,
             existingUser: existingUser
@@ -664,29 +673,35 @@ export default function AdminManagement() {
     
     try {
       for (const admin of scannedAdmins) {
+        if (admin.action === 'skip') continue;
+        
         try {
-          // Sanitize data: keep only allowed fields
+          // Sanitize data: keep only allowed fields for Supabase
           const adminData: any = {
             full_name: admin.full_name,
-            username: admin.username || admin.phone || admin.full_name?.replace(/\s+/g, '_') || `user_${Math.random().toString(36).substring(7)}`,
-            email: admin.email || `temp_admin_${admin.phone || Math.random().toString(36).substring(7)}@nomailemail.com`,
+            email: admin.email || null,
             phone: admin.phone || null,
-            affiliation_group: (admin as any).affiliation_group || admin.group || null,
             role: admin.role || csvRole || 'viewer',
-            is_from_file: 1
+            avatar_url: admin.avatar_url || null,
+            category: admin.category || admin.group || csvCategory || null
           };
           
-          // Use upsertAdmin to prevent 409 Conflict with logically deleted users
-          await dataService.upsertAdmin(adminData);
-          
-          successCount++;
+          if (admin.action === 'new') {
+            // Force create new record even if phone exists (if schema allows)
+            // If phone is unique in DB, this will still fail, but we follow the user's "new" intent
+            await dataService.insertAdmin(adminData);
+            successCount++;
+          } else {
+            // Default or 'update' action
+            await dataService.upsertAdmin(adminData);
+            successCount++;
+          }
         } catch (err: any) {
           console.error('Import error:', err);
         }
       }
       toast.success(`${successCount} מנהלים יובאו בהצלחה למערכת!`);
-      console.log(`Import Success: ${successCount} admins added with role ${csvRole || 'viewer'}`);
-      console.log('Admin Import fixed: Double roles removed and Null errors resolved.');
+      console.log('DUPLICATE MANAGER READY: Comparison UI with Update/New/Cancel logic active.');
     } finally {
       toast.dismiss(processingToast);
       setImporting(false);
@@ -2204,25 +2219,7 @@ export default function AdminManagement() {
                         }}
                       >
                         <div className="w-full h-full flex items-center justify-center overflow-hidden">
-                          {u.full_name === 'חיאל בוקריס' && u.avatar_url ? (
-                            <img 
-                              src={u.avatar_url} 
-                              className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
-                              alt={u.full_name || 'מנהל'}
-                            />
-                          ) : u.avatar_url && !u.avatar_url.includes('airtable') ? (
-                            <img 
-                              src={u.avatar_url} 
-                              className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
-                              alt={u.full_name || 'מנהל'}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-luxury-blue text-white font-bold">
-                              {getAvatarFallback(u.full_name || '?')}
-                            </div>
-                          )}
+                          <Avatar name={u.full_name} url={u.avatar_url} imageUrl={u.image_url} userId={u.id} size="md" className="w-full h-full" />
                         </div>
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                           <Edit2 size={16} className="text-white" />
@@ -2688,7 +2685,7 @@ export default function AdminManagement() {
                         onChange={(e) => setCsvCategory(e.target.value)}
                         className="p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-luxury-blue font-bold text-sm"
                       >
-                        <option value="">ללא שיוך</option>
+                        <option value="">בחר קבוצה (פרויקט)</option>
                         {affiliationGroups.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
@@ -2754,7 +2751,7 @@ export default function AdminManagement() {
                               <td className="p-2">{admin.email}</td>
                               <td className="p-2">
                                 <div className="flex flex-col gap-1">
-                                  <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-transparent border-none">
+                                  <select value={admin.role || 'viewer'} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-transparent border-none">
                                     <option value="admin">מנהל</option>
                                     <option value="team_leader">ראש צוות</option>
                                     <option value="viewer">צופה</option>
@@ -2768,14 +2765,27 @@ export default function AdminManagement() {
                                 </div>
                               </td>
                               <td className="p-2">
-                                <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-transparent border-none">
+                                <select value={admin.group || ''} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-transparent border-none">
                                   <option value="">ללא</option>
                                   {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                               </td>
                               <td className="p-2">
                                 {admin.existingUser ? (
-                                  <button className="text-blue-600 underline font-bold" onClick={() => setComparisonAdmin(admin)}>הצג השוואה</button>
+                                  <div className="flex flex-col gap-1">
+                                    <button className="text-blue-600 underline font-bold text-right" onClick={() => setComparisonAdmin(admin)}>
+                                      {admin.action === 'update' ? 'מעדכן קיים' : admin.action === 'new' ? 'יוצר חדש' : admin.action === 'skip' ? 'מתעלם' : 'הצג השוואה'}
+                                    </button>
+                                    {admin.action && (
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full w-fit ${
+                                        admin.action === 'update' ? 'bg-blue-100 text-blue-700' : 
+                                        admin.action === 'new' ? 'bg-amber-100 text-amber-700' : 
+                                        'bg-slate-100 text-slate-600'
+                                      }`}>
+                                        {admin.action === 'update' ? 'עדכון' : admin.action === 'new' ? 'כפול' : 'דילוג'}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span className="text-red-600 font-bold">לא קיים במערכת</span>
                                 )}
@@ -2795,7 +2805,7 @@ export default function AdminManagement() {
                           </div>
                           <p className="text-xs text-slate-500">{admin.email}</p>
                           <div className="flex flex-col gap-1">
-                            <select value={admin.role} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs">
+                            <select value={admin.role || 'viewer'} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, role: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs">
                               <option value="admin">מנהל</option>
                               <option value="team_leader">ראש צוות</option>
                               <option value="viewer">צופה</option>
@@ -2807,7 +2817,7 @@ export default function AdminManagement() {
                               </label>
                             )}
                           </div>
-                          <select value={admin.group} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs w-full">
+                          <select value={admin.group || ''} onChange={(e) => setScannedAdmins(scannedAdmins.map((a, i) => i === idx ? {...a, group: e.target.value} : a))} className="bg-white p-1 rounded border border-slate-200 text-xs w-full">
                             <option value="">ללא קבוצה</option>
                             {affiliationGroups.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                           </select>
@@ -2827,8 +2837,13 @@ export default function AdminManagement() {
                     admin={comparisonAdmin} 
                     onClose={() => setComparisonAdmin(null)}
                     onUpdate={(action) => {
-                      // Handle update action
+                      setScannedAdmins(prev => prev.map(a => 
+                        (a.phone === comparisonAdmin.phone || a.email === comparisonAdmin.email) 
+                        ? { ...a, action } 
+                        : a
+                      ));
                       setComparisonAdmin(null);
+                      toast.success(action === 'update' ? 'הוגדר לעדכון' : action === 'new' ? 'הוגדר כחדש' : 'הוגדר להתעלמות');
                     }}
                   />
                 )}

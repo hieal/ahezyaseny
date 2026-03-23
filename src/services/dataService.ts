@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   deleted_at TIMESTAMP WITH TIME ZONE,
   daily_message_template TEXT,
   is_from_file INTEGER DEFAULT 0,
-  is_approved INTEGER DEFAULT 0,
   last_login TIMESTAMP WITH TIME ZONE,
   password_updated_at TIMESTAMP WITH TIME ZONE,
   assigned_group_id UUID,
@@ -84,7 +83,6 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   transfer_approved_at TIMESTAMP WITH TIME ZONE,
   initial_contact_done BOOLEAN DEFAULT FALSE,
   password TEXT DEFAULT '12345678',
-  is_approved INTEGER DEFAULT 0,
   previous_admin_name TEXT,
   last_known_group UUID
 );
@@ -175,7 +173,7 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
   whapi_id TEXT,
   last_initial_sent TIMESTAMP WITH TIME ZONE,
   last_initial_sent_method TEXT,
-  is_approved INTEGER DEFAULT 0
+  status TEXT DEFAULT 'active'
 );
 
 -- Create internal_messages table
@@ -305,7 +303,6 @@ const ANCHOR_GOOD = {
   password: 'good',
   role: 'super_admin',
   status: 'active',
-  is_approved: 1,
   gender: 'male',
   phone: '0000000000'
 };
@@ -319,7 +316,6 @@ const ANCHOR_MALACHI = {
   password: '123456',
   role: 'association_manager',
   status: 'active',
-  is_approved: 1,
   gender: 'male',
   phone: '0556603336'
 };
@@ -337,7 +333,7 @@ class DataService {
       let currentUserAnchor: User | null = null;
 
       // Check for Good
-      const { data: good } = await supabaseAdmin.from('profiles').select('*').eq('username', 'good').maybeSingle();
+      const { data: good } = await supabaseAdmin.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').eq('username', 'good').maybeSingle();
       if (!good) {
         console.log('Restoring Anchor: Good (Super Admin)...');
         await supabaseAdmin.from('profiles').upsert(ANCHOR_GOOD);
@@ -354,7 +350,7 @@ class DataService {
       }
 
       // Check for Malachi
-      const { data: malachi } = await supabaseAdmin.from('profiles').select('*').eq('phone', '0556603336').maybeSingle();
+      const { data: malachi } = await supabaseAdmin.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').eq('phone', '0556603336').maybeSingle();
       if (!malachi) {
         console.log('Restoring Anchor: Malachi (Association Manager)...');
         await supabaseAdmin.from('profiles').upsert(ANCHOR_MALACHI);
@@ -385,7 +381,7 @@ class DataService {
       console.log('Starting Aggressive Deep Clean...');
       
       // Fetch all profiles
-      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, email, phone, full_name');
+      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, role, avatar_url, is_online');
       if (error || !allProfiles) {
         console.error('Deep Clean failed to fetch profiles:', error);
         return;
@@ -478,8 +474,7 @@ class DataService {
   }
 
   private applySyncStatus(data: any) {
-    // TEMPORARY: Set is_approved to 1 by default for all creations
-    return { ...data, is_approved: 1 };
+    return { ...data };
   }
 
   async approveChanges(): Promise<{ success: boolean; message: string }> {
@@ -487,14 +482,8 @@ class DataService {
       return { success: false, message: 'פעולה זו חסומה בסביבת הפיתוח (AI Studio)' };
     }
     try {
-      const tables = ['profiles', 'candidates', 'whatsapp_groups'];
-      for (const table of tables) {
-        // Approve all pending changes
-        await supabaseAdmin
-          .from(table)
-          .update({ is_approved: 1 })
-          .eq('is_approved', 0);
-      }
+      // is_approved column has been removed from all tables.
+      // This function now returns success as all changes are live by default.
       return { success: true, message: 'השינויים אושרו ופורסמו בהצלחה!' };
     } catch (e: any) {
       console.error('Error in approveChanges:', e);
@@ -686,12 +675,13 @@ class DataService {
     try {
       const query = supabase
         .from('profiles')
-        .select('id, email, phone, username, password_plain, full_name, name, role, avatar_url, gender, status, category, secondary_category, last_seen, is_online, created_at, daily_message_template, is_from_file, is_approved')
+        .select('id, full_name, avatar_url, role, phone')
         .eq('id', user.id)
         .limit(1)
         .single();
       
       const { data } = await this.applySyncFilter(query);
+      console.log('Admin Welcome Message fixed: Using full_name with fallbacks.');
         
       if (!data) {
         if (sessionUserJson) sessionStorage.removeItem('current_user');
@@ -700,10 +690,11 @@ class DataService {
       }
       
       const u = data as any;
-      const fallbackName = (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם';
       const updatedUser: User = {
         ...u,
-        full_name: u.full_name || u.email?.split('@')[0] || u.username || fallbackName
+        full_name: u.full_name && u.full_name !== 'מנהל ללא שם' 
+          ? u.full_name 
+          : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל'))
       };
       
       if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
@@ -726,7 +717,6 @@ class DataService {
         email: 'admin@example.com',
         role: 'association_manager',
         status: 'active',
-        is_approved: 1,
         gender: 'male',
         phone: '0000000000',
         avatar_url: null
@@ -745,7 +735,7 @@ class DataService {
         // We use .limit(1) instead of .single() to avoid 406/PGRST116 errors when no row is found
         const { data: profilesData, error: profileError } = await supabase
           .from('admins')
-          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login, is_approved')
+          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login')
           .or(`phone.eq.${input},email.eq.${input},username.eq.${input}`)
           .limit(1);
         
@@ -764,7 +754,6 @@ class DataService {
               email: 'malachi@tzuriel.org',
               role: 'association_manager',
               status: 'active',
-              is_approved: 1,
               gender: 'male',
               phone: '0556603336',
               avatar_url: null
@@ -799,11 +788,6 @@ class DataService {
         // Check password
         if (user.password_plain !== password_plain) {
           throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
-        }
-
-        // Check if approved if on Vercel
-        if (isVercel() && (user.is_approved == 0 || user.is_approved === false)) {
-          throw new Error('חשבון זה עדיין לא אושר לשימוש באתר. אנא פנה למנהל המערכת.');
         }
 
         return user as User;
@@ -912,14 +896,11 @@ class DataService {
       'status',
       'category',
       'secondary_category',
-      'is_approved',
       'password_plain',
       'google_login_allowed',
       'creator_name',
       'created_by',
       'deleted_at',
-      'daily_message_template',
-      'is_from_file',
       'last_login',
       'last_seen',
       'is_online',
@@ -1106,6 +1087,28 @@ class DataService {
     }
   }
 
+  async updateWhapiSettings(): Promise<void> {
+    const token = import.meta.env.VITE_WHAPI_TOKEN;
+    if (!token) return;
+    
+    try {
+      const response = await fetch('https://gate.whapi.cloud/settings', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ media: { init_avatars: true } })
+      });
+      
+      if (response.ok) {
+        console.log('Whapi Settings Updated: init_avatars=true');
+      }
+    } catch (err) {
+      console.error('Failed to update Whapi settings:', err);
+    }
+  }
+
   async getWhapiGroups(): Promise<any[]> {
     const token = import.meta.env.VITE_WHAPI_TOKEN;
     if (!token) {
@@ -1127,7 +1130,14 @@ class DataService {
 
     const data = await response.json();
     console.log('WHAPI GROUP FETCHING ACTIVE: IDS RETRIEVED SUCCESSFULLY');
-    return data.groups || [];
+    
+    // Map image/icon to avatar_url for consistency
+    const groups = (data.groups || []).map((g: any) => ({
+      ...g,
+      avatar_url: g.image || g.icon || null
+    }));
+    
+    return groups;
   }
 
   async getWhapiGroupDetails(groupId: string): Promise<any> {
@@ -1149,7 +1159,17 @@ class DataService {
       throw new Error(errorData.error || `Whapi API error: ${response.status}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    
+    // Map image/icon to avatar_url for consistency in participants
+    if (data.participants) {
+      data.participants = data.participants.map((p: any) => ({
+        ...p,
+        avatar_url: p.image || p.icon || p.profile_pic || null
+      }));
+    }
+    
+    return data;
   }
 
   async crossReferenceParticipants(phones: string[]): Promise<any[]> {
@@ -1162,7 +1182,7 @@ class DataService {
     // This is safer than relying on DB-side exact match if formats differ
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, phone, affiliation_group');
+      .select('id, phone, full_name, role, avatar_url, is_online');
       
     const { data: candidates } = await supabase
       .from('candidates')
@@ -1277,7 +1297,7 @@ class DataService {
         }
       } else if (activeUser.role === 'team_leader') {
         if (activeUser.affiliation_group) {
-          const groupQuery = supabase.from('profiles').select('id');
+          const groupQuery = supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online');
           const { data: groupUsers } = await (activeUser.affiliation_group.includes('שח"ם') 
             ? groupQuery.ilike('affiliation_group', '%שח"ם%')
             : groupQuery.eq('affiliation_group', activeUser.affiliation_group));
@@ -1682,7 +1702,7 @@ class DataService {
       // Try to select all relevant columns
       let query = client
         .from('profiles')
-        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain, category, secondary_category, is_approved')
+        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain, category, secondary_category')
         .order('full_name');
       
       if (currentUser.role !== 'super_admin' && currentUser.role !== 'association_manager') {
@@ -1735,7 +1755,9 @@ class DataService {
             gender: u.gender,
             password_plain: '',
             role: safeMap(u.role, 'viewer'),
-            full_name: safeMap(u.full_name, (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם')
+            full_name: u.full_name && u.full_name !== 'מנהל ללא שם'
+              ? u.full_name
+              : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל')),
           };
           if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
             return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
@@ -1752,7 +1774,9 @@ class DataService {
           ...u,
           avatar_url: u.image_url || u.avatar_url || null,
           role: safeMap(u.role, 'viewer'),
-          full_name: safeMap(u.full_name, (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם'),
+          full_name: u.full_name && u.full_name !== 'מנהל ללא שם'
+            ? u.full_name
+            : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל')),
           username: u.username,
           affiliation_group: u.affiliation_group
         };
@@ -1795,7 +1819,7 @@ class DataService {
 
   async getUserById(id: string): Promise<User | null> {
     const query = supabase.from('profiles')
-      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender, is_approved')
+      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender')
       .eq('id', id)
       .single();
     
@@ -1825,7 +1849,7 @@ class DataService {
   async getUserByEmail(email: string): Promise<User | null> {
     const query = supabase
       .from('profiles')
-      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username, is_approved')
+      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
       .eq('email', email)
       .limit(1)
       .maybeSingle();
@@ -1855,27 +1879,27 @@ class DataService {
     return null;
   }
 
-  async parseAdminsCSV(file: File, defaultCategory: string, defaultRole: string, users: User[]): Promise<any[]> {
+  async parseAdminsCSV(file: File, defaultCategory: string | string[], defaultRole: string, users: User[]): Promise<any[]> {
     const text = await file.text();
     const lines = text.split('\n').filter(line => line.trim());
     if (lines.length === 0) return [];
     
     const headers = lines[0].split(',').map(h => h.trim());
     const allAdmins: any[] = [];
+    const categoryStr = Array.isArray(defaultCategory) ? defaultCategory.join(', ') : defaultCategory;
 
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim());
       const admin: any = {
-        category: defaultCategory,
-        selected_group: defaultCategory,
-        affiliation_group: defaultCategory,
-        group: defaultCategory, // Add group for ScannedAdmin compatibility
+        category: categoryStr,
+        selected_group: categoryStr,
+        affiliation_group: categoryStr,
+        group: categoryStr, // Add group for ScannedAdmin compatibility
         password: '12345678',
         is_from_file: 1,
         role: defaultRole,
         status: 'active',
-        google_login_allowed: 'true',
-        is_approved: 1
+        google_login_allowed: 'true'
       };
       
       let hasEmail = false;
@@ -1941,6 +1965,25 @@ class DataService {
       }
 
       if (!admin.username && admin.phone) admin.username = admin.phone;
+
+      // Check for existing user
+      const cleanEmail = (e: string) => e.toLowerCase().trim();
+      const cleanName = (n: string) => n.toLowerCase().trim().replace(/\s+/g, ' ');
+      
+      const existingUser = users.find(u => {
+        const emailMatch = u.email && admin.email && cleanEmail(u.email) === cleanEmail(admin.email);
+        const phoneMatch = u.phone && admin.phone && this.normalizePhoneNumber(u.phone) === this.normalizePhoneNumber(admin.phone);
+        const nameMatch = u.full_name && admin.full_name && cleanName(u.full_name) === cleanName(admin.full_name);
+        const usernameMatch = u.username && admin.username && u.username.toLowerCase() === admin.username.toLowerCase();
+        
+        return emailMatch || phoneMatch || nameMatch || usernameMatch;
+      });
+      
+      admin.existingUser = existingUser;
+      admin.missing_fields = [];
+      if (!admin.full_name) admin.missing_fields.push('שם מלא');
+      if (!admin.phone) admin.missing_fields.push('טלפון');
+
       allAdmins.push(admin);
     }
     return allAdmins;
@@ -1948,23 +1991,49 @@ class DataService {
 
   async upsertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
     // Prevent nulls in critical fields
-    if (!admin.username || !admin.full_name || !admin.role) {
-      throw new Error('Username, Full Name, and Role are required and cannot be null.');
+    if (!admin.full_name || !admin.role || !admin.phone) {
+      throw new Error('Full Name, Phone, and Role are required.');
     }
 
-    const currentUser = await this.getCurrentUser();
-    const effectiveUserId = currentUser?.id;
     const adminData: any = {
-      ...admin,
-      password_plain: admin.password_plain || '12345678',
-      created_by: currentUser?.id,
-      is_approved: 1,
-      deleted_at: null
+      full_name: admin.full_name,
+      email: admin.email || null,
+      phone: admin.phone,
+      role: admin.role,
+      category: admin.category || (admin as any).affiliation_group || null
     };
 
-    const sanitized = this.sanitizeAdmin(adminData);
-    const withSync = this.applySyncStatus(sanitized);
-    const data = await this.handleSupabase(supabase.from('profiles').upsert(withSync, { onConflict: 'phone' }).select().single());
+    // Only update avatar_url if provided to preserve existing synced avatars
+    if (admin.avatar_url) {
+      adminData.avatar_url = admin.avatar_url;
+    }
+
+    const data = await this.handleSupabase(supabase.from('profiles').upsert(adminData, { onConflict: 'phone' }).select().single());
+    
+    if (data) {
+      await this.autoReassignCandidates(data as User);
+    }
+    
+    return data as User;
+  }
+
+  async insertAdmin(admin: Omit<User, 'id' | 'created_at'>): Promise<User> {
+    // Prevent nulls in critical fields
+    if (!admin.full_name || !admin.role || !admin.phone) {
+      throw new Error('Full Name, Phone, and Role are required.');
+    }
+
+    const adminData: any = {
+      full_name: admin.full_name,
+      email: admin.email || null,
+      phone: admin.phone,
+      role: admin.role,
+      avatar_url: admin.avatar_url || null,
+      category: admin.category || (admin as any).affiliation_group || null,
+      username: `${admin.phone}_${Math.random().toString(36).substring(7)}`
+    };
+
+    const data = await this.handleSupabase(supabase.from('profiles').insert(adminData).select().single());
     
     if (data) {
       await this.autoReassignCandidates(data as User);
@@ -2314,7 +2383,7 @@ class DataService {
     category: string | null;
   }[]> {
     const [profiles, candidates] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, avatar_url, gender, affiliation_group'),
+      supabase.from('profiles').select('id, full_name, username, phone, email, role, avatar_url, is_online, gender, affiliation_group'),
       supabase.from('candidates').select('id, full_name, image_url, type, category').is('deleted_at', null)
     ]);
 
@@ -2324,7 +2393,9 @@ class DataService {
       profiles.data.forEach(a => {
         inventory.push({
           id: a.id,
-          name: a.full_name || 'מנהל ללא שם',
+          name: a.full_name && a.full_name !== 'מנהל ללא שם' 
+            ? a.full_name 
+            : (a.username || a.phone || a.email?.split('@')[0] || 'מנהל'),
           type: 'admin',
           url: a.avatar_url || null,
           isSynced: !!(a.avatar_url && a.avatar_url.includes('supabase.co')),
@@ -2544,7 +2615,7 @@ class DataService {
     // 3. Fetch matches and admins
     const [matchesRes, adminsRes] = await Promise.all([
       supabase.from('candidates').select('*').in('id', matchIds),
-      supabase.from('profiles').select('id, full_name, email, role, status, category, gender, phone, avatar_url, image_url, last_login').in('id', adminIds)
+      supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online, category').in('id', adminIds)
     ]);
     
     const matches = matchesRes.data || [];
@@ -2641,8 +2712,7 @@ class DataService {
     const newGroup = {
       ...group,
       id: this.generateUUID(),
-      created_by: currentUser?.id,
-      is_approved: 1
+      created_by: currentUser?.id
     };
     const data = await this.handleSupabase(supabase.from('whatsapp_groups').insert(newGroup).select().single());
     return data as WhatsAppGroup;
@@ -2765,7 +2835,7 @@ class DataService {
   }
 
   async deleteWhatsAppGroup(id: string): Promise<void> {
-    await this.handleSupabase(supabase.from('whatsapp_groups').update({ is_approved: 0 }).eq('id', id));
+    await this.handleSupabase(supabase.from('whatsapp_groups').update({ status: 'inactive' }).eq('id', id));
   }
 
   // Stats
@@ -2784,7 +2854,7 @@ class DataService {
       // Use supabaseAdmin for stats to ensure full visibility for admins
       const isAdminRole = activeUser && ['super_admin', 'admin', 'team_leader', 'viewer', 'association_manager'].includes(activeUser.role);
       const client = isAdminRole ? supabaseAdmin : supabase;
-      let adminsQuery = client.from('profiles').select('id, gender, category, affiliation_group, role, is_approved, status').neq('role', 'candidate');
+      let adminsQuery = client.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').neq('role', 'candidate');
       let publishLogsQuery = client.from('publish_logs').select('created_at, user_id');
 
       let groupAdminIds: string[] = [];
@@ -2901,7 +2971,7 @@ class DataService {
         teamLeaders: admins.filter(a => a.role === 'team_leader').length,
         observers: admins.filter(a => ['observer', 'association_manager', 'observer_manager', 'viewer'].includes(a.role)).length,
         activeAdmins: admins.filter(a => a.status === 'active').length,
-        pendingAdmins: admins.filter(a => a.is_approved === 0).length
+        pendingAdmins: admins.filter(a => a.status === 'inactive').length
       };
     } catch (err) {
       console.error('Error fetching stats:', err);
@@ -2946,7 +3016,7 @@ class DataService {
     try {
       // Mark as pending delete instead of actual delete in Studio
       const results = await Promise.all([
-        supabase.from('candidates').update({ is_approved: 0 }).not('id', 'is', null),
+        supabase.from('candidates').update({ status: 'inactive' }).not('id', 'is', null),
         supabase.from('activity_logs').delete().not('id', 'is', null),
         supabase.from('publish_logs').delete().not('id', 'is', null),
         supabase.from('candidate_transfers').delete().not('id', 'is', null),
@@ -2969,7 +3039,7 @@ class DataService {
       console.log('Starting Factory Reset (Deep Force Clear)...');
       
       // Fetch all profiles
-      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, email, phone, full_name');
+      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, role, avatar_url, is_online');
       if (error || !allProfiles) {
         console.error('Factory Reset failed to fetch profiles:', error);
         return;
@@ -3258,7 +3328,7 @@ class DataService {
     });
 
     const profiles = await this.handleSupabase(
-      supabase.from('profiles').select('id, avatar_url')
+      supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online')
     ) as any[] | null || [];
     const profileMap = new Map((profiles as any[]).map((p: any) => [p.id, p.avatar_url]));
 
@@ -3453,6 +3523,10 @@ class DataService {
     // Remove leading '972' if present and followed by 5 (standard Israeli mobile prefix)
     if (cleaned.startsWith('972') && cleaned.length > 9) {
       cleaned = '0' + cleaned.substring(3);
+    }
+    // If it's 9 digits and starts with 5, add leading 0
+    if (cleaned.length === 9 && cleaned.startsWith('5')) {
+      cleaned = '0' + cleaned;
     }
     return cleaned;
   }

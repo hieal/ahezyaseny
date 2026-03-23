@@ -50,7 +50,6 @@ export default function ConnectedAdmins() {
             email: 'malachi@tzuriel.org',
             role: 'association_manager',
             status: 'active',
-            is_approved: 1,
             gender: 'male',
             phone: '0556603336',
             avatar_url: null

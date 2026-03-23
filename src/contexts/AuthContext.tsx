@@ -77,23 +77,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (session?.user) {
           const adminProfile = await dataService.getUserById(session.user.id);
           if (adminProfile) {
-            if (isVercel() && adminProfile.is_approved === 0) {
-              await supabase.auth.signOut();
-              setUser(null);
-              localStorage.removeItem('current_user');
-              return;
-            }
             const userWithRole = enforceMalachiRole(adminProfile);
             setUser(userWithRole);
             localStorage.setItem('current_user', JSON.stringify(userWithRole));
           }
         } else if (localUser) {
           // 3. Fallback to localStorage
-          if (isVercel() && localUser.is_approved === 0) {
-            setUser(null);
-            localStorage.removeItem('current_user');
-            return;
-          }
           const userWithRole = enforceMalachiRole(localUser);
           setUser(userWithRole);
         }
@@ -134,16 +123,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (adminProfile) {
-          // Block unapproved users on Vercel
-          if (isVercel() && adminProfile.is_approved === 0) {
-            console.error('Account not approved for Vercel:', email);
-            await supabase.auth.signOut();
-            setUser(null);
-            localStorage.removeItem('current_user');
-            sessionStorage.removeItem('current_user');
-            return;
-          }
-
           const isMalachi = adminProfile.phone === '0556603336';
           const isGood = adminProfile.username?.toLowerCase() === 'good';
           

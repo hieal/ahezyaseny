@@ -57,6 +57,7 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
   };
 
   useEffect(() => {
+    dataService.updateWhapiSettings();
     fetchWhapiGroups();
     console.log('WhatsApp Sync Module integrated strictly in Settings/WhatsApp Groups section.');
     console.log('WhatsApp Media & Cross-Group Analytics module is now live.');
@@ -514,7 +515,7 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
             WhatsApp Sync Module integrated strictly in Settings/WhatsApp Groups section
           </p>
           <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest mt-1">
-            Visual Media Integration: Avatars, Group Icons, and Chat Images are now visible.
+            WHATSAPP MEDIA READY: init_avatars activated and Pushnames mapped.
           </p>
         </div>
       </motion.div>
@@ -687,8 +688,8 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="relative flex-shrink-0">
                             <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
-                              {p.profile_pic ? (
-                                <img src={p.profile_pic} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              {p.avatar_url || p.profile_pic ? (
+                                <img src={p.avatar_url || p.profile_pic} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
                                 <User size={24} className="text-slate-300" />
                               )}
@@ -705,7 +706,9 @@ export const WhatsAppSyncModule: React.FC<WhatsAppSyncModuleProps> = ({ onClose,
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <h5 className="font-bold text-slate-800 truncate">{p.name || p.push_name || p.id.split('@')[0]}</h5>
+                              <h5 className="font-bold text-slate-800 truncate">
+                                {p.systemInfo?.full_name || p.pushname || p.push_name || p.name || p.id.split('@')[0]}
+                              </h5>
                               {p.admin && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[8px] font-black uppercase">Admin</span>}
                             </div>
                             <p className="text-[10px] font-mono text-slate-400">{p.id.split('@')[0]}</p>
