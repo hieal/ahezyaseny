@@ -533,12 +533,12 @@ export default function SettingsPage() {
                   <Trash2 size={20} /> ניקוי יסודי (Deep Force Clear)
                 </h3>
                 <p className="text-xs text-red-600/80">מוחק את כל הנתונים במערכת: מנהלים, קבוצות וואטסאפ, לידים, כרטיסי משודכים, התאמות, היסטוריית פרסומים, מעקב פעולות והודעות פנימיות.</p>
-                <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: מנהל העמותה (מלאכי) הוא היחיד שלא יימחק.</p>
+                <p className="text-xs text-amber-600 font-bold">⚠️ שים לב: מנהל העמותה (מלאכי) ומנהל ראשי הם היחידים שלא יימחקו.</p>
                 <button 
                   onClick={() => setResetModalConfig({
                     isOpen: true,
                     title: 'ניקוי יסודי (Deep Force Clear)',
-                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת כולל מנהלים וקבוצות (למעט מלאכי). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
+                    message: 'אזהרה: פעולה זו תמחק את כל הנתונים במערכת כולל מנהלים וקבוצות (למעט מלאכי ומנהל ראשי). האם אתה בטוח? פעולה זו אינה ניתנת לביטול.',
                     color: 'red',
                     onConfirm: async () => {
                       await dataService.factoryReset();

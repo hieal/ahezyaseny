@@ -42,10 +42,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let adminProfile = null;
 
-    // 1. Check by ID
+    // 1. Check by ID (Source of Truth)
     adminProfile = await dataService.getUserById(authUser.id);
 
-    // 2. Identity Recovery Protocol
+    // 2. Identity Recovery Protocol (if not found by ID)
     if (!adminProfile) {
       // Search by Email
       if (email) {
@@ -71,9 +71,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    // 3. Fallback: If still not found, create a profile for the authenticated user
+    // The ID is the source of truth, so if they are logged in via Auth, they get access.
     if (!adminProfile) {
-      setAuthError('שגיאת חארדו דאבו: משתמש לא מזוהה במערכת');
-      return null;
+      console.log('Identity Sync: Profile not found. Creating fallback profile based on Auth user...');
+      adminProfile = {
+        id: authUser.id,
+        email: email || '',
+        phone: phone || '',
+        username: username || email || authUser.id,
+        full_name: authUser.user_metadata?.full_name || email || username || 'משתמש חדש',
+        role: 'user', // Default role
+        status: 'active'
+      };
+      
+      try {
+        await supabase.from('profiles').insert(adminProfile);
+      } catch (e) {
+        console.error('Failed to create fallback profile', e);
+      }
     }
 
     return adminProfile;
@@ -84,12 +100,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isMalachi = user.phone === '0556603336';
       const isGood = user.username?.toLowerCase() === 'good' || user.email?.toLowerCase() === 'good';
       
-      console.log(`Debug Auth: Profile Username: ${user.username}, Auth Username: ${user.username?.toLowerCase()}, Roles Match: ${isMalachi || isGood}.`);
+      console.log(`Debug Auth: Checking user ${user.username}, isMalachi: ${isMalachi}, isGood: ${isGood}`);
 
       if (isMalachi) {
+        console.log('Debug Auth: Assigning association_manager role');
         return { ...user, role: 'association_manager' };
       }
       if (isGood) {
+        console.log('Debug Auth: Assigning super_admin role');
         return { ...user, role: 'super_admin' };
       }
     }

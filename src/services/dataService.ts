@@ -692,9 +692,9 @@ class DataService {
       const u = data as any;
       const updatedUser: User = {
         ...u,
-        full_name: u.full_name && u.full_name !== 'מנהל ללא שם' 
+        full_name: (u.full_name && u.full_name !== 'מנהל ללא שם')
           ? u.full_name 
-          : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל'))
+          : (u.email || u.username || 'מנהל')
       };
       
       if (sessionUserJson) sessionStorage.setItem('current_user', JSON.stringify(updatedUser));
@@ -1797,9 +1797,9 @@ class DataService {
             gender: u.gender,
             password_plain: '',
             role: safeMap(u.role, 'viewer'),
-            full_name: u.full_name && u.full_name !== 'מנהל ללא שם'
+            full_name: (u.full_name && u.full_name !== 'מנהל ללא שם')
               ? u.full_name
-              : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל')),
+              : (u.email || u.username || 'מנהל'),
           };
           if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
             return { ...user, full_name: 'המנהל הראשי', username: 'good', role: 'super_admin' };
@@ -1816,9 +1816,9 @@ class DataService {
           ...u,
           avatar_url: u.image_url || u.avatar_url || null,
           role: safeMap(u.role, 'viewer'),
-          full_name: u.full_name && u.full_name !== 'מנהל ללא שם'
+          full_name: (u.full_name && u.full_name !== 'מנהל ללא שם')
             ? u.full_name
-            : (u.username || u.phone || u.email?.split('@')[0] || ((u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל')),
+            : (u.email || u.username || 'מנהל'),
           username: u.username,
           affiliation_group: u.affiliation_group
         };
@@ -1870,11 +1870,9 @@ class DataService {
     
     if (data) {
       const u = data as any;
-      const fallbackName = 'מנהל מערכת';
-      
       const user = {
         ...u,
-        full_name: u.full_name || u.email?.split('@')[0] || fallbackName
+        full_name: (u.full_name && u.full_name !== 'מנהל ללא שם') ? u.full_name : (u.email || u.username || 'מנהל')
       } as User;
 
       if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
@@ -1901,13 +1899,12 @@ class DataService {
     
     if (data) {
       const u = data as any;
-      const fallbackName = (u.role === 'super_admin' || u.role === 'association_manager') ? 'מנהל ראשי' : 'מנהל ללא שם';
       const user = {
         ...u,
         affiliation_group: u.affiliation_group || null,
         username: u.username || u.email || u.id,
         gender: u.gender || 'male',
-        full_name: u.full_name || u.email?.split('@')[0] || fallbackName
+        full_name: (u.full_name && u.full_name !== 'מנהל ללא שם') ? u.full_name : (u.email || u.username || 'מנהל')
       } as User;
 
       if (user.id === '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1') {
@@ -2600,9 +2597,9 @@ class DataService {
       profiles.data.forEach(a => {
         inventory.push({
           id: a.id,
-          name: a.full_name && a.full_name !== 'מנהל ללא שם' 
+          name: (a.full_name && a.full_name !== 'מנהל ללא שם')
             ? a.full_name 
-            : (a.username || a.phone || a.email?.split('@')[0] || 'מנהל'),
+            : (a.email || a.username || 'מנהל'),
           type: 'admin',
           url: a.avatar_url || null,
           isSynced: !!(a.avatar_url && a.avatar_url.includes('supabase.co')),

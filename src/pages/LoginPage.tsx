@@ -164,47 +164,60 @@ export default function LoginPage() {
     try {
       let user = null;
       
-      // Try admin login if it's admin or super login
-      if (loginType === 'admin' || loginType === 'super') {
-        user = await dataService.login(username, password, 'admin');
-      } else if (loginType === 'candidate') {
-        user = await dataService.login(username, password, 'candidate');
+      // Try login
+      try {
+        if (loginType === 'admin' || loginType === 'super') {
+          user = await dataService.login(username, password, 'admin');
+        } else if (loginType === 'candidate') {
+          user = await dataService.login(username, password, 'candidate');
+        }
+      } catch (err) {
+        console.error('Login attempt failed:', err);
+        throw new Error('שם המשתמש או הסיסמה אינם נכונים');
       }
 
-      if (user) {
-        const isMalachi = user.email === 'malachi@tzuriel.org' || user.phone === '0556603336';
-        const isSuperAdmin = user.role === 'super_admin' || user.role === 'association_manager';
+      if (!user) {
+        throw new Error('שם המשתמש או הסיסמה אינם נכונים');
+      }
 
-        // VIP Access: Malachi and Super Admin can enter through any door
-        if (!isMalachi && !isSuperAdmin) {
-          if (loginType === 'super' && user.role !== 'super_admin') {
-            throw new Error('אין לך הרשאה לכניסה זו');
-          }
-          if (loginType === 'admin' && user.role === 'candidate') {
-            throw new Error('אין לך הרשאה לכניסה זו');
-          }
-          if (loginType === 'candidate' && user.role !== 'candidate') {
-            throw new Error('אין לך הרשאה לכניסה זו');
-          }
-        }
+      // Check roles
+      const isSuperAdmin = user.role === 'super_admin' || user.role === 'association_manager';
+      const isCandidate = user.role === 'candidate';
+      const isAdmin = !isCandidate || (user.role === 'admin' || isSuperAdmin);
 
-        login(user);
-        if (user.phone === '0556603336') {
-          toast.success('ברוך הבא, מלאכי צוריאל - מנהל העמותה');
-        } else {
-          toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
+      // Entry point logic
+      if (loginType === 'super') {
+        if (!isSuperAdmin) {
+          await supabase.auth.signOut();
+          if (isCandidate) throw new Error('אנא היכנס מכניסת משודכים');
+          throw new Error('כניסה למנהל העמותה ומנהל ראשי בלבד. אנא כנס מכניסת מנהלים');
         }
-        if (user.role === 'association_manager') {
-          navigate('/lobby');
-        } else if (user.role === 'super_admin') {
-          navigate('/dashboard');
-        } else if (user.role === 'candidate') {
-          navigate('/candidate-profile');
-        } else {
-          navigate('/');
+      } else if (loginType === 'admin') {
+        if (isCandidate && !isAdmin) {
+          await supabase.auth.signOut();
+          throw new Error('אנא היכנס דרך כניסת משודכים');
         }
+      } else if (loginType === 'candidate') {
+        if (!isCandidate) {
+          await supabase.auth.signOut();
+          throw new Error('אנא היכנס דרך כניסת מנהלים');
+        }
+      }
+
+      login(user);
+      if (user.phone === '0556603336') {
+        toast.success('ברוך הבא, מלאכי צוריאל - מנהל העמותה');
       } else {
-        throw new Error('פרטי הכניסה אינם תואמים. נסה שוב או פנה למנהל המערכת');
+        toast.success(getGenderedText(user.gender, 'ברוך הבא!', 'ברוכה הבאה!'));
+      }
+      if (user.role === 'association_manager') {
+        navigate('/lobby');
+      } else if (user.role === 'super_admin') {
+        navigate('/dashboard');
+      } else if (user.role === 'candidate') {
+        navigate('/candidate-profile');
+      } else {
+        navigate('/');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'שגיאה בחיבור למסד הנתונים');

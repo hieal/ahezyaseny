@@ -264,9 +264,14 @@ export default function AdminManagement() {
       }
 
       const uniqueUsers = Array.from(new Map(rawUsers.map(u => {
+        // Apply fallback for full_name
+        const processedUser = {
+          ...u,
+          full_name: (u.full_name && u.full_name !== 'מנהל ללא שם') ? u.full_name : (u.email || u.username || 'מנהל')
+        };
         // Use ID as key to reflect actual rows in the table
         const key = u.id;
-        return [key, u];
+        return [key, processedUser];
       })).values());
 
       setUsers(uniqueUsers);

@@ -6,7 +6,6 @@ import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { BackendProvider, useBackend } from './contexts/BackendContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import ObserverDashboard from './pages/ObserverDashboard';
-import ControlCenter from './pages/ControlCenter';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import DailySuggestionsPage from './pages/DailySuggestionsPage';
@@ -623,7 +622,7 @@ function Sidebar() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-bold truncate ${isMalachi ? 'text-[#D4AF37]' : 'text-text-main'}`}>
-                    {isMalachi ? 'מלאכי צוריאל - מנהל העמותה' : user?.full_name}
+                    {isMalachi ? 'מלאכי צוריאל - מנהל העמותה' : (user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.email || user?.username || 'מנהל'))}
                   </p>
                   <p className={`text-xs font-medium truncate ${isMalachi ? 'text-[#D4AF37]/80' : 'text-text-secondary'}`}>
                     {isMalachi ? 'מנהל העמותה' : (
@@ -779,10 +778,19 @@ function Header() {
           <span className="text-text-main font-bold">
             {isMalachi ? '' : ((user?.role === 'super_admin' || user?.role === 'association_manager') ? (
               <span className="text-luxury-blue font-bold">
-                {user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.username || 'מנהל ראשי')}
+                {user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.email || user?.username || 'מנהל ראשי')}
               </span>
-            ) : (user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.username || 'מנהל')))}
+            ) : (user?.full_name && user?.full_name !== 'מנהל ללא שם' ? user.full_name : (user?.email || user?.username || 'מנהל')))}
           </span>
+          {user?.role === 'super_admin' && (
+            <button 
+              onClick={() => navigate('/settings')} 
+              title="הגדרות מערכת" 
+              className="p-1.5 text-slate-500 hover:text-luxury-blue hover:bg-blue-50 rounded-full transition-all"
+            >
+              <Settings size={20} />
+            </button>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -1097,7 +1105,6 @@ export default function App() {
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/observer-dashboard" element={<ProtectedRoute><ObserverDashboard /></ProtectedRoute>} />
-              <Route path="/admin-dashboard" element={<ProtectedRoute superAdminOnly><ControlCenter /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/lobby" element={<ProtectedRoute><MalachiLobby /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

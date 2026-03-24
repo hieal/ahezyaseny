@@ -1,0 +1,117 @@
+23:  phone TEXT,
+67:  creator_phone TEXT,
+72:  phone TEXT,
+94:  phone TEXT,
+307:  phone: '0000000000'
+320:  phone: '0556603336'
+336:      const { data: good } = await supabaseAdmin.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').eq('username', 'good').maybeSingle();
+353:      const { data: malachi } = await supabaseAdmin.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').eq('phone', '0556603336').maybeSingle();
+384:      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, role, avatar_url, is_online');
+396:          profile.phone === '0556603336' ||
+620:  async isBlacklisted(email: string, phone: string, full_name: string): Promise<Blacklist | null> {
+624:      .or(`email.eq.${email},phone.eq.${phone},full_name.eq.${full_name}`)
+678:        .select('id, full_name, avatar_url, role, phone')
+721:        phone: '0000000000',
+738:          .select('id, email, phone, username, password_plain, full_name, role, avatar_url, gender, status, category, last_login')
+739:          .or(`phone.eq.${input},email.eq.${input},username.eq.${input}`)
+758:              phone: '0556603336',
+782:        if (user.phone === '0556603336' || user.email === 'malachi@tzuriel.org' || user.username === 'malachi') {
+796:        // Candidates use phone as username and passwords are in profiles table
+799:        // Fallback: If phone starts with '0', try both versions
+800:        let phoneQuery = sanitizedPhone;
+811:          .select('id, full_name, phone, type, category, image_url, created_at, created_by, deleted_at')
+815:          candQuery = candQuery.or(`phone.eq.${phoneQuery},phone.eq.${altPhoneQuery}`);
+817:          candQuery = candQuery.eq('phone', phoneQuery);
+832:        const candPhone = cand.phone;
+838:          .eq('phone', candPhone)
+856:            username: cand.phone || '',
+862:            phone: cand.phone,
+890:      'phone', 
+950:      'creator_gender', 'creator_phone', 'created_at', 'last_published_at', 
+951:      'publish_count', 'deleted_at', 'phone', 'category', 'status', 'is_published_confirmed', 
+958:        if (field === 'phone' && typeof match[field] === 'string') {
+1175:  async crossReferenceParticipants(phones: string[]): Promise<any[]> {
+1176:    if (phones.length === 0) return [];
+1178:    // Normalize input phones
+1179:    const normalizedInputPhones = phones.map(p => this.normalizePhoneNumber(p));
+1185:      .select('id, phone, full_name, role, avatar_url, is_online');
+1189:      .select('id, full_name, gender, phone, category, status, is_viewer');
+1194:    ].filter(item => item.phone && normalizedInputPhones.includes(this.normalizePhoneNumber(item.phone)));
+1300:          const groupQuery = supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online');
+1330:    // 2. Remove duplicates by phone number (keep newest)
+1335:      const phone = (c.phone || '').replace(/\D/g, '');
+1336:      if (phone && phone.length >= 7) {
+1337:        if (!seenPhones.has(phone)) {
+1338:          seenPhones.add(phone);
+1342:        // Keep records without a valid phone as they might be unique manual entries
+1348:    const phones = uniqueCandidates.map(c => c.phone).filter(Boolean) as string[];
+1349:    if (phones.length > 0) {
+1352:        .select('phone, password_plain')
+1353:        .in('phone', phones);
+1356:        const passwordMap = new Map(profiles.map(p => [p.phone, p.password_plain]));
+1358:          if (c.phone && passwordMap.has(c.phone)) {
+1359:            c.password = passwordMap.get(c.phone) as string;
+1368:  async findDuplicate(name: string, phone: string): Promise<Match | null> {
+1373:      .eq('phone', phone)
+1403:      .upsert(sanitized, { onConflict: 'phone' })
+1410:        console.warn('Unique constraint on phone missing, falling back to insert');
+1432:        .eq('phone', match.phone)
+1453:      creator_name: match.creator_name || (user?.full_name ? `${user.full_name}${user.phone ? ` (${user.phone})` : ''}` : undefined),
+1457:      creator_phone: match.creator_phone || user?.phone
+1498:    if (match.password && match.phone) {
+1499:      const phone = match.phone.replace(/[^0-9]/g, '');
+1503:        .eq('phone', phone)
+1513:          phone: phone,
+1517:          username: phone // Use phone as username for candidates
+1563:    if (updates.password && (updates.phone || (data as Match)?.phone)) {
+1564:      const phone = (updates.phone || (data as Match)?.phone)?.replace(/[^0-9]/g, '');
+1565:      if (phone) {
+1569:          .eq('phone', phone)
+1579:            phone: phone,
+1583:            username: phone
+1747:        .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group, password_plain, category, secondary_category')
+1769:          .select('id, email, full_name, role, status, phone, avatar_url, image_url, gender, affiliation_group')
+1807:          if (user.phone === '0556603336') {
+1828:        if (user.phone === '0556603336') {
+1849:        // Use ID as key to avoid deduplicating by phone if multiple rows exist
+1864:      .select('id, email, full_name, role, status, phone, avatar_url, affiliation_group, category, age_groups, username, gender')
+1881:      if (user.phone === '0556603336') {
+1892:      .select('id, email, phone, full_name, role, avatar_url, status, gender, affiliation_group, username')
+1913:      if (user.phone === '0556603336') {
+1953:            admin.phone = parts[0].trim();
+1968:        if (header === 'טלפון' || header === 'phone') admin.phone = val;
+1997:      if (!admin.full_name || !admin.phone) {
+1998:        continue; // Skip if full_name or phone is empty
+2002:        const tempPhone = admin.phone || Math.random().toString(36).substring(7);
+2006:      if (!admin.username && admin.phone) admin.username = admin.phone;
+2014:        const phoneMatch = u.phone && admin.phone && this.normalizePhoneNumber(u.phone) === this.normalizePhoneNumber(admin.phone);
+2018:        return emailMatch || phoneMatch || nameMatch || usernameMatch;
+2031:      if (!admin.phone) admin.missing_fields.push('טלפון');
+2038:  async createAuthUser(email: string, phone: string, password: string): Promise<string> {
+2044:      phone,
+2047:      phone_confirm: true
+2051:      // 2. If phone format error (E.164), try with only email as requested
+2052:      if (error.message.toLowerCase().includes('phone') || error.message.includes('E.164') || error.status === 400) {
+2081:          .or(`email.eq.${email}${phone ? `,phone.eq.${phone}` : ''}`)
+2087:        throw new Error(`User exists in Auth but not in profiles: ${email || phone}`);
+2103:    if (!admin.full_name || !admin.role || !admin.phone) {
+2110:      phone: admin.phone,
+2126:    const data = await this.handleSupabase(supabase.from('profiles').upsert(adminData, { onConflict: 'phone' }).select().single());
+2137:    if (!admin.full_name || !admin.role || !admin.phone) {
+2144:      phone: admin.phone,
+2150:      username: `${admin.phone}_${Math.random().toString(36).substring(7)}`
+2228:      'phone', 
+2590:      supabase.from('profiles').select('id, full_name, username, phone, email, role, avatar_url, is_online, gender, affiliation_group'),
+2822:      supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online, category').in('id', adminIds)
+2838:          phone: admin.phone,
+2987:  async getCandidateByPhone(phone: string): Promise<Match | null> {
+2991:      .eq('phone', phone)
+3061:      let adminsQuery = client.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online').neq('role', 'candidate');
+3173:        associationManagers: Math.max(1, admins.filter(a => a.role === 'association_admin' || a.role === 'association_manager' || a.phone === '0556603336').length),
+3174:        regularManagers: admins.filter(a => a.role === 'admin' && a.phone !== '0556603336').length,
+3246:      const { data: allProfiles, error } = await supabaseAdmin.from('profiles').select('id, username, phone, full_name, role, avatar_url, is_online');
+3258:          profile.phone === '0556603336' ||
+3535:      supabase.from('profiles').select('id, full_name, username, phone, role, avatar_url, is_online')
+3723:  normalizePhoneNumber(phone: string): string {
+3724:    if (!phone) return '';
+3726:    return phone.trim();

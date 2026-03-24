@@ -9,7 +9,7 @@ import Cropper from 'react-easy-crop';
 import { Match } from '../types';
 import { DuplicateModal } from '../components/DuplicateModal';
 import { APP_NAME } from '../constants';
-import { GoogleGenAI, Type } from '@google/genai';
+import Groq from 'groq-sdk';
 
 import { dataService } from '../services/dataService';
 
@@ -93,7 +93,6 @@ export default function MatchForm() {
   }, [id, isEdit]);
 
   const handleAiParse = async () => {
-    console.log('OLD TEMPLATE DELETED. HADASSA EXAMPLE IS NOW THE ONLY GLOBAL GUIDELINE');
     if (!aiText.trim()) return toast.error('אנא הזן טקסט לניתוח');
     
     // Basic format validation
@@ -101,79 +100,47 @@ export default function MatchForm() {
     const hasKeywords = requiredKeywords.filter(kw => aiText.includes(kw)).length >= 3;
     
     if (!hasKeywords) {
-      console.log('ERROR MESSAGES AND FORMAT INSTRUCTIONS UPDATED WITH BOLD LABELS');
       setShowAiFormatError(true);
       return;
     }
 
     setParsing(true);
     try {
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      // WARNING: Client-side API key usage is for demo purposes only.
+      const apiKey = import.meta.env.VITE_GROQ_API_KEY;
       if (!apiKey) {
-        toast.error("מפתח ה-API של Gemini חסר במערכת. אנא פנה למנהל.");
+        toast.error("מפתח ה-API של Groq חסר במערכת. אנא פנה למנהל.");
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `You are an expert at parsing Hebrew matchmaking profiles. 
-        Parse the following text into a JSON object. 
-        Crucially, determine the 'type' (male or female) based on the name or context if not explicitly stated.
-        
-        Fields: 
-        - type: "male" or "female"
-        - **name**: Full name
-        - **age**: Number
-        - **height**: Height string
-        - **ethnicity**: Origin/Ethnicity
-        - **marital_status**: Current status
-        - **city**: City
-        - **religious_level**: Religious level
-        - **service**: Military/National service
-        - **occupation**: Job/Studies
-        - **about**: Short description about the person
-        - **family_description**: Description of the family
-        - **looking_for**: What they are looking for
-        - **smoking**: Smoking status
-        - **negiah**: Shomer negiah status
-        - **age_range**: Age range looking for
-        
-        If a field is missing, set it to null.
-        Text: ${aiText}`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING, description: "male or female" },
-              name: { type: Type.STRING },
-              age: { type: Type.NUMBER },
-              height: { type: Type.STRING },
-              ethnicity: { type: Type.STRING },
-              marital_status: { type: Type.STRING },
-              city: { type: Type.STRING },
-              religious_level: { type: Type.STRING },
-              service: { type: Type.STRING },
-              occupation: { type: Type.STRING },
-              about: { type: Type.STRING },
-              family_description: { type: Type.STRING },
-              looking_for: { type: Type.STRING },
-              smoking: { type: Type.STRING },
-              negiah: { type: Type.STRING },
-              age_range: { type: Type.STRING },
-            },
-            required: ["type", "name"]
+      const groq = new Groq({ apiKey, dangerouslyAllowBrowser: true });
+      const response = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert at extracting candidate details from Hebrew matchmaking cards. 
+            Return ONLY a valid JSON object matching these fields exactly:
+            type (male/female), full_name, age (number), height, ethnicity, marital_status, city, religious_level, service, occupation, about, family_description, looking_for, smoking, negiah, age_range.
+            Ensure all values in the JSON are in Hebrew.
+            If a field is missing, set it to null.`
+          },
+          {
+            role: "user",
+            content: `Analyze the following Hebrew text and extract candidate details. Return ONLY a valid JSON object.
+            Text: ${aiText}`
           }
-        }
+        ],
+        model: "llama-3.3-70b-versatile",
+        response_format: { type: "json_object" }
       });
 
-      if (!response.text) {
+      if (!response.choices[0].message.content) {
         throw new Error("Empty response from AI");
       }
 
-      const data = JSON.parse(response.text);
-      setFormData(prev => ({ ...prev, ...data, creation_source: 'ai' }));
+      const parsedData = JSON.parse(response.choices[0].message.content);
+      console.log('Data sent to form:', parsedData);
+      setFormData(prev => ({ ...prev, ...parsedData, creation_source: 'ai' }));
       toast.success('הטקסט נותח בהצלחה! הפרטים הוזנו ללשונית ההזנה הידנית.');
       setActiveTab('manual');
     } catch (err: any) {
@@ -489,18 +456,6 @@ export default function MatchForm() {
     let successCount = 0;
     let failCount = 0;
 
-    // Fetch all admins to check for valid managed_by IDs
-    const allAdmins = await dataService.getActiveManagers();
-    const adminIds = new Set(allAdmins.map(a => a.id));
-    
-    // Check if the specific UUID exists in the profiles table
-    const targetUUID = '8ebb9a38-12ec-48c1-96f7-e3cd6f4648e1';
-    if (!adminIds.has(targetUUID)) {
-      console.warn(`Profile with UUID ${targetUUID} is missing from the database. This is likely causing the "Manager without a name" issue.`);
-    } else {
-      console.log(`Profile with UUID ${targetUUID} exists in the database.`);
-    }
-
     for (const match of scannedMatches) {
       try {
         // Clean data: ensure id and created_at are not sent from CSV
@@ -511,6 +466,8 @@ export default function MatchForm() {
         // Always assign managed_by to the current admin for CSV imports
         // This ensures all imported matches are owned by the current user
         matchData.managed_by = user?.id;
+        matchData.created_by = user?.id;
+        matchData.admin_id = user?.id;
 
         await dataService.upsertMatch({ ...matchData, creation_source: 'csv' } as any, user || undefined);
         successCount++;
